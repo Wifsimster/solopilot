@@ -3,20 +3,21 @@ import type { Config } from './config.js';
 import type { Item } from './ports.js';
 import { logger } from './logger.js';
 
-const SYSTEM_PROMPT = `You are a tech news curator. You receive a list of items aggregated from multiple sources (X / Twitter and Reddit).
+const SYSTEM_PROMPT = `You are a tech news curator. You receive a list of items aggregated from multiple sources (X / Twitter, Reddit and Hacker News).
 
 Your task:
 1. Identify items related to AI and tech in general (AI, ML, LLMs, generative AI, computer vision, robotics, AI policy, software engineering, programming, open source, cloud, cybersecurity, hardware, startups, developer tools, web, mobile, data, etc.)
 2. Write a concise summary (under 2000 characters) in French
-3. Structure the digest into two top-level sections in this exact order:
+3. Structure the digest into three top-level sections in this exact order:
    - "X (Twitter)" — bullets covering items from X
    - "Reddit" — bullets covering items from Reddit
+   - "Hacker News" — bullets covering items from Hacker News
 4. Omit a section entirely if it has zero relevant items.
 5. Inside each section, use short bullets. Include clickable source links where available.
 6. Use a professional but engaging tone.
 7. Start with a title line that includes the date provided by the user (e.g. "📅 VEILLE IA & TECH — 16 mars 2025").
 
-Each top-level section header should be on its own line, in bold uppercase (e.g. **X (TWITTER)**, **REDDIT**), separated by blank lines.
+Each top-level section header should be on its own line, in bold uppercase (e.g. **X (TWITTER)**, **REDDIT**, **HACKER NEWS**), separated by blank lines.
 
 If no item across all sources is related to AI or tech, respond with exactly: NO_TECH_NEWS_FOUND`;
 
@@ -46,7 +47,7 @@ export function createAIFilter(config: Config) {
   return { filterAndSummarize, synthesizeMonthlySummary };
 
   async function filterAndSummarize(items: Item[], dateOverride?: Date): Promise<string | null> {
-    const groups: Record<'x' | 'reddit', Item[]> = { x: [], reddit: [] };
+    const groups: Record<'x' | 'reddit' | 'hn', Item[]> = { x: [], reddit: [], hn: [] };
     for (const item of items) {
       groups[item.source].push(item);
     }
@@ -67,6 +68,7 @@ export function createAIFilter(config: Config) {
     const sections = [
       renderGroup('X (Twitter)', groups.x),
       renderGroup('Reddit', groups.reddit),
+      renderGroup('Hacker News', groups.hn),
     ]
       .filter((s) => s.length > 0)
       .join('\n\n');

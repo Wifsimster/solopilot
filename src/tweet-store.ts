@@ -216,7 +216,8 @@ export function countTweetsForDate(
 }
 
 function mapRowToItem(row: ItemRow, productId: string): Item {
-  const source: ItemSource = row.source === 'reddit' ? 'reddit' : 'x';
+  const source: ItemSource =
+    row.source === 'reddit' ? 'reddit' : row.source === 'hn' ? 'hn' : 'x';
   return {
     id: row.id,
     source,

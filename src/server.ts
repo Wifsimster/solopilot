@@ -261,9 +261,13 @@ export function startServer(
       parsed.data.reddit_enabled !== undefined
         ? parsed.data.reddit_enabled
         : existing.reddit_enabled === 1;
-    if (!effectiveXEnabled && !effectiveRedditEnabled) {
+    const effectiveHnEnabled =
+      parsed.data.hn_enabled !== undefined
+        ? parsed.data.hn_enabled
+        : existing.hn_enabled === 1;
+    if (!effectiveXEnabled && !effectiveRedditEnabled && !effectiveHnEnabled) {
       return c.json(
-        { success: false, message: 'Active au moins une source (X ou Reddit).' },
+        { success: false, message: 'Active au moins une source (X, Reddit ou Hacker News).' },
         400,
       );
     }

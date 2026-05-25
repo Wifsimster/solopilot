@@ -2,6 +2,7 @@ import type { Config } from './config.js';
 import { logger } from './logger.js';
 import { createXClient } from './x-client.js';
 import { createRedditReader } from './adapters/reddit-reader.js';
+import { createHnReader } from './adapters/hn-reader.js';
 import { storeItems } from './tweet-store.js';
 import { getTodayDateParis } from './date-utils.js';
 import { DEFAULT_PRODUCT_ID } from './db.js';
@@ -32,6 +33,8 @@ export async function collectTweets(
     xEnabled: product?.x_enabled ?? true,
     redditEnabled: product?.reddit_enabled ?? false,
     redditSubreddits: product?.reddit_subreddits?.length ?? 0,
+    hnEnabled: product?.hn_enabled ?? false,
+    hnKeywords: product?.hn_keywords?.length ?? 0,
   });
 
   const bySource: Record<string, { fetched: number; new: number }> = {};
@@ -75,6 +78,25 @@ export async function collectTweets(
         error: err instanceof Error ? err.message : String(err),
       });
       bySource.reddit = { fetched: 0, new: 0 };
+    }
+  }
+
+  const hnEnabled = product?.hn_enabled ?? false;
+  const hnKeywords = product?.hn_keywords ?? [];
+  if (hnEnabled && hnKeywords.length > 0) {
+    try {
+      const hnReader = createHnReader();
+      const items = await hnReader.fetchSince(productId, 0, { productId });
+      const newCount = items.length > 0 ? storeItems(items, collectionDate, productId) : 0;
+      bySource.hn = { fetched: items.length, new: newCount };
+      totalFetched += items.length;
+      totalNew += newCount;
+    } catch (err) {
+      logger.error('Hacker News collection failed', {
+        productId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      bySource.hn = { fetched: 0, new: 0 };
     }
   }
 

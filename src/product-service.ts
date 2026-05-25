@@ -14,6 +14,12 @@ const subredditNameSchema = z.string().regex(/^[A-Za-z0-9_]{2,21}$/, {
   message: 'Nom de subreddit invalide (2-21 caracteres alphanumeriques ou underscore).',
 });
 
+const hnKeywordSchema = z
+  .string()
+  .trim()
+  .min(2, { message: 'Mot-cle Hacker News trop court (min 2 caracteres).' })
+  .max(64, { message: 'Mot-cle Hacker News trop long (max 64 caracteres).' });
+
 const productBaseSchema = z.object({
   id: slugSchema,
   name: z.string().min(1).max(120),
@@ -32,15 +38,18 @@ const productBaseSchema = z.object({
   x_enabled: z.boolean().optional(),
   reddit_enabled: z.boolean().optional(),
   reddit_subreddits: z.array(subredditNameSchema).max(50).optional().nullable(),
+  hn_enabled: z.boolean().optional(),
+  hn_keywords: z.array(hnKeywordSchema).max(20).optional().nullable(),
 });
 
 export const productCreateSchema = productBaseSchema.refine(
   (data) => {
     const x = data.x_enabled !== false;
     const reddit = data.reddit_enabled === true;
-    return x || reddit;
+    const hn = data.hn_enabled === true;
+    return x || reddit || hn;
   },
-  { message: 'Active au moins une source (X ou Reddit).', path: ['x_enabled'] },
+  { message: 'Active au moins une source (X, Reddit ou Hacker News).', path: ['x_enabled'] },
 );
 
 export const productUpdateSchema = productBaseSchema
@@ -48,24 +57,34 @@ export const productUpdateSchema = productBaseSchema
   .omit({ id: true })
   .refine(
     (data) => {
-      if (data.x_enabled === false && data.reddit_enabled === false) {
+      if (
+        data.x_enabled === false &&
+        data.reddit_enabled === false &&
+        data.hn_enabled === false
+      ) {
         return false;
       }
       return true;
     },
-    { message: 'Active au moins une source (X ou Reddit).', path: ['x_enabled'] },
+    { message: 'Active au moins une source (X, Reddit ou Hacker News).', path: ['x_enabled'] },
   );
 
 export type ProductCreateInput = z.infer<typeof productCreateSchema>;
 export type ProductUpdateInput = z.infer<typeof productUpdateSchema>;
 
-export interface ProductView extends Omit<ProductRecord, 'reddit_subreddits' | 'x_enabled' | 'reddit_enabled'> {
+export interface ProductView
+  extends Omit<
+    ProductRecord,
+    'reddit_subreddits' | 'x_enabled' | 'reddit_enabled' | 'hn_enabled' | 'hn_keywords'
+  > {
   x_enabled: boolean;
   reddit_enabled: boolean;
   reddit_subreddits: string[];
+  hn_enabled: boolean;
+  hn_keywords: string[];
 }
 
-function deserializeSubreddits(value: string | null): string[] {
+function deserializeStringArray(value: string | null): string[] {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -83,7 +102,9 @@ export function toProductView(product: ProductRecord): ProductView {
     ...product,
     x_enabled: product.x_enabled === 1,
     reddit_enabled: product.reddit_enabled === 1,
-    reddit_subreddits: deserializeSubreddits(product.reddit_subreddits),
+    reddit_subreddits: deserializeStringArray(product.reddit_subreddits),
+    hn_enabled: product.hn_enabled === 1,
+    hn_keywords: deserializeStringArray(product.hn_keywords),
   };
 }
 
@@ -114,8 +135,8 @@ export function isProductActive(id: string): boolean {
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
-    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.name,
@@ -129,6 +150,10 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
     input.reddit_enabled === true ? 1 : 0,
     input.reddit_subreddits && input.reddit_subreddits.length > 0
       ? JSON.stringify(input.reddit_subreddits)
+      : null,
+    input.hn_enabled === true ? 1 : 0,
+    input.hn_keywords && input.hn_keywords.length > 0
+      ? JSON.stringify(input.hn_keywords)
       : null,
   );
   logger.info('Product created', { productId: input.id });
@@ -177,6 +202,18 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
     values.push(
       patch.reddit_subreddits && patch.reddit_subreddits.length > 0
         ? JSON.stringify(patch.reddit_subreddits)
+        : null,
+    );
+  }
+  if (patch.hn_enabled !== undefined) {
+    sets.push('hn_enabled = ?');
+    values.push(patch.hn_enabled ? 1 : 0);
+  }
+  if (patch.hn_keywords !== undefined) {
+    sets.push('hn_keywords = ?');
+    values.push(
+      patch.hn_keywords && patch.hn_keywords.length > 0
+        ? JSON.stringify(patch.hn_keywords)
         : null,
     );
   }
