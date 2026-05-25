@@ -1,4 +1,4 @@
-import { getDb } from './db.js';
+import { getDb, DEFAULT_PRODUCT_ID } from './db.js';
 import type { Tweet } from './ports.js';
 import { logger } from './logger.js';
 
@@ -6,11 +6,15 @@ import { logger } from './logger.js';
  * Stores tweets with deduplication via INSERT OR IGNORE on tweet ID.
  * Returns the count of newly inserted tweets.
  */
-export function storeTweets(tweets: Tweet[], collectionDate: string): number {
+export function storeTweets(
+  tweets: Tweet[],
+  collectionDate: string,
+  productId: string = DEFAULT_PRODUCT_ID,
+): number {
   const db = getDb();
   const insert = db.prepare(
-    `INSERT OR IGNORE INTO tweets (id, text, created_at, urls, collection_date)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO tweets (id, text, created_at, urls, collection_date, product_id)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   );
 
   const insertMany = db.transaction((items: Tweet[]) => {
@@ -22,6 +26,7 @@ export function storeTweets(tweets: Tweet[], collectionDate: string): number {
         tweet.createdAt,
         JSON.stringify(tweet.urls),
         collectionDate,
+        productId,
       );
       if (result.changes > 0) inserted++;
     }
@@ -34,6 +39,7 @@ export function storeTweets(tweets: Tweet[], collectionDate: string): number {
     new: inserted,
     duplicates: tweets.length - inserted,
     collectionDate,
+    productId,
   });
   return inserted;
 }
@@ -41,15 +47,23 @@ export function storeTweets(tweets: Tweet[], collectionDate: string): number {
 /**
  * Returns all tweets for a given date that haven't been used in a publish run yet.
  */
-export function getUnpublishedTweets(collectionDate: string): Tweet[] {
+export function getUnpublishedTweets(
+  collectionDate: string,
+  productId: string = DEFAULT_PRODUCT_ID,
+): Tweet[] {
   const db = getDb();
   const rows = db
     .prepare(
       `SELECT id, text, created_at, urls FROM tweets
-       WHERE collection_date = ? AND used_in_run_id IS NULL
+       WHERE collection_date = ? AND product_id = ? AND used_in_run_id IS NULL
        ORDER BY created_at ASC`,
     )
-    .all(collectionDate) as { id: string; text: string; created_at: string; urls: string }[];
+    .all(collectionDate, productId) as {
+    id: string;
+    text: string;
+    created_at: string;
+    urls: string;
+  }[];
 
   return rows.map((row) => ({
     id: row.id,
@@ -95,14 +109,17 @@ export function getCollectionDateForRun(runId: number): string | undefined {
 /**
  * Returns the count of tweets collected today that are not yet used.
  */
-export function countUnpublishedTweets(collectionDate: string): number {
+export function countUnpublishedTweets(
+  collectionDate: string,
+  productId: string = DEFAULT_PRODUCT_ID,
+): number {
   const db = getDb();
   const row = db
     .prepare(
       `SELECT COUNT(*) as count FROM tweets
-       WHERE collection_date = ? AND used_in_run_id IS NULL`,
+       WHERE collection_date = ? AND product_id = ? AND used_in_run_id IS NULL`,
     )
-    .get(collectionDate) as { count: number };
+    .get(collectionDate, productId) as { count: number };
   return row.count;
 }
 
@@ -147,10 +164,13 @@ export function getTweetsByRunId(
 /**
  * Returns the total count of tweets collected for a given date.
  */
-export function countTweetsForDate(collectionDate: string): number {
+export function countTweetsForDate(
+  collectionDate: string,
+  productId: string = DEFAULT_PRODUCT_ID,
+): number {
   const db = getDb();
   const row = db
-    .prepare(`SELECT COUNT(*) as count FROM tweets WHERE collection_date = ?`)
-    .get(collectionDate) as { count: number };
+    .prepare(`SELECT COUNT(*) as count FROM tweets WHERE collection_date = ? AND product_id = ?`)
+    .get(collectionDate, productId) as { count: number };
   return row.count;
 }

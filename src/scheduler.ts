@@ -4,7 +4,7 @@ import { getSettingsMap } from './settings-service.js';
 import { startServer } from './server.js';
 import { getDb, closeDb } from './db.js';
 import { schedulePublishCron, scheduleCollectCron, stopAll as stopAllCrons } from './cron-manager.js';
-import { recoverStaleRuns, isRunning, isCollecting } from './run-service.js';
+import { recoverStaleRuns, isAnyRunning, isAnyCollecting } from './run-service.js';
 import type { Config } from './config.js';
 
 // Always initialize database and boot the web server
@@ -27,7 +27,7 @@ function shutdown(signal: string) {
   // Wait for in-flight operations to complete (max 30s)
   const deadline = Date.now() + 30_000;
   const interval = setInterval(() => {
-    if ((!isRunning() && !isCollecting()) || Date.now() > deadline) {
+    if ((!isAnyRunning() && !isAnyCollecting()) || Date.now() > deadline) {
       clearInterval(interval);
       if (Date.now() > deadline) {
         logger.warn('Shutdown deadline exceeded, forcing exit');
