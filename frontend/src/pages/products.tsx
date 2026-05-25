@@ -25,7 +25,7 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import { ProductCreateDialog } from '@/components/product-create-dialog';
-import { AlertCircle, Plus, Archive, Loader2, Pencil } from 'lucide-react';
+import { AlertCircle, Plus, Archive, Loader2, Pencil, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateFr } from '@/lib/utils';
 import { useSelectedProduct } from '@/lib/product-context';
@@ -206,11 +206,28 @@ export function ProductsPage() {
                   return (
                     <TableRow key={p.id}>
                       <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          {p.name}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{p.name}</span>
+                          {p.product_url && (
+                            <a
+                              href={p.product_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-muted-foreground hover:text-foreground transition-colors"
+                              title={p.product_url}
+                              aria-label={`Ouvrir l'URL de ${p.name}`}
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
                           {isSelected && (
                             <Badge variant="secondary" className="text-xs">
                               sélectionné
+                            </Badge>
+                          )}
+                          {p.target_audience && (
+                            <Badge variant="success" className="text-xs">
+                              Studio configuré
                             </Badge>
                           )}
                         </div>
