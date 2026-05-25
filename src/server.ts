@@ -261,11 +261,50 @@ export function startServer(
       parsed.data.reddit_enabled !== undefined
         ? parsed.data.reddit_enabled
         : existing.reddit_enabled === 1;
-    if (!effectiveXEnabled && !effectiveRedditEnabled) {
+    const effectiveHnEnabled =
+      parsed.data.hn_enabled !== undefined
+        ? parsed.data.hn_enabled
+        : existing.hn_enabled === 1;
+    if (!effectiveXEnabled && !effectiveRedditEnabled && !effectiveHnEnabled) {
       return c.json(
-        { success: false, message: 'Active au moins une source (X ou Reddit).' },
+        { success: false, message: 'Active au moins une source (X, Reddit ou Hacker News).' },
         400,
       );
+    }
+    if (
+      parsed.data.reddit_enabled === true ||
+      parsed.data.reddit_subreddits !== undefined
+    ) {
+      const existingSubs = toProductView(existing).reddit_subreddits;
+      const effectiveSubs =
+        parsed.data.reddit_subreddits !== undefined
+          ? parsed.data.reddit_subreddits ?? []
+          : existingSubs;
+      if (effectiveRedditEnabled && effectiveSubs.length === 0) {
+        return c.json(
+          {
+            success: false,
+            message: 'Au moins un subreddit est requis quand Reddit est active.',
+          },
+          400,
+        );
+      }
+    }
+    if (parsed.data.hn_enabled === true || parsed.data.hn_keywords !== undefined) {
+      const existingKeywords = toProductView(existing).hn_keywords;
+      const effectiveKeywords =
+        parsed.data.hn_keywords !== undefined
+          ? parsed.data.hn_keywords ?? []
+          : existingKeywords;
+      if (effectiveHnEnabled && effectiveKeywords.length === 0) {
+        return c.json(
+          {
+            success: false,
+            message: 'Au moins un mot-cle est requis quand Hacker News est active.',
+          },
+          400,
+        );
+      }
     }
     const updated = updateProduct(id, parsed.data);
     return c.json({ success: true, product: updated ? maskProduct(updated) : null });

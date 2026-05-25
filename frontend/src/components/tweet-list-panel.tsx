@@ -78,7 +78,11 @@ export function TweetListPanel({ runId, tweetCount }: { runId: number; tweetCoun
                 {formatTweetDate(tweet.createdAt)}
               </span>
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                {tweet.source === 'reddit' ? 'Reddit' : 'X'}
+                {tweet.source === 'reddit'
+                  ? 'Reddit'
+                  : tweet.source === 'hn'
+                    ? 'HN'
+                    : 'X'}
               </Badge>
               {tweet.urls.length > 0 && (
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0">

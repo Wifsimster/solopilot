@@ -30,6 +30,9 @@ interface ProductCreateDialogProps {
 }
 
 const SUBREDDIT_REGEX = /^[A-Za-z0-9_]{2,21}$/;
+const HN_KEYWORD_MIN = 2;
+const HN_KEYWORD_MAX = 64;
+const HN_KEYWORDS_MAX = 20;
 
 function slugify(input: string): string {
   return input
@@ -60,6 +63,10 @@ export function ProductCreateDialog({
   const [subreddits, setSubreddits] = useState<string[]>([]);
   const [subredditInput, setSubredditInput] = useState('');
   const [subredditError, setSubredditError] = useState<string | null>(null);
+  const [hnEnabled, setHnEnabled] = useState(false);
+  const [hnKeywords, setHnKeywords] = useState<string[]>([]);
+  const [hnKeywordInput, setHnKeywordInput] = useState('');
+  const [hnKeywordError, setHnKeywordError] = useState<string | null>(null);
   const [discordWebhook, setDiscordWebhook] = useState('');
   const [aiPromptOverride, setAiPromptOverride] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -78,6 +85,10 @@ export function ProductCreateDialog({
       setSubreddits([]);
       setSubredditInput('');
       setSubredditError(null);
+      setHnEnabled(false);
+      setHnKeywords([]);
+      setHnKeywordInput('');
+      setHnKeywordError(null);
       setDiscordWebhook('');
       setAiPromptOverride('');
       setSubmitting(false);
@@ -94,6 +105,10 @@ export function ProductCreateDialog({
       setSubreddits(initialValues.reddit_subreddits ?? []);
       setSubredditInput('');
       setSubredditError(null);
+      setHnEnabled(initialValues.hn_enabled ?? false);
+      setHnKeywords(initialValues.hn_keywords ?? []);
+      setHnKeywordInput('');
+      setHnKeywordError(null);
       // discord_webhook is masked from backend — leave blank so user can re-enter only if changing
       setDiscordWebhook('');
       setAiPromptOverride(initialValues.ai_prompt_override ?? '');
@@ -161,6 +176,73 @@ export function ProductCreateDialog({
     setSubredditError(null);
   };
 
+  const tryAddHnKeywords = (raw: string): boolean => {
+    const tokens = raw
+      .split(/[,\n]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tokens.length === 0) return false;
+
+    const tooShort = tokens.filter((t) => t.length < HN_KEYWORD_MIN);
+    if (tooShort.length > 0) {
+      setHnKeywordError(
+        `Mot-clé trop court : ${tooShort.join(', ')} (min ${HN_KEYWORD_MIN} caractères).`,
+      );
+      return false;
+    }
+    const tooLong = tokens.filter((t) => t.length > HN_KEYWORD_MAX);
+    if (tooLong.length > 0) {
+      setHnKeywordError(
+        `Mot-clé trop long : ${tooLong.join(', ')} (max ${HN_KEYWORD_MAX} caractères).`,
+      );
+      return false;
+    }
+
+    setHnKeywords((prev) => {
+      const next = [...prev];
+      for (const t of tokens) {
+        if (next.length >= HN_KEYWORDS_MAX) {
+          setHnKeywordError(`Maximum ${HN_KEYWORDS_MAX} mots-clés par produit.`);
+          break;
+        }
+        if (!next.some((k) => k.toLowerCase() === t.toLowerCase())) {
+          next.push(t);
+        }
+      }
+      return next;
+    });
+    if (hnKeywords.length + tokens.length <= HN_KEYWORDS_MAX) {
+      setHnKeywordError(null);
+    }
+    return true;
+  };
+
+  const handleHnKeywordKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      if (hnKeywordInput.trim()) {
+        e.preventDefault();
+        if (tryAddHnKeywords(hnKeywordInput)) {
+          setHnKeywordInput('');
+        }
+      }
+    } else if (e.key === 'Backspace' && !hnKeywordInput && hnKeywords.length > 0) {
+      setHnKeywords((prev) => prev.slice(0, -1));
+    }
+  };
+
+  const handleHnKeywordBlur = () => {
+    if (hnKeywordInput.trim()) {
+      if (tryAddHnKeywords(hnKeywordInput)) {
+        setHnKeywordInput('');
+      }
+    }
+  };
+
+  const removeHnKeyword = (kw: string) => {
+    setHnKeywords((prev) => prev.filter((k) => k !== kw));
+    setHnKeywordError(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
@@ -181,7 +263,7 @@ export function ProductCreateDialog({
     }
 
     // At least one source must be enabled
-    if (!xEnabled && !redditEnabled) {
+    if (!xEnabled && !redditEnabled && !hnEnabled) {
       setError('Active au moins une source.');
       return;
     }
@@ -213,12 +295,45 @@ export function ProductCreateDialog({
       return;
     }
 
+    // Flush pending HN keyword input
+    let pendingHnKeywords = hnKeywords;
+    if (hnEnabled && hnKeywordInput.trim()) {
+      if (!tryAddHnKeywords(hnKeywordInput)) {
+        setError('Corrige les mots-clés Hacker News invalides avant de continuer.');
+        return;
+      }
+      const tokens = hnKeywordInput
+        .split(/[,\n]+/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+      const merged = [...pendingHnKeywords];
+      for (const t of tokens) {
+        if (merged.length >= HN_KEYWORDS_MAX) break;
+        if (!merged.some((k) => k.toLowerCase() === t.toLowerCase())) {
+          merged.push(t);
+        }
+      }
+      pendingHnKeywords = merged;
+      setHnKeywordInput('');
+    }
+
+    if (hnEnabled && pendingHnKeywords.length === 0) {
+      setError('Renseigne au moins un mot-clé lorsque Hacker News est activé.');
+      return;
+    }
+
+    if (hnEnabled && pendingHnKeywords.length > HN_KEYWORDS_MAX) {
+      setError(`Maximum ${HN_KEYWORDS_MAX} mots-clés Hacker News par produit.`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = {
         name: trimmedName,
         x_enabled: xEnabled,
         reddit_enabled: redditEnabled,
+        hn_enabled: hnEnabled,
       };
       if (!isEdit) {
         body.id = trimmedId;
@@ -244,6 +359,11 @@ export function ProductCreateDialog({
       // Subreddits are tied to the Reddit toggle: required when enabled
       // (validated above), explicitly cleared when disabled.
       body.reddit_subreddits = redditEnabled && pendingSubs.length > 0 ? pendingSubs : null;
+
+      // HN keywords mirror the Reddit subreddit rule: when HN is enabled, send
+      // the current array (never null — validated above); when disabled,
+      // explicitly clear with null.
+      body.hn_keywords = hnEnabled ? pendingHnKeywords : null;
 
       const trimmedWebhook = discordWebhook.trim();
       if (trimmedWebhook) {
@@ -475,6 +595,77 @@ export function ProductCreateDialog({
                 {subredditError && (
                   <p className="mt-1 text-xs text-destructive" role="alert">
                     {subredditError}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t" />
+
+            {/* Hacker News row */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="source-hn-enabled" className="flex flex-col gap-0.5">
+                  <span>Hacker News</span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Recherche par mots-clés via Algolia.
+                  </span>
+                </Label>
+                <Switch
+                  id="source-hn-enabled"
+                  checked={hnEnabled}
+                  onCheckedChange={setHnEnabled}
+                  aria-label="Activer la source Hacker News"
+                />
+              </div>
+              <div className={cn(!hnEnabled && 'opacity-50 pointer-events-none')}>
+                <Label htmlFor="product-hn-keywords" className="text-xs">
+                  Mots-clés
+                </Label>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
+                  {hnKeywords.map((kw) => (
+                    <Badge
+                      key={kw}
+                      variant="secondary"
+                      className="gap-1 pl-2 pr-1"
+                    >
+                      {kw}
+                      <button
+                        type="button"
+                        onClick={() => removeHnKeyword(kw)}
+                        disabled={!hnEnabled}
+                        className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
+                        aria-label={`Retirer ${kw}`}
+                      >
+                        <XIcon className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                  <input
+                    id="product-hn-keywords"
+                    type="text"
+                    value={hnKeywordInput}
+                    onChange={(e) => {
+                      setHnKeywordInput(e.target.value);
+                      if (hnKeywordError) setHnKeywordError(null);
+                    }}
+                    onKeyDown={handleHnKeywordKeyDown}
+                    onBlur={handleHnKeywordBlur}
+                    placeholder={
+                      hnKeywords.length === 0
+                        ? 'agents IA, LLM, retrieval, ...'
+                        : ''
+                    }
+                    disabled={!hnEnabled}
+                    className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Tape un mot-clé puis Entrée ou virgule (2 à {HN_KEYWORD_MAX} caractères, {HN_KEYWORDS_MAX} max).
+                </p>
+                {hnKeywordError && (
+                  <p className="mt-1 text-xs text-destructive" role="alert">
+                    {hnKeywordError}
                   </p>
                 )}
               </div>

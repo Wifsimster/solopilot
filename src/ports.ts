@@ -1,4 +1,4 @@
-export type ItemSource = 'x' | 'reddit';
+export type ItemSource = 'x' | 'reddit' | 'hn';
 
 export interface Item {
   id: string;
