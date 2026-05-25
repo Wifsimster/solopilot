@@ -1,6 +1,6 @@
 {
   "name": "x-ai-weekly-bot",
-  "version": "1.26.0",
+  "version": "1.27.0",
   "description": "Weekly AI news curator that scrapes X timeline and generates AI-related summaries",
   "type": "module",
   "engines": {
