@@ -46,6 +46,9 @@ export interface ProductRecord {
   publish_cron: string | null;
   created_at: number;
   archived_at: number | null;
+  x_enabled: number;
+  reddit_enabled: number;
+  reddit_subreddits: string | null;
 }
 
 export interface ProductSettingRecord {
@@ -112,6 +115,13 @@ function runProductMigrations(database: Database.Database) {
     'product_id',
     `TEXT NOT NULL DEFAULT '${DEFAULT_PRODUCT_ID}'`,
   );
+
+  addColumnIfMissing(database, 'tweets', 'source', `TEXT NOT NULL DEFAULT 'x'`);
+  addColumnIfMissing(database, 'tweets', 'author', `TEXT NOT NULL DEFAULT ''`);
+  addColumnIfMissing(database, 'tweets', 'url', `TEXT NOT NULL DEFAULT ''`);
+  addColumnIfMissing(database, 'products', 'x_enabled', `INTEGER NOT NULL DEFAULT 1`);
+  addColumnIfMissing(database, 'products', 'reddit_enabled', `INTEGER NOT NULL DEFAULT 0`);
+  addColumnIfMissing(database, 'products', 'reddit_subreddits', `TEXT`);
 
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_tweets_product_collection ON tweets(product_id, collection_date, used_in_run_id)`,

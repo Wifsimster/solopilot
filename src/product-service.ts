@@ -10,6 +10,10 @@ const slugSchema = z
     message: 'L\'identifiant doit etre en minuscules, alphanumerique, avec tirets (pas en debut ni en fin).',
   });
 
+const subredditNameSchema = z.string().regex(/^[A-Za-z0-9_]{2,21}$/, {
+  message: 'Nom de subreddit invalide (2-21 caracteres alphanumeriques ou underscore).',
+});
+
 export const productCreateSchema = z.object({
   id: slugSchema,
   name: z.string().min(1).max(120),
@@ -25,12 +29,43 @@ export const productCreateSchema = z.object({
   ai_prompt_override: z.string().max(8000).optional().nullable(),
   collect_cron: z.string().max(120).optional().nullable(),
   publish_cron: z.string().max(120).optional().nullable(),
+  x_enabled: z.boolean().optional(),
+  reddit_enabled: z.boolean().optional(),
+  reddit_subreddits: z.array(subredditNameSchema).max(50).optional().nullable(),
 });
 
 export const productUpdateSchema = productCreateSchema.partial().omit({ id: true });
 
 export type ProductCreateInput = z.infer<typeof productCreateSchema>;
 export type ProductUpdateInput = z.infer<typeof productUpdateSchema>;
+
+export interface ProductView extends Omit<ProductRecord, 'reddit_subreddits' | 'x_enabled' | 'reddit_enabled'> {
+  x_enabled: boolean;
+  reddit_enabled: boolean;
+  reddit_subreddits: string[];
+}
+
+function deserializeSubreddits(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.filter((v): v is string => typeof v === 'string');
+    }
+  } catch {
+    // fall through
+  }
+  return [];
+}
+
+export function toProductView(product: ProductRecord): ProductView {
+  return {
+    ...product,
+    x_enabled: product.x_enabled === 1,
+    reddit_enabled: product.reddit_enabled === 1,
+    reddit_subreddits: deserializeSubreddits(product.reddit_subreddits),
+  };
+}
 
 export function listProducts(includeArchived = false): ProductRecord[] {
   const db = getDb();
@@ -59,8 +94,8 @@ export function isProductActive(id: string): boolean {
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
-    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.name,
@@ -70,6 +105,11 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
     input.collect_cron ?? null,
     input.publish_cron ?? null,
     Date.now(),
+    input.x_enabled === false ? 0 : 1,
+    input.reddit_enabled === true ? 1 : 0,
+    input.reddit_subreddits && input.reddit_subreddits.length > 0
+      ? JSON.stringify(input.reddit_subreddits)
+      : null,
   );
   logger.info('Product created', { productId: input.id });
   return getProduct(input.id)!;
@@ -103,6 +143,22 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
   if (patch.publish_cron !== undefined) {
     sets.push('publish_cron = ?');
     values.push(patch.publish_cron);
+  }
+  if (patch.x_enabled !== undefined) {
+    sets.push('x_enabled = ?');
+    values.push(patch.x_enabled ? 1 : 0);
+  }
+  if (patch.reddit_enabled !== undefined) {
+    sets.push('reddit_enabled = ?');
+    values.push(patch.reddit_enabled ? 1 : 0);
+  }
+  if (patch.reddit_subreddits !== undefined) {
+    sets.push('reddit_subreddits = ?');
+    values.push(
+      patch.reddit_subreddits && patch.reddit_subreddits.length > 0
+        ? JSON.stringify(patch.reddit_subreddits)
+        : null,
+    );
   }
 
   if (sets.length === 0) {

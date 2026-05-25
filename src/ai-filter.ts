@@ -1,22 +1,24 @@
 import OpenAI from 'openai';
 import type { Config } from './config.js';
-import type { Tweet } from './ports.js';
+import type { Item } from './ports.js';
 import { logger } from './logger.js';
 
-const SYSTEM_PROMPT = `You are a tech news curator. You receive a list of tweets from a user's X timeline.
+const SYSTEM_PROMPT = `You are a tech news curator. You receive a list of items aggregated from multiple sources (X / Twitter and Reddit).
 
 Your task:
-1. Identify tweets related to AI and tech in general (AI, ML, LLMs, generative AI, computer vision, robotics, AI policy, software engineering, programming, open source, cloud, cybersecurity, hardware, startups, developer tools, web, mobile, data, etc.)
-2. Group them by theme
-3. Write a concise summary (under 2000 characters) in French
-4. Include source links where available
-5. Use a professional but engaging tone
-6. Start with a title line that includes the date provided by the user (e.g. "📅 VEILLE IA & TECH — 16 mars 2025")
+1. Identify items related to AI and tech in general (AI, ML, LLMs, generative AI, computer vision, robotics, AI policy, software engineering, programming, open source, cloud, cybersecurity, hardware, startups, developer tools, web, mobile, data, etc.)
+2. Write a concise summary (under 2000 characters) in French
+3. Structure the digest into two top-level sections in this exact order:
+   - "X (Twitter)" — bullets covering items from X
+   - "Reddit" — bullets covering items from Reddit
+4. Omit a section entirely if it has zero relevant items.
+5. Inside each section, use short bullets. Include clickable source links where available.
+6. Use a professional but engaging tone.
+7. Start with a title line that includes the date provided by the user (e.g. "📅 VEILLE IA & TECH — 16 mars 2025").
 
-Format your response as a thread-ready text with clear sections separated by blank lines.
-Each section should have a bold theme header using uppercase.
+Each top-level section header should be on its own line, in bold uppercase (e.g. **X (TWITTER)**, **REDDIT**), separated by blank lines.
 
-If none of the tweets are related to AI or tech, respond with exactly: NO_TECH_NEWS_FOUND`;
+If no item across all sources is related to AI or tech, respond with exactly: NO_TECH_NEWS_FOUND`;
 
 const MONTHLY_SYSTEM_PROMPT = `You are a tech news analyst. You receive several daily AI & tech news summaries.
 
@@ -43,12 +45,30 @@ export function createAIFilter(config: Config) {
 
   return { filterAndSummarize, synthesizeMonthlySummary };
 
-  async function filterAndSummarize(tweets: Tweet[], dateOverride?: Date): Promise<string | null> {
-    const tweetTexts = tweets
-      .map((t, i) => {
-        const urls = t.urls.length > 0 ? `\nURLs: ${t.urls.join(', ')}` : '';
-        return `[${i + 1}] ${t.text}${urls}`;
-      })
+  async function filterAndSummarize(items: Item[], dateOverride?: Date): Promise<string | null> {
+    const groups: Record<'x' | 'reddit', Item[]> = { x: [], reddit: [] };
+    for (const item of items) {
+      groups[item.source].push(item);
+    }
+
+    const renderGroup = (label: string, group: Item[]) => {
+      if (group.length === 0) return '';
+      const lines = group
+        .map((it, i) => {
+          const sourceUrl = it.url ? `\nLien: ${it.url}` : '';
+          const extraUrls = it.urls.length > 0 ? `\nURLs: ${it.urls.join(', ')}` : '';
+          const author = it.author ? ` (${it.author})` : '';
+          return `[${i + 1}]${author} ${it.text}${sourceUrl}${extraUrls}`;
+        })
+        .join('\n\n');
+      return `=== ${label} (${group.length}) ===\n${lines}`;
+    };
+
+    const sections = [
+      renderGroup('X (Twitter)', groups.x),
+      renderGroup('Reddit', groups.reddit),
+    ]
+      .filter((s) => s.length > 0)
       .join('\n\n');
 
     const response = await client.chat.completions.create({
@@ -58,7 +78,7 @@ export function createAIFilter(config: Config) {
         { role: 'system', content: SYSTEM_PROMPT },
         {
           role: 'user',
-          content: `Date: ${(dateOverride ?? new Date()).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}\n\nHere are the tweets from the past ${config.TWEETS_LOOKBACK_DAYS} days:\n\n${tweetTexts}`,
+          content: `Date: ${(dateOverride ?? new Date()).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}\n\nVoici les éléments collectés sur les ${config.TWEETS_LOOKBACK_DAYS} derniers jours, groupés par source :\n\n${sections}`,
         },
       ],
     });

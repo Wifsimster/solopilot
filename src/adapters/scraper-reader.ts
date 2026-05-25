@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import type { Config } from '../config.js';
-import type { Tweet, TweetReader } from '../ports.js';
+import type { Item, TweetReader } from '../ports.js';
 import { isXUrl } from '../ports.js';
 import { logger } from '../logger.js';
+import { DEFAULT_PRODUCT_ID } from '../db.js';
 
 // Public bearer token embedded in X's web app JavaScript bundle
 const BEARER_TOKEN =
@@ -104,6 +105,26 @@ const tweetLegacySchema = z.object({
   retweeted_status_result: z.unknown().optional(),
 });
 
+function extractAuthorHandle(tweetResult: Record<string, unknown>): string | undefined {
+  const handle = getNestedValue(tweetResult, [
+    'core',
+    'user_results',
+    'result',
+    'legacy',
+    'screen_name',
+  ]) as string | undefined;
+  if (typeof handle === 'string' && handle.length > 0) return handle;
+  const altHandle = getNestedValue(tweetResult, [
+    'tweet',
+    'core',
+    'user_results',
+    'result',
+    'legacy',
+    'screen_name',
+  ]) as string | undefined;
+  return typeof altHandle === 'string' && altHandle.length > 0 ? altHandle : undefined;
+}
+
 export async function validateXCookies(
   authToken: string,
   csrfToken: string,
@@ -166,13 +187,19 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
   const MAX_PAGES = 10;
   const FETCH_TIMEOUT_MS = 30_000;
 
-  return { fetchRecentTweets };
+  return {
+    source: 'x',
+    fetchRecentTweets: () => fetchRecentItems(DEFAULT_PRODUCT_ID, 0),
+    fetchSince: (productId, sinceTs) => fetchRecentItems(productId, sinceTs),
+  };
 
-  async function fetchRecentTweets(): Promise<Tweet[]> {
-    const startTime = new Date();
-    startTime.setDate(startTime.getDate() - config.TWEETS_LOOKBACK_DAYS);
+  async function fetchRecentItems(productId: string, sinceTs: number): Promise<Item[]> {
+    const lookbackStart = new Date();
+    lookbackStart.setDate(lookbackStart.getDate() - config.TWEETS_LOOKBACK_DAYS);
+    const sinceDate = sinceTs > 0 ? new Date(sinceTs * 1000) : lookbackStart;
+    const startTime = sinceDate > lookbackStart ? sinceDate : lookbackStart;
 
-    const tweets: Tweet[] = [];
+    const items: Item[] = [];
     let cursor: string | undefined;
     let page = 0;
     const stats = {
@@ -195,15 +222,15 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
       stats.raw += entries.length;
       let reachedLookbackLimit = false;
       for (const entry of entries) {
-        const tweet = parseTweetEntry(entry, stats);
-        if (!tweet) continue;
+        const item = parseTweetEntry(entry, stats, productId);
+        if (!item) continue;
 
-        if (new Date(tweet.createdAt) < startTime) {
+        if (new Date(item.createdAt) < startTime) {
           reachedLookbackLimit = true;
           break;
         }
 
-        tweets.push(tweet);
+        items.push(item);
         stats.parsed++;
       }
 
@@ -218,18 +245,18 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
 
     if (dropRate > 80 && stats.raw > 5) {
       logger.warn('High drop rate in message parsing — possible API structure change', {
-        count: tweets.length,
+        count: items.length,
         stats,
         dropRate: `${dropRate}%`,
       });
     } else {
       logger.info('Fetched messages from home timeline', {
-        count: tweets.length,
+        count: items.length,
         stats,
       });
     }
 
-    return tweets;
+    return items;
   }
 
   async function refreshGqlIds(): Promise<boolean> {
@@ -353,7 +380,8 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
   function parseTweetEntry(
     entry: unknown,
     stats: Record<string, number>,
-  ): Tweet | null {
+    productId: string,
+  ): Item | null {
     try {
       const tweetResult = getNestedValue(entry as Record<string, unknown>, [
         'content',
@@ -391,6 +419,9 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
         return null;
       }
 
+      const authorHandle = extractAuthorHandle(tweetResult);
+      const fetchedAt = new Date().toISOString();
+
       // For retweets, use the original tweet text
       if (parsed.data.retweeted_status_result) {
         const rtResult = parsed.data.retweeted_status_result as Record<string, unknown>;
@@ -405,10 +436,22 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
             const rtUrls = rtParsed.data.entities.urls
               .map((u) => u.expanded_url)
               .filter((url): url is string => !!url && !isXUrl(url));
+            const rtAuthorHandle =
+              extractAuthorHandle((rtResult.result ?? {}) as Record<string, unknown>) ??
+              authorHandle;
+            const rtAuthor = rtAuthorHandle ? `@${rtAuthorHandle}` : '@unknown';
+            const rtUrl = rtAuthorHandle
+              ? `https://x.com/${rtAuthorHandle}/status/${rtParsed.data.id_str}`
+              : `https://x.com/i/status/${rtParsed.data.id_str}`;
             return {
-              id: rtParsed.data.id_str,
+              id: `x:${rtParsed.data.id_str}`,
+              source: 'x',
               text: rtParsed.data.full_text,
+              author: rtAuthor,
+              url: rtUrl,
               createdAt: new Date(parsed.data.created_at).toISOString(),
+              fetchedAt,
+              productId,
               urls: rtUrls,
             };
           }
@@ -421,10 +464,20 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
         .map((u) => u.expanded_url)
         .filter((url): url is string => !!url && !isXUrl(url));
 
+      const author = authorHandle ? `@${authorHandle}` : '@unknown';
+      const tweetUrl = authorHandle
+        ? `https://x.com/${authorHandle}/status/${parsed.data.id_str}`
+        : `https://x.com/i/status/${parsed.data.id_str}`;
+
       return {
-        id: parsed.data.id_str,
+        id: `x:${parsed.data.id_str}`,
+        source: 'x',
         text: parsed.data.full_text,
+        author,
+        url: tweetUrl,
         createdAt: new Date(parsed.data.created_at).toISOString(),
+        fetchedAt,
+        productId,
         urls,
       };
     } catch (err) {

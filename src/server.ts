@@ -57,8 +57,10 @@ import {
   deleteProductHard,
   productCreateSchema,
   productUpdateSchema,
+  toProductView,
+  type ProductView,
 } from './product-service.js';
-import { DEFAULT_PRODUCT_ID, type ProductRecord } from './db.js';
+import { DEFAULT_PRODUCT_ID } from './db.js';
 
 interface MissingCredential {
   key: string;
@@ -99,10 +101,11 @@ function resolveProductId(queryValue: string | undefined): string {
   return DEFAULT_PRODUCT_ID;
 }
 
-function maskProduct(product: ProductRecord): ProductRecord {
+function maskProduct(product: import('./db.js').ProductRecord): ProductView {
+  const view = toProductView(product);
   return {
-    ...product,
-    discord_webhook: product.discord_webhook ? maskCredential(product.discord_webhook) : null,
+    ...view,
+    discord_webhook: view.discord_webhook ? maskCredential(view.discord_webhook) : null,
   };
 }
 
