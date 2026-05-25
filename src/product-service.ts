@@ -36,6 +36,34 @@ const replyVoiceSchema = z.enum(REPLY_VOICES, {
   }),
 });
 
+const contentVoiceSchema = z.enum(REPLY_VOICES, {
+  errorMap: () => ({
+    message:
+      'Voix de contenu invalide (decontractee, professionnelle, directe ou aidante).',
+  }),
+});
+
+export const CONTENT_LANGUAGES = ['fr', 'en'] as const;
+export type ContentLanguage = (typeof CONTENT_LANGUAGES)[number];
+
+const contentLanguageSchema = z.enum(CONTENT_LANGUAGES, {
+  errorMap: () => ({
+    message: 'Langue de contenu invalide (fr ou en).',
+  }),
+});
+
+const valuePropSchema = z
+  .string()
+  .trim()
+  .min(3, { message: 'Proposition de valeur trop courte (min 3 caracteres).' })
+  .max(200, { message: 'Proposition de valeur trop longue (max 200 caracteres).' });
+
+const callToActionSchema = z
+  .string()
+  .trim()
+  .min(3, { message: 'Appel a l\'action trop court (min 3 caracteres).' })
+  .max(200, { message: 'Appel a l\'action trop long (max 200 caracteres).' });
+
 const productBaseSchema = z.object({
   id: slugSchema,
   name: z.string().min(1).max(120),
@@ -76,6 +104,29 @@ const productBaseSchema = z.object({
     .optional()
     .nullable(),
   reply_voice: replyVoiceSchema.optional().nullable(),
+  product_url: z
+    .string()
+    .url({ message: 'URL du produit invalide.' })
+    .max(2000, { message: 'URL du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  target_audience: z
+    .string()
+    .max(500, { message: 'Audience cible trop longue (max 500 caracteres).' })
+    .optional()
+    .nullable(),
+  value_props: z
+    .array(valuePropSchema)
+    .max(10, { message: 'Trop de propositions de valeur (max 10).' })
+    .optional()
+    .nullable(),
+  call_to_actions: z
+    .array(callToActionSchema)
+    .max(5, { message: 'Trop d\'appels a l\'action (max 5).' })
+    .optional()
+    .nullable(),
+  content_voice: contentVoiceSchema.optional().nullable(),
+  content_language: contentLanguageSchema.optional().nullable(),
 });
 
 export const productCreateSchema = productBaseSchema
@@ -148,6 +199,9 @@ export interface ProductView
     | 'hn_keywords'
     | 'intent_enabled'
     | 'intent_keywords'
+    | 'value_props'
+    | 'call_to_actions'
+    | 'content_language'
   > {
   x_enabled: boolean;
   reddit_enabled: boolean;
@@ -156,6 +210,9 @@ export interface ProductView
   hn_keywords: string[];
   intent_enabled: boolean;
   intent_keywords: string[];
+  value_props: string[];
+  call_to_actions: string[];
+  content_language: ContentLanguage;
 }
 
 function deserializeStringArray(value: string | null): string[] {
@@ -171,6 +228,10 @@ function deserializeStringArray(value: string | null): string[] {
   return [];
 }
 
+function isContentLanguage(value: string | null): value is ContentLanguage {
+  return value !== null && (CONTENT_LANGUAGES as readonly string[]).includes(value);
+}
+
 export function toProductView(product: ProductRecord): ProductView {
   return {
     ...product,
@@ -181,6 +242,11 @@ export function toProductView(product: ProductRecord): ProductView {
     hn_keywords: deserializeStringArray(product.hn_keywords),
     intent_enabled: product.intent_enabled === 1,
     intent_keywords: deserializeStringArray(product.intent_keywords),
+    value_props: deserializeStringArray(product.value_props),
+    call_to_actions: deserializeStringArray(product.call_to_actions),
+    content_language: isContentLanguage(product.content_language)
+      ? product.content_language
+      : 'fr',
   };
 }
 
@@ -211,8 +277,8 @@ export function isProductActive(id: string): boolean {
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
-    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords, product_description, reply_voice)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords, product_description, reply_voice, product_url, target_audience, value_props, call_to_actions, content_voice, content_language)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.name,
@@ -237,6 +303,16 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
       : null,
     input.product_description ?? null,
     input.reply_voice ?? null,
+    input.product_url ?? null,
+    input.target_audience ?? null,
+    input.value_props && input.value_props.length > 0
+      ? JSON.stringify(input.value_props)
+      : null,
+    input.call_to_actions && input.call_to_actions.length > 0
+      ? JSON.stringify(input.call_to_actions)
+      : null,
+    input.content_voice ?? null,
+    input.content_language ?? null,
   );
   logger.info('Product created', { productId: input.id });
   return getProduct(input.id)!;
@@ -318,6 +394,38 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
   if (patch.reply_voice !== undefined) {
     sets.push('reply_voice = ?');
     values.push(patch.reply_voice ?? null);
+  }
+  if (patch.product_url !== undefined) {
+    sets.push('product_url = ?');
+    values.push(patch.product_url ?? null);
+  }
+  if (patch.target_audience !== undefined) {
+    sets.push('target_audience = ?');
+    values.push(patch.target_audience ?? null);
+  }
+  if (patch.value_props !== undefined) {
+    sets.push('value_props = ?');
+    values.push(
+      patch.value_props && patch.value_props.length > 0
+        ? JSON.stringify(patch.value_props)
+        : null,
+    );
+  }
+  if (patch.call_to_actions !== undefined) {
+    sets.push('call_to_actions = ?');
+    values.push(
+      patch.call_to_actions && patch.call_to_actions.length > 0
+        ? JSON.stringify(patch.call_to_actions)
+        : null,
+    );
+  }
+  if (patch.content_voice !== undefined) {
+    sets.push('content_voice = ?');
+    values.push(patch.content_voice ?? null);
+  }
+  if (patch.content_language !== undefined) {
+    sets.push('content_language = ?');
+    values.push(patch.content_language ?? null);
   }
 
   if (sets.length === 0) {

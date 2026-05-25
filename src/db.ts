@@ -55,6 +55,26 @@ export interface ProductRecord {
   intent_keywords: string | null;
   product_description: string | null;
   reply_voice: string | null;
+  product_url: string | null;
+  target_audience: string | null;
+  value_props: string | null;
+  call_to_actions: string | null;
+  content_voice: string | null;
+  content_language: string | null;
+}
+
+export interface ContentDraftRecord {
+  id: number;
+  product_id: string;
+  kind: string;
+  target_source: string | null;
+  angle: string | null;
+  text: string;
+  edited_text: string | null;
+  status: string;
+  used_on: string | null;
+  generated_at: number;
+  used_at: number | null;
 }
 
 export interface IntentSignalRecord {
@@ -150,6 +170,30 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'products', 'intent_keywords', `TEXT`);
   addColumnIfMissing(database, 'products', 'product_description', `TEXT`);
   addColumnIfMissing(database, 'products', 'reply_voice', `TEXT`);
+  addColumnIfMissing(database, 'products', 'product_url', `TEXT`);
+  addColumnIfMissing(database, 'products', 'target_audience', `TEXT`);
+  addColumnIfMissing(database, 'products', 'value_props', `TEXT`);
+  addColumnIfMissing(database, 'products', 'call_to_actions', `TEXT`);
+  addColumnIfMissing(database, 'products', 'content_voice', `TEXT`);
+  addColumnIfMissing(database, 'products', 'content_language', `TEXT`);
+
+  database.exec(`CREATE TABLE IF NOT EXISTS content_drafts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    target_source TEXT,
+    angle TEXT,
+    text TEXT NOT NULL,
+    edited_text TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    used_on TEXT,
+    generated_at INTEGER NOT NULL,
+    used_at INTEGER
+  )`);
+
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_content_drafts_product_status ON content_drafts(product_id, status, generated_at DESC)`,
+  );
 
   database.exec(`CREATE TABLE IF NOT EXISTS intent_signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

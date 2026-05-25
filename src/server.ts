@@ -70,6 +70,18 @@ import {
   intentSignalListQuerySchema,
   intentSignalPatchSchema,
 } from './intent-service.js';
+import {
+  generatePosts,
+  listContentDrafts,
+  getContentDraft,
+  updateContentDraft,
+  deleteContentDraft,
+  toContentDraftView,
+  generatePostsSchema,
+  contentDraftListQuerySchema,
+  contentDraftPatchSchema,
+  ContentStudioError,
+} from './content-studio.js';
 
 interface MissingCredential {
   key: string;
@@ -492,6 +504,127 @@ export function startServer(
         500,
       );
     }
+  });
+
+  // --- Content Studio API (available in both setup and operational mode) ---
+
+  app.post('/api/products/:id/content/generate-posts', async (c) => {
+    const id = c.req.param('id');
+    const productRecord = getProduct(id);
+    if (!productRecord) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = generatePostsSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de generation invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+
+    const product = toProductView(productRecord);
+    if (!product.target_audience || product.value_props.length === 0) {
+      return c.json(
+        {
+          success: false,
+          message:
+            'Produit non configure pour le Studio. Renseigne l\'audience cible et au moins une proposition de valeur dans la fiche produit avant de generer des posts.',
+        },
+        400,
+      );
+    }
+
+    try {
+      const drafts = await generatePosts(product, parsed.data);
+      return c.json({
+        success: true,
+        drafts: drafts.map(toContentDraftView),
+      });
+    } catch (err) {
+      const message =
+        err instanceof ContentStudioError
+          ? err.message
+          : `Echec de la generation : ${err instanceof Error ? err.message : String(err)}`;
+      logger.warn('Content studio generation failed', {
+        productId: id,
+        count: parsed.data.count,
+        targetSource: parsed.data.targetSource,
+        error: message,
+      });
+      return c.json({ success: false, message });
+    }
+  });
+
+  app.get('/api/content-drafts', (c) => {
+    const parsed = contentDraftListQuerySchema.safeParse({
+      productId: c.req.query('productId'),
+      status: c.req.query('status'),
+      kind: c.req.query('kind'),
+      limit: c.req.query('limit'),
+    });
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Parametres de requete invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const drafts = listContentDrafts(parsed.data);
+    return c.json(drafts);
+  });
+
+  app.patch('/api/content-drafts/:id', async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id < 1) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = contentDraftPatchSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de brouillon invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const existing = getContentDraft(id);
+    if (!existing) {
+      return c.json({ success: false, message: 'Brouillon introuvable.' }, 404);
+    }
+    const updated = updateContentDraft(id, parsed.data);
+    if (!updated) {
+      return c.json({ success: false, message: 'Brouillon introuvable.' }, 404);
+    }
+    return c.json(toContentDraftView(updated));
+  });
+
+  app.delete('/api/content-drafts/:id', (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id < 1) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    const ok = deleteContentDraft(id);
+    if (!ok) {
+      return c.json({ success: false, message: 'Brouillon introuvable.' }, 404);
+    }
+    return c.json({ success: true });
   });
 
   if (!isConfigured) {
