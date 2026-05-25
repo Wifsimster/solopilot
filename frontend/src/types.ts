@@ -81,6 +81,8 @@ export interface TweetRecord {
   source?: FeedItemSource;
 }
 
+export type ReplyVoice = 'decontractee' | 'professionnelle' | 'directe' | 'aidante';
+
 export interface ProductRecord {
   id: string;
   name: string;
@@ -96,6 +98,8 @@ export interface ProductRecord {
   hn_keywords: string[] | null;
   intent_enabled: boolean;
   intent_keywords: string[];
+  product_description: string | null;
+  reply_voice: ReplyVoice | null;
   created_at: number;
   archived_at: number | null;
 }
@@ -114,4 +118,9 @@ export interface IntentSignal {
   text: string;
   author: string;
   url: string;
+  ai_score: number | null;
+  ai_explanation: string | null;
+  ai_drafted_reply: string | null;
+  ai_processed_at: number | null;
+  ai_error: string | null;
 }

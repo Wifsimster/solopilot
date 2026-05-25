@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApi } from '@/hooks/use-api';
 import { useSelectedProduct } from '@/lib/product-context';
 import { Card, CardContent } from '@/components/ui/card';
@@ -18,6 +18,9 @@ import {
   StickyNote,
   Loader2,
   Target,
+  Sparkles,
+  Copy,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { IntentSignal, IntentSignalStatus } from '@/types';
@@ -67,6 +70,12 @@ function sourceLabel(source: IntentSignal['source']): string {
   return 'X';
 }
 
+function scoreBadgeVariant(score: number): 'secondary' | 'warning' | 'success' {
+  if (score >= 70) return 'success';
+  if (score >= 40) return 'warning';
+  return 'secondary';
+}
+
 function formatRelativeFr(epochSeconds: number): string {
   if (!epochSeconds) return '—';
   const ms = epochSeconds > 1e12 ? epochSeconds : epochSeconds * 1000;
@@ -88,15 +97,33 @@ function formatRelativeFr(epochSeconds: number): string {
 function LeadCard({
   signal,
   onMutate,
+  onAnalyzed,
 }: {
   signal: IntentSignal;
   onMutate: (id: number, patch: Partial<Pick<IntentSignal, 'status' | 'notes'>>) => Promise<void>;
+  onAnalyzed: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [notesOpen, setNotesOpen] = useState(signal.notes !== null && signal.notes !== '');
   const [notesDraft, setNotesDraft] = useState(signal.notes ?? '');
   const [savingNotes, setSavingNotes] = useState(false);
   const [busyAction, setBusyAction] = useState<IntentSignalStatus | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [replyDraft, setReplyDraft] = useState(signal.ai_drafted_reply ?? '');
+  const [lastSyncedReply, setLastSyncedReply] = useState<string | null>(
+    signal.ai_drafted_reply,
+  );
+
+  // Keep the editable reply textarea in sync with the latest server value when
+  // a (re)analyze produces a new draft, but preserve in-flight user edits.
+  useEffect(() => {
+    if (signal.ai_drafted_reply !== lastSyncedReply) {
+      if (replyDraft === (lastSyncedReply ?? '')) {
+        setReplyDraft(signal.ai_drafted_reply ?? '');
+      }
+      setLastSyncedReply(signal.ai_drafted_reply);
+    }
+  }, [signal.ai_drafted_reply, lastSyncedReply, replyDraft]);
 
   const isLong = signal.text.length > TEXT_TRUNCATE_AT;
   const displayedText = expanded || !isLong ? signal.text : `${signal.text.slice(0, TEXT_TRUNCATE_AT)}…`;
@@ -122,6 +149,39 @@ function LeadCard({
       setSavingNotes(false);
     }
   }, [notesDraft, onMutate, signal.id]);
+
+  const handleAnalyze = useCallback(async () => {
+    if (analyzing) return;
+    setAnalyzing(true);
+    try {
+      const res = await fetch(`/api/intent-signals/${signal.id}/analyze`, {
+        method: 'POST',
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(json?.message || `Erreur HTTP ${res.status}`);
+        return;
+      }
+      onAnalyzed();
+    } catch {
+      toast.error("Erreur réseau lors de l'analyse.");
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [analyzing, signal.id, onAnalyzed]);
+
+  const handleCopyReply = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(replyDraft);
+      toast.success('Brouillon copié.');
+    } catch {
+      toast.error('Impossible de copier le brouillon.');
+    }
+  }, [replyDraft]);
+
+  const aiAnalyzed = signal.ai_score !== null;
+  const aiHasError = signal.ai_error !== null;
+  const aiNotYetAnalyzed = !aiAnalyzed && !aiHasError;
 
   return (
     <Card>
@@ -281,6 +341,151 @@ function LeadCard({
             </div>
           </div>
         )}
+
+        {/* AI analysis section — visually distinct from the source / matched-pattern row */}
+        <div className="rounded-md border bg-muted/40 p-3 space-y-2">
+          {aiNotYetAnalyzed && (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                L'IA peut scorer ce lead et proposer un brouillon de réponse.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8"
+                onClick={handleAnalyze}
+                disabled={analyzing}
+              >
+                {analyzing ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                    Analyse en cours...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-3.5 w-3.5 mr-1" />
+                    Analyser avec l'IA
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+
+          {aiAnalyzed && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Badge
+                  variant={scoreBadgeVariant(signal.ai_score ?? 0)}
+                  className="text-[11px]"
+                >
+                  Score IA : {signal.ai_score}/100
+                </Badge>
+                {signal.ai_processed_at !== null && (
+                  <span className="text-xs text-muted-foreground">
+                    Analysé {formatRelativeFr(signal.ai_processed_at)}
+                  </span>
+                )}
+              </div>
+
+              {signal.ai_explanation && (
+                <div className="rounded-md border bg-background px-3 py-2">
+                  <p className="text-xs leading-relaxed whitespace-pre-wrap">
+                    <span className="font-semibold">Pourquoi : </span>
+                    {signal.ai_explanation}
+                  </p>
+                </div>
+              )}
+
+              {signal.ai_drafted_reply !== null ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label
+                      htmlFor={`ai-reply-${signal.id}`}
+                      className="text-xs font-medium"
+                    >
+                      Brouillon de réponse
+                    </label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7"
+                      onClick={handleCopyReply}
+                      disabled={!replyDraft.trim()}
+                    >
+                      <Copy className="h-3.5 w-3.5 mr-1" />
+                      Copier
+                    </Button>
+                  </div>
+                  <Textarea
+                    id={`ai-reply-${signal.id}`}
+                    value={replyDraft}
+                    onChange={(e) => setReplyDraft(e.target.value)}
+                    rows={4}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Brouillon généré par IA — relis et adapte avant de poster.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground italic">
+                  L'IA recommande de ne pas répondre à ce lead.
+                </p>
+              )}
+
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={handleAnalyze}
+                  disabled={analyzing}
+                >
+                  {analyzing ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      Analyse en cours...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Réanalyser
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {aiHasError && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 space-y-2">
+              <p className="text-xs text-destructive">
+                <span className="font-semibold">Échec de l'analyse : </span>
+                {signal.ai_error}
+              </p>
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={handleAnalyze}
+                  disabled={analyzing}
+                >
+                  {analyzing ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      Analyse en cours...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Réessayer
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
@@ -291,11 +496,13 @@ function LeadsList({
   emptyTitle,
   emptyHint,
   onMutate,
+  onAnalyzed,
 }: {
   signals: IntentSignal[];
   emptyTitle: string;
   emptyHint: string;
   onMutate: (id: number, patch: Partial<Pick<IntentSignal, 'status' | 'notes'>>) => Promise<void>;
+  onAnalyzed: () => void;
 }) {
   if (signals.length === 0) {
     return (
@@ -312,7 +519,7 @@ function LeadsList({
   return (
     <div className="space-y-3">
       {signals.map((s) => (
-        <LeadCard key={s.id} signal={s} onMutate={onMutate} />
+        <LeadCard key={s.id} signal={s} onMutate={onMutate} onAnalyzed={onAnalyzed} />
       ))}
     </div>
   );
@@ -435,6 +642,21 @@ export function LeadsPage() {
 
         {TABS.map((tab) => {
           const req = requestsByStatus[tab.id];
+          // On the "Nouveaux" tab, surface AI-analyzed leads first (highest
+          // score first); leave the original (chronological) order otherwise.
+          const signals = req.data ?? [];
+          const orderedSignals =
+            tab.id === 'new'
+              ? [...signals].sort((a, b) => {
+                  const aScored = a.ai_score !== null;
+                  const bScored = b.ai_score !== null;
+                  if (aScored !== bScored) return aScored ? -1 : 1;
+                  if (aScored && bScored) {
+                    return (b.ai_score ?? 0) - (a.ai_score ?? 0);
+                  }
+                  return 0;
+                })
+              : signals;
           return (
             <TabsContent key={tab.id} value={tab.id} className="space-y-3">
               {anyLoading && !req.data ? (
@@ -445,10 +667,11 @@ export function LeadsPage() {
                 </div>
               ) : (
                 <LeadsList
-                  signals={req.data ?? []}
+                  signals={orderedSignals}
                   emptyTitle={tab.emptyTitle}
                   emptyHint={tab.emptyHint}
                   onMutate={handleMutate}
+                  onAnalyzed={req.refetch}
                 />
               )}
             </TabsContent>
