@@ -14,7 +14,7 @@ const subredditNameSchema = z.string().regex(/^[A-Za-z0-9_]{2,21}$/, {
   message: 'Nom de subreddit invalide (2-21 caracteres alphanumeriques ou underscore).',
 });
 
-export const productCreateSchema = z.object({
+const productBaseSchema = z.object({
   id: slugSchema,
   name: z.string().min(1).max(120),
   x_query: z.string().max(500).optional().nullable(),
@@ -34,7 +34,27 @@ export const productCreateSchema = z.object({
   reddit_subreddits: z.array(subredditNameSchema).max(50).optional().nullable(),
 });
 
-export const productUpdateSchema = productCreateSchema.partial().omit({ id: true });
+export const productCreateSchema = productBaseSchema.refine(
+  (data) => {
+    const x = data.x_enabled !== false;
+    const reddit = data.reddit_enabled === true;
+    return x || reddit;
+  },
+  { message: 'Active au moins une source (X ou Reddit).', path: ['x_enabled'] },
+);
+
+export const productUpdateSchema = productBaseSchema
+  .partial()
+  .omit({ id: true })
+  .refine(
+    (data) => {
+      if (data.x_enabled === false && data.reddit_enabled === false) {
+        return false;
+      }
+      return true;
+    },
+    { message: 'Active au moins une source (X ou Reddit).', path: ['x_enabled'] },
+  );
 
 export type ProductCreateInput = z.infer<typeof productCreateSchema>;
 export type ProductUpdateInput = z.infer<typeof productUpdateSchema>;

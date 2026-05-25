@@ -200,6 +200,130 @@ export function startServer(
     return c.json({ configured: isConfigured, credentials });
   });
 
+  // --- Products API (available in both setup and operational mode) ---
+
+  app.get('/api/products', (c) => {
+    const includeArchived = c.req.query('includeArchived') === 'true';
+    const products = listProducts(includeArchived).map(maskProduct);
+    return c.json(products);
+  });
+
+  app.post('/api/products', async (c) => {
+    const body = await c.req.json();
+    const parsed = productCreateSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de produit invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    if (getProduct(parsed.data.id)) {
+      return c.json({ success: false, message: 'Un produit avec cet identifiant existe deja.' }, 409);
+    }
+    const product = createProduct(parsed.data);
+    return c.json({ success: true, product: maskProduct(product) });
+  });
+
+  app.get('/api/products/:id', (c) => {
+    const id = c.req.param('id');
+    const product = getProduct(id);
+    if (!product) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    return c.json(maskProduct(product));
+  });
+
+  app.put('/api/products/:id', async (c) => {
+    const id = c.req.param('id');
+    const existing = getProduct(id);
+    if (!existing) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    const body = await c.req.json();
+    const parsed = productUpdateSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de produit invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const effectiveXEnabled =
+      parsed.data.x_enabled !== undefined ? parsed.data.x_enabled : existing.x_enabled === 1;
+    const effectiveRedditEnabled =
+      parsed.data.reddit_enabled !== undefined
+        ? parsed.data.reddit_enabled
+        : existing.reddit_enabled === 1;
+    if (!effectiveXEnabled && !effectiveRedditEnabled) {
+      return c.json(
+        { success: false, message: 'Active au moins une source (X ou Reddit).' },
+        400,
+      );
+    }
+    const updated = updateProduct(id, parsed.data);
+    return c.json({ success: true, product: updated ? maskProduct(updated) : null });
+  });
+
+  app.delete('/api/products/:id', (c) => {
+    const id = c.req.param('id');
+    const hard = c.req.query('hard') === 'true';
+    if (id === DEFAULT_PRODUCT_ID) {
+      return c.json(
+        { success: false, message: 'Le produit par defaut ne peut pas etre supprime.' },
+        400,
+      );
+    }
+    const existing = getProduct(id);
+    if (!existing) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    if (hard) {
+      const ok = deleteProductHard(id);
+      if (!ok) {
+        return c.json({ success: false, message: 'Suppression impossible.' }, 400);
+      }
+      return c.json({ success: true, message: 'Produit supprime definitivement.' });
+    }
+    const ok = archiveProduct(id);
+    if (!ok) {
+      return c.json({ success: false, message: 'Produit deja archive.' }, 400);
+    }
+    return c.json({ success: true, message: 'Produit archive.' });
+  });
+
+  app.get('/api/products/:id/settings', (c) => {
+    const id = c.req.param('id');
+    if (!getProduct(id)) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    const settings = getProductSettings(id).map((s) =>
+      isCredentialKey(s.key) && s.value ? { ...s, value: maskCredential(s.value) } : s,
+    );
+    return c.json(settings);
+  });
+
+  app.put('/api/products/:id/settings', async (c) => {
+    const id = c.req.param('id');
+    if (!getProduct(id)) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    const body = await c.req.json();
+    const key = typeof body.key === 'string' ? body.key.trim() : '';
+    const value = body.value === null ? null : typeof body.value === 'string' ? body.value : '';
+    if (!key) {
+      return c.json({ success: false, message: 'La cle est requise.' }, 400);
+    }
+    setProductSetting(id, key, value);
+    return c.json({ success: true, message: 'Parametre du produit mis a jour.' });
+  });
+
   if (!isConfigured) {
     app.post('/api/trigger', (c) =>
       c.json({
@@ -218,7 +342,6 @@ export function startServer(
     );
     app.get('/api/runs', (c) => c.json([]));
     app.get('/api/settings', (c) => c.json([]));
-    app.get('/api/products', (c) => c.json([]));
     app.get('/api/config', (c) =>
       c.json({
         envDefaults: {},
@@ -340,118 +463,6 @@ export function startServer(
         message:
           'Cookies de session mis à jour et validés avec succès. Les prochains runs utiliseront ces valeurs.',
       });
-    });
-
-    // --- Products API ---
-
-    app.get('/api/products', (c) => {
-      const includeArchived = c.req.query('includeArchived') === 'true';
-      const products = listProducts(includeArchived).map(maskProduct);
-      return c.json(products);
-    });
-
-    app.post('/api/products', async (c) => {
-      const body = await c.req.json();
-      const parsed = productCreateSchema.safeParse(body);
-      if (!parsed.success) {
-        return c.json(
-          {
-            success: false,
-            message: 'Donnees de produit invalides.',
-            issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
-          },
-          400,
-        );
-      }
-      if (getProduct(parsed.data.id)) {
-        return c.json({ success: false, message: 'Un produit avec cet identifiant existe deja.' }, 409);
-      }
-      const product = createProduct(parsed.data);
-      return c.json({ success: true, product: maskProduct(product) });
-    });
-
-    app.get('/api/products/:id', (c) => {
-      const id = c.req.param('id');
-      const product = getProduct(id);
-      if (!product) {
-        return c.json({ success: false, message: 'Produit introuvable.' }, 404);
-      }
-      return c.json(maskProduct(product));
-    });
-
-    app.put('/api/products/:id', async (c) => {
-      const id = c.req.param('id');
-      const existing = getProduct(id);
-      if (!existing) {
-        return c.json({ success: false, message: 'Produit introuvable.' }, 404);
-      }
-      const body = await c.req.json();
-      const parsed = productUpdateSchema.safeParse(body);
-      if (!parsed.success) {
-        return c.json(
-          {
-            success: false,
-            message: 'Donnees de produit invalides.',
-            issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
-          },
-          400,
-        );
-      }
-      const updated = updateProduct(id, parsed.data);
-      return c.json({ success: true, product: updated ? maskProduct(updated) : null });
-    });
-
-    app.delete('/api/products/:id', (c) => {
-      const id = c.req.param('id');
-      const hard = c.req.query('hard') === 'true';
-      if (id === DEFAULT_PRODUCT_ID) {
-        return c.json(
-          { success: false, message: 'Le produit par defaut ne peut pas etre supprime.' },
-          400,
-        );
-      }
-      const existing = getProduct(id);
-      if (!existing) {
-        return c.json({ success: false, message: 'Produit introuvable.' }, 404);
-      }
-      if (hard) {
-        const ok = deleteProductHard(id);
-        if (!ok) {
-          return c.json({ success: false, message: 'Suppression impossible.' }, 400);
-        }
-        return c.json({ success: true, message: 'Produit supprime definitivement.' });
-      }
-      const ok = archiveProduct(id);
-      if (!ok) {
-        return c.json({ success: false, message: 'Produit deja archive.' }, 400);
-      }
-      return c.json({ success: true, message: 'Produit archive.' });
-    });
-
-    app.get('/api/products/:id/settings', (c) => {
-      const id = c.req.param('id');
-      if (!getProduct(id)) {
-        return c.json({ success: false, message: 'Produit introuvable.' }, 404);
-      }
-      const settings = getProductSettings(id).map((s) =>
-        isCredentialKey(s.key) && s.value ? { ...s, value: maskCredential(s.value) } : s,
-      );
-      return c.json(settings);
-    });
-
-    app.put('/api/products/:id/settings', async (c) => {
-      const id = c.req.param('id');
-      if (!getProduct(id)) {
-        return c.json({ success: false, message: 'Produit introuvable.' }, 404);
-      }
-      const body = await c.req.json();
-      const key = typeof body.key === 'string' ? body.key.trim() : '';
-      const value = body.value === null ? null : typeof body.value === 'string' ? body.value : '';
-      if (!key) {
-        return c.json({ success: false, message: 'La cle est requise.' }, 400);
-      }
-      setProductSetting(id, key, value);
-      return c.json({ success: true, message: 'Parametre du produit mis a jour.' });
     });
 
     // --- Summaries API ---
