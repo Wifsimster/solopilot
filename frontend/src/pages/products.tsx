@@ -25,11 +25,40 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import { ProductCreateDialog } from '@/components/product-create-dialog';
-import { AlertCircle, Plus, Archive, Loader2 } from 'lucide-react';
+import { AlertCircle, Plus, Archive, Loader2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateFr } from '@/lib/utils';
 import { useSelectedProduct } from '@/lib/product-context';
 import type { ProductRecord } from '@/types';
+
+function SourceBadges({ product }: { product: ProductRecord }) {
+  const xActive = product.x_enabled;
+  const subCount = product.reddit_subreddits?.length ?? 0;
+  const redditActive = product.reddit_enabled && subCount > 0;
+
+  if (!xActive && !redditActive) {
+    return <span className="text-xs text-muted-foreground">Aucune</span>;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {xActive && (
+        <Badge variant="secondary" className="text-xs" title="Source X activée">
+          X
+        </Badge>
+      )}
+      {redditActive && (
+        <Badge
+          variant="secondary"
+          className="text-xs"
+          title={`Subreddits : ${product.reddit_subreddits?.join(', ')}`}
+        >
+          r/{subCount}
+        </Badge>
+      )}
+    </div>
+  );
+}
 
 function truncate(value: string | null, max = 60): string {
   if (!value) return '—';
@@ -47,11 +76,17 @@ export function ProductsPage() {
   const { data, loading, error, refetch } = useApi<ProductRecord[]>('/api/products');
   const { selectedProductId, setSelectedProductId } = useSelectedProduct();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<ProductRecord | null>(null);
   const [archivingId, setArchivingId] = useState<string | null>(null);
 
   const handleCreated = (product: ProductRecord) => {
     refetch();
     setSelectedProductId(product.id);
+  };
+
+  const handleUpdated = () => {
+    refetch();
+    setEditingProduct(null);
   };
 
   const handleArchive = async (id: string) => {
@@ -135,6 +170,7 @@ export function ProductsPage() {
                 <TableRow>
                   <TableHead>Nom</TableHead>
                   <TableHead>Identifiant</TableHead>
+                  <TableHead>Sources</TableHead>
                   <TableHead>Requête X</TableHead>
                   <TableHead>Créé le</TableHead>
                   <TableHead>Statut</TableHead>
@@ -160,6 +196,9 @@ export function ProductsPage() {
                       <TableCell>
                         <code className="text-xs font-mono">{p.id}</code>
                       </TableCell>
+                      <TableCell>
+                        <SourceBadges product={p} />
+                      </TableCell>
                       <TableCell className="text-sm" title={p.x_query ?? ''}>
                         {truncate(p.x_query, 50)}
                       </TableCell>
@@ -182,6 +221,18 @@ export function ProductsPage() {
                               onClick={() => setSelectedProductId(p.id)}
                             >
                               Sélectionner
+                            </Button>
+                          )}
+                          {!isArchived && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setEditingProduct(p)}
+                              className="h-8 px-2"
+                              title="Éditer le produit"
+                            >
+                              <Pencil className="h-3.5 w-3.5 mr-1" />
+                              Éditer
                             </Button>
                           )}
                           {!isArchived && (
@@ -241,6 +292,16 @@ export function ProductsPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={handleCreated}
+      />
+
+      <ProductCreateDialog
+        open={!!editingProduct}
+        onOpenChange={(open) => {
+          if (!open) setEditingProduct(null);
+        }}
+        mode="edit"
+        initialValues={editingProduct}
+        onUpdated={handleUpdated}
       />
     </div>
   );

@@ -11,6 +11,9 @@ export interface Product {
   ai_prompt_override: string | null;
   collect_cron: string | null;
   publish_cron: string | null;
+  x_enabled: boolean;
+  reddit_enabled: boolean;
+  reddit_subreddits: string[] | null;
   created_at: number;
   archived_at: number | null;
 }

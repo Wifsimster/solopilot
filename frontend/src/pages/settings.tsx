@@ -57,6 +57,9 @@ export function SettingsPage() {
       </div>
 
       <CookiesCard credentialInfo={credentialInfo} onSaved={refetch} />
+      <p className="text-xs text-muted-foreground -mt-2">
+        Reddit ne nécessite pas d'authentification.
+      </p>
       <GraphqlCard envDefaults={config.envDefaults} onSaved={refetch} />
     </div>
   );
