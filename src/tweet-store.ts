@@ -2,15 +2,20 @@ import { getDb, DEFAULT_PRODUCT_ID } from './db.js';
 import type { Item, ItemSource, Tweet } from './ports.js';
 import { logger } from './logger.js';
 
+export interface StoreItemsResult {
+  inserted: number;
+  insertedIds: string[];
+}
+
 /**
  * Stores items with deduplication via INSERT OR IGNORE on item ID (source-prefixed).
- * Returns the count of newly inserted items.
+ * Returns the count and IDs of newly inserted items (duplicates excluded).
  */
 export function storeItems(
   items: Item[],
   collectionDate: string,
   productId: string = DEFAULT_PRODUCT_ID,
-): number {
+): StoreItemsResult {
   const db = getDb();
   const insert = db.prepare(
     `INSERT OR IGNORE INTO tweets (id, text, created_at, urls, collection_date, product_id, source, author, url)
@@ -18,7 +23,7 @@ export function storeItems(
   );
 
   const insertMany = db.transaction((rows: Item[]) => {
-    let inserted = 0;
+    const insertedIds: string[] = [];
     for (const item of rows) {
       const result = insert.run(
         item.id,
@@ -31,12 +36,13 @@ export function storeItems(
         item.author,
         item.url,
       );
-      if (result.changes > 0) inserted++;
+      if (result.changes > 0) insertedIds.push(item.id);
     }
-    return inserted;
+    return insertedIds;
   });
 
-  const inserted = insertMany(items);
+  const insertedIds = insertMany(items);
+  const inserted = insertedIds.length;
   const bySource: Record<string, number> = {};
   for (const it of items) {
     bySource[it.source] = (bySource[it.source] ?? 0) + 1;
@@ -49,7 +55,7 @@ export function storeItems(
     productId,
     bySource,
   });
-  return inserted;
+  return { inserted, insertedIds };
 }
 
 /**
@@ -59,7 +65,7 @@ export function storeTweets(
   tweets: Tweet[],
   collectionDate: string,
   productId: string = DEFAULT_PRODUCT_ID,
-): number {
+): StoreItemsResult {
   return storeItems(tweets, collectionDate, productId);
 }
 

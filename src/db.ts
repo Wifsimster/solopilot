@@ -51,6 +51,19 @@ export interface ProductRecord {
   reddit_subreddits: string | null;
   hn_enabled: number;
   hn_keywords: string | null;
+  intent_enabled: number;
+  intent_keywords: string | null;
+}
+
+export interface IntentSignalRecord {
+  id: number;
+  item_id: string;
+  product_id: string;
+  source: string;
+  matched_pattern: string;
+  status: string;
+  notes: string | null;
+  created_at: number;
 }
 
 export interface ProductSettingRecord {
@@ -126,6 +139,24 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'products', 'reddit_subreddits', `TEXT`);
   addColumnIfMissing(database, 'products', 'hn_enabled', `INTEGER NOT NULL DEFAULT 0`);
   addColumnIfMissing(database, 'products', 'hn_keywords', `TEXT`);
+  addColumnIfMissing(database, 'products', 'intent_enabled', `INTEGER NOT NULL DEFAULT 0`);
+  addColumnIfMissing(database, 'products', 'intent_keywords', `TEXT`);
+
+  database.exec(`CREATE TABLE IF NOT EXISTS intent_signals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id TEXT NOT NULL,
+    product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    matched_pattern TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'new',
+    notes TEXT,
+    created_at INTEGER NOT NULL,
+    UNIQUE(item_id, product_id, matched_pattern)
+  )`);
+
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_intent_signals_product_status ON intent_signals(product_id, status, created_at DESC)`,
+  );
 
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_tweets_product_collection ON tweets(product_id, collection_date, used_in_run_id)`,

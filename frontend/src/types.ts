@@ -94,6 +94,24 @@ export interface ProductRecord {
   reddit_subreddits: string[] | null;
   hn_enabled: boolean;
   hn_keywords: string[] | null;
+  intent_enabled: boolean;
+  intent_keywords: string[];
   created_at: number;
   archived_at: number | null;
+}
+
+export type IntentSignalStatus = 'new' | 'snoozed' | 'dismissed' | 'replied';
+
+export interface IntentSignal {
+  id: number;
+  item_id: string;
+  product_id: string;
+  source: FeedItemSource;
+  matched_pattern: string;
+  status: IntentSignalStatus;
+  notes: string | null;
+  created_at: number;
+  text: string;
+  author: string;
+  url: string;
 }

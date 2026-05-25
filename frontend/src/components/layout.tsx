@@ -10,7 +10,7 @@ import {
   SelectItem,
 } from '@/components/ui/select';
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { BrainCircuit, Menu, Plus } from 'lucide-react';
+import { BrainCircuit, Menu, Plus, Target } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSelectedProduct, DEFAULT_PRODUCT_ID } from '@/lib/product-context';
 import { ProductCreateDialog } from '@/components/product-create-dialog';
@@ -152,6 +152,12 @@ export function Layout() {
             <NavLink to="/products" className={navLinkClass}>
               Produits
             </NavLink>
+            <NavLink to="/leads" className={navLinkClass}>
+              <span className="inline-flex items-center gap-1">
+                <Target className="h-3.5 w-3.5" />
+                Opportunités
+              </span>
+            </NavLink>
             <NavLink to="/settings" className={navLinkClass}>
               Paramètres
             </NavLink>
@@ -197,6 +203,12 @@ export function Layout() {
                 </NavLink>
                 <NavLink to="/products" className={mobileNavLinkClass}>
                   Produits
+                </NavLink>
+                <NavLink to="/leads" className={mobileNavLinkClass}>
+                  <span className="inline-flex items-center gap-2">
+                    <Target className="h-4 w-4" />
+                    Opportunités
+                  </span>
                 </NavLink>
                 <NavLink to="/settings" className={mobileNavLinkClass}>
                   Paramètres
