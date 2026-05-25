@@ -53,6 +53,8 @@ export interface ProductRecord {
   hn_keywords: string | null;
   intent_enabled: number;
   intent_keywords: string | null;
+  product_description: string | null;
+  reply_voice: string | null;
 }
 
 export interface IntentSignalRecord {
@@ -64,6 +66,11 @@ export interface IntentSignalRecord {
   status: string;
   notes: string | null;
   created_at: number;
+  ai_score: number | null;
+  ai_explanation: string | null;
+  ai_drafted_reply: string | null;
+  ai_processed_at: number | null;
+  ai_error: string | null;
 }
 
 export interface ProductSettingRecord {
@@ -141,6 +148,8 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'products', 'hn_keywords', `TEXT`);
   addColumnIfMissing(database, 'products', 'intent_enabled', `INTEGER NOT NULL DEFAULT 0`);
   addColumnIfMissing(database, 'products', 'intent_keywords', `TEXT`);
+  addColumnIfMissing(database, 'products', 'product_description', `TEXT`);
+  addColumnIfMissing(database, 'products', 'reply_voice', `TEXT`);
 
   database.exec(`CREATE TABLE IF NOT EXISTS intent_signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,6 +166,12 @@ function runProductMigrations(database: Database.Database) {
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_intent_signals_product_status ON intent_signals(product_id, status, created_at DESC)`,
   );
+
+  addColumnIfMissing(database, 'intent_signals', 'ai_score', `INTEGER`);
+  addColumnIfMissing(database, 'intent_signals', 'ai_explanation', `TEXT`);
+  addColumnIfMissing(database, 'intent_signals', 'ai_drafted_reply', `TEXT`);
+  addColumnIfMissing(database, 'intent_signals', 'ai_processed_at', `INTEGER`);
+  addColumnIfMissing(database, 'intent_signals', 'ai_error', `TEXT`);
 
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_tweets_product_collection ON tweets(product_id, collection_date, used_in_run_id)`,

@@ -26,6 +26,16 @@ const intentKeywordSchema = z
   .min(2, { message: 'Mot-cle d\'intention trop court (min 2 caracteres).' })
   .max(128, { message: 'Mot-cle d\'intention trop long (max 128 caracteres).' });
 
+export const REPLY_VOICES = ['decontractee', 'professionnelle', 'directe', 'aidante'] as const;
+export type ReplyVoice = (typeof REPLY_VOICES)[number];
+
+const replyVoiceSchema = z.enum(REPLY_VOICES, {
+  errorMap: () => ({
+    message:
+      'Voix de reponse invalide (decontractee, professionnelle, directe ou aidante).',
+  }),
+});
+
 const productBaseSchema = z.object({
   id: slugSchema,
   name: z.string().min(1).max(120),
@@ -60,6 +70,12 @@ const productBaseSchema = z.object({
     .max(30, { message: 'Trop de mots-cles d\'intention (max 30).' })
     .optional()
     .nullable(),
+  product_description: z
+    .string()
+    .max(2000, { message: 'La description du produit est trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  reply_voice: replyVoiceSchema.optional().nullable(),
 });
 
 export const productCreateSchema = productBaseSchema
@@ -195,8 +211,8 @@ export function isProductActive(id: string): boolean {
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
-    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords, product_description, reply_voice)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.name,
@@ -219,6 +235,8 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
     input.intent_keywords && input.intent_keywords.length > 0
       ? JSON.stringify(input.intent_keywords)
       : null,
+    input.product_description ?? null,
+    input.reply_voice ?? null,
   );
   logger.info('Product created', { productId: input.id });
   return getProduct(input.id)!;
@@ -292,6 +310,14 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
         ? JSON.stringify(patch.intent_keywords)
         : null,
     );
+  }
+  if (patch.product_description !== undefined) {
+    sets.push('product_description = ?');
+    values.push(patch.product_description ?? null);
+  }
+  if (patch.reply_voice !== undefined) {
+    sets.push('reply_voice = ?');
+    values.push(patch.reply_voice ?? null);
   }
 
   if (sets.length === 0) {

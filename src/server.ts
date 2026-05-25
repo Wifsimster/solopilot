@@ -64,6 +64,8 @@ import { DEFAULT_PRODUCT_ID } from './db.js';
 import {
   listIntentSignals,
   updateIntentSignal,
+  analyzeIntentSignal,
+  IntentSignalNotFoundError,
   intentSignalListQuerySchema,
   intentSignalPatchSchema,
 } from './intent-service.js';
@@ -416,6 +418,29 @@ export function startServer(
       return c.json({ success: false, message: 'Signal introuvable.' }, 404);
     }
     return c.json(updated);
+  });
+
+  app.post('/api/intent-signals/:id/analyze', async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id < 1) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    try {
+      const updated = await analyzeIntentSignal(id);
+      return c.json(updated);
+    } catch (err) {
+      if (err instanceof IntentSignalNotFoundError) {
+        return c.json({ success: false, message: 'Signal introuvable.' }, 404);
+      }
+      logger.error('Intent signal analysis error', {
+        signalId: id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return c.json(
+        { success: false, message: 'Erreur interne lors de l\'analyse.' },
+        500,
+      );
+    }
   });
 
   if (!isConfigured) {
