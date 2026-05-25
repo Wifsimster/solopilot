@@ -35,8 +35,10 @@ function SourceBadges({ product }: { product: ProductRecord }) {
   const xActive = product.x_enabled;
   const subCount = product.reddit_subreddits?.length ?? 0;
   const redditActive = product.reddit_enabled && subCount > 0;
+  const hnCount = product.hn_keywords?.length ?? 0;
+  const hnActive = product.hn_enabled && hnCount > 0;
 
-  if (!xActive && !redditActive) {
+  if (!xActive && !redditActive && !hnActive) {
     return <span className="text-xs text-muted-foreground">Aucune</span>;
   }
 
@@ -54,6 +56,15 @@ function SourceBadges({ product }: { product: ProductRecord }) {
           title={`Subreddits : ${product.reddit_subreddits?.join(', ')}`}
         >
           r/{subCount}
+        </Badge>
+      )}
+      {hnActive && (
+        <Badge
+          variant="secondary"
+          className="text-xs"
+          title={`Mots-clés Hacker News : ${product.hn_keywords?.join(', ')}`}
+        >
+          hn:{hnCount}
         </Badge>
       )}
     </div>

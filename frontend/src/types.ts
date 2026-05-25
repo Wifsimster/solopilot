@@ -70,7 +70,7 @@ export interface ApiMessage {
   message: string;
 }
 
-export type FeedItemSource = 'x' | 'reddit';
+export type FeedItemSource = 'x' | 'reddit' | 'hn';
 
 export interface TweetRecord {
   id: string;
@@ -92,6 +92,8 @@ export interface ProductRecord {
   x_enabled: boolean;
   reddit_enabled: boolean;
   reddit_subreddits: string[] | null;
+  hn_enabled: boolean;
+  hn_keywords: string[] | null;
   created_at: number;
   archived_at: number | null;
 }
