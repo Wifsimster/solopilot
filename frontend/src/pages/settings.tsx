@@ -2,9 +2,8 @@ import { useApi } from '@/hooks/use-api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CookiesCard } from '@/components/settings/cookies-card';
-import { BotBehaviorCard } from '@/components/settings/bot-behavior-card';
-import { DiscordCard } from '@/components/settings/discord-card';
 import { GraphqlCard } from '@/components/settings/graphql-card';
+import { ProductSettingsCard } from '@/components/settings/product-settings-card';
 import type { ConfigResponse } from '@/types';
 
 export function SettingsPage() {
@@ -25,15 +24,15 @@ export function SettingsPage() {
     );
   }
 
-  const { envDefaults, credentialInfo } = config;
+  const { credentialInfo } = config;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Paramètres</h1>
         <p className="text-muted-foreground">
-          Configuration du bot — les valeurs personnalisées prennent le pas sur les variables
-          d'environnement
+          Configuration globale (identité X) et configuration par produit (requête, webhook,
+          plannings, prompt IA).
         </p>
       </div>
 
@@ -48,10 +47,17 @@ export function SettingsPage() {
         </Alert>
       )}
 
+      <ProductSettingsCard />
+
+      <div>
+        <h2 className="text-base font-semibold mb-1">Paramètres globaux</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Ces paramètres s'appliquent à l'ensemble des produits (identité X partagée).
+        </p>
+      </div>
+
       <CookiesCard credentialInfo={credentialInfo} onSaved={refetch} />
-      <BotBehaviorCard envDefaults={envDefaults} onSaved={refetch} />
-      <DiscordCard credentialInfo={credentialInfo} onSaved={refetch} />
-      <GraphqlCard envDefaults={envDefaults} onSaved={refetch} />
+      <GraphqlCard envDefaults={config.envDefaults} onSaved={refetch} />
     </div>
   );
 }

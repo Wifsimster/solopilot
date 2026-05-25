@@ -76,3 +76,15 @@ export interface TweetRecord {
   createdAt: string;
   urls: string[];
 }
+
+export interface ProductRecord {
+  id: string;
+  name: string;
+  x_query: string | null;
+  discord_webhook: string | null;
+  ai_prompt_override: string | null;
+  collect_cron: string | null;
+  publish_cron: string | null;
+  created_at: number;
+  archived_at: number | null;
+}

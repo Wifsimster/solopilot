@@ -25,6 +25,7 @@ import {
 import { buttonVariants } from "@/components/ui/button";
 import { Calendar, TrendingUp, Loader2, Send, Check, X, Search, RotateCcw, Trash2, RefreshCw, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
+import { useSelectedProduct, withProductId } from "@/lib/product-context";
 import type { RunRecord, MonthlySummaryRecord, AvailableMonth, ConfigResponse } from "@/types";
 
 const MONTH_NAMES = [
@@ -62,6 +63,7 @@ export function SummariesPage() {
 }
 
 function DailyView() {
+  const { selectedProductId } = useSelectedProduct();
   const [page, setPage] = useState(0);
   const [filterMonth, setFilterMonth] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -83,9 +85,12 @@ function DailyView() {
   if (debouncedSearch) params.set("search", debouncedSearch);
 
   const { data, loading, refetch } = useApi<{ summaries: RunRecord[]; total: number }>(
-    `/api/summaries?${params.toString()}`
+    `/api/summaries?${params.toString()}`,
+    { productId: selectedProductId }
   );
-  const { data: available } = useApi<AvailableMonth[]>("/api/monthly-summaries/available");
+  const { data: available } = useApi<AvailableMonth[]>("/api/monthly-summaries/available", {
+    productId: selectedProductId,
+  });
   const { data: configData } = useApi<ConfigResponse>("/api/config");
   const discordConfigured = !!configData?.credentialInfo.discordWebhookMasked;
 
@@ -200,6 +205,7 @@ function DailyView() {
 }
 
 function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; discordConfigured: boolean; onMutate: () => void }) {
+  const { selectedProductId } = useSelectedProduct();
   const [expanded, setExpanded] = useState(false);
   const [sending, setSending] = useState(false);
   const [notifStatus, setNotifStatus] = useState(run.notification_status);
@@ -212,7 +218,7 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
   const handleSendDiscord = async () => {
     setSending(true);
     try {
-      const res = await fetch(`/api/runs/${run.id}/send-discord`, {
+      const res = await fetch(withProductId(`/api/runs/${run.id}/send-discord`, selectedProductId), {
         method: "POST",
       });
       const data = await res.json();
@@ -232,7 +238,9 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      const res = await fetch(`/api/summaries/${run.id}`, { method: "DELETE" });
+      const res = await fetch(withProductId(`/api/summaries/${run.id}`, selectedProductId), {
+        method: "DELETE",
+      });
       const data = await res.json();
       if (data.success) {
         toast.success("Résumé supprimé");
@@ -251,7 +259,9 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
     setRerunning(true);
     setRerunResult(null);
     try {
-      const res = await fetch(`/api/summaries/${run.id}/rerun`, { method: "POST" });
+      const res = await fetch(withProductId(`/api/summaries/${run.id}/rerun`, selectedProductId), {
+        method: "POST",
+      });
       const data = await res.json();
       if (data.success) {
         setRerunResult("success");
@@ -405,8 +415,15 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
 }
 
 function MonthlyView() {
-  const { data: available, loading: loadingAvailable } = useApi<AvailableMonth[]>("/api/monthly-summaries/available");
-  const { data: existingSummaries, loading: loadingSummaries, refetch } = useApi<MonthlySummaryRecord[]>("/api/monthly-summaries");
+  const { selectedProductId } = useSelectedProduct();
+  const { data: available, loading: loadingAvailable } = useApi<AvailableMonth[]>(
+    "/api/monthly-summaries/available",
+    { productId: selectedProductId }
+  );
+  const { data: existingSummaries, loading: loadingSummaries, refetch } = useApi<MonthlySummaryRecord[]>(
+    "/api/monthly-summaries",
+    { productId: selectedProductId }
+  );
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [generating, setGenerating] = useState(false);
@@ -427,7 +444,7 @@ function MonthlyView() {
     if (!selectedYear || !selectedMonth) return;
     setGenerating(true);
     try {
-      const res = await fetch("/api/monthly-summaries/generate", {
+      const res = await fetch(withProductId("/api/monthly-summaries/generate", selectedProductId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ year: Number(selectedYear), month: Number(selectedMonth) }),
