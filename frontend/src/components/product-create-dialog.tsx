@@ -23,7 +23,7 @@ import {
 import { toast } from 'sonner';
 import { X as XIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ProductRecord, ReplyVoice } from '@/types';
+import type { ContentLanguage, ContentVoice, ProductRecord, ReplyVoice } from '@/types';
 
 const PRODUCT_DESCRIPTION_MAX = 2000;
 const REPLY_VOICE_DEFAULT_LABEL = 'Par défaut (professionnelle)';
@@ -35,6 +35,30 @@ const REPLY_VOICE_OPTIONS: { value: ReplyVoice; label: string }[] = [
 ];
 const REPLY_VOICE_VALUES: ReplyVoice[] = REPLY_VOICE_OPTIONS.map((o) => o.value);
 const REPLY_VOICE_NONE = '__none__';
+
+const TARGET_AUDIENCE_MAX = 500;
+const VALUE_PROP_MIN = 3;
+const VALUE_PROP_MAX = 200;
+const VALUE_PROPS_MAX = 10;
+const CTA_MIN = 3;
+const CTA_MAX = 200;
+const CTAS_MAX = 5;
+const CONTENT_VOICE_DEFAULT_LABEL = 'Par défaut (professionnelle)';
+const CONTENT_VOICE_OPTIONS: { value: ContentVoice; label: string }[] = [
+  { value: 'decontractee', label: 'Décontractée' },
+  { value: 'professionnelle', label: 'Professionnelle' },
+  { value: 'directe', label: 'Directe' },
+  { value: 'aidante', label: 'Aidante' },
+];
+const CONTENT_VOICE_VALUES: ContentVoice[] = CONTENT_VOICE_OPTIONS.map((o) => o.value);
+const CONTENT_VOICE_NONE = '__none__';
+const CONTENT_LANGUAGE_OPTIONS: { value: ContentLanguage; label: string }[] = [
+  { value: 'fr', label: 'Français' },
+  { value: 'en', label: 'English' },
+];
+const CONTENT_LANGUAGE_VALUES: ContentLanguage[] = CONTENT_LANGUAGE_OPTIONS.map(
+  (o) => o.value,
+);
 
 type DialogMode = 'create' | 'edit';
 
@@ -96,6 +120,16 @@ export function ProductCreateDialog({
   const [aiPromptOverride, setAiPromptOverride] = useState('');
   const [productDescription, setProductDescription] = useState('');
   const [replyVoice, setReplyVoice] = useState<ReplyVoice | null>(null);
+  const [productUrl, setProductUrl] = useState('');
+  const [targetAudience, setTargetAudience] = useState('');
+  const [valueProps, setValueProps] = useState<string[]>([]);
+  const [valuePropInput, setValuePropInput] = useState('');
+  const [valuePropError, setValuePropError] = useState<string | null>(null);
+  const [callToActions, setCallToActions] = useState<string[]>([]);
+  const [ctaInput, setCtaInput] = useState('');
+  const [ctaError, setCtaError] = useState<string | null>(null);
+  const [contentVoice, setContentVoice] = useState<ContentVoice | null>(null);
+  const [contentLanguage, setContentLanguage] = useState<ContentLanguage | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -124,6 +158,16 @@ export function ProductCreateDialog({
       setAiPromptOverride('');
       setProductDescription('');
       setReplyVoice(null);
+      setProductUrl('');
+      setTargetAudience('');
+      setValueProps([]);
+      setValuePropInput('');
+      setValuePropError(null);
+      setCallToActions([]);
+      setCtaInput('');
+      setCtaError(null);
+      setContentVoice(null);
+      setContentLanguage(null);
       setSubmitting(false);
       setError(null);
       return;
@@ -154,6 +198,26 @@ export function ProductCreateDialog({
         initialValues.reply_voice &&
           REPLY_VOICE_VALUES.includes(initialValues.reply_voice)
           ? initialValues.reply_voice
+          : null,
+      );
+      setProductUrl(initialValues.product_url ?? '');
+      setTargetAudience(initialValues.target_audience ?? '');
+      setValueProps(initialValues.value_props ?? []);
+      setValuePropInput('');
+      setValuePropError(null);
+      setCallToActions(initialValues.call_to_actions ?? []);
+      setCtaInput('');
+      setCtaError(null);
+      setContentVoice(
+        initialValues.content_voice &&
+          CONTENT_VOICE_VALUES.includes(initialValues.content_voice)
+          ? initialValues.content_voice
+          : null,
+      );
+      setContentLanguage(
+        initialValues.content_language &&
+          CONTENT_LANGUAGE_VALUES.includes(initialValues.content_language)
+          ? initialValues.content_language
           : null,
       );
       setError(null);
@@ -354,6 +418,136 @@ export function ProductCreateDialog({
     setIntentKeywordError(null);
   };
 
+  const tryAddValueProps = (raw: string): boolean => {
+    const tokens = raw
+      .split(/[,\n]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tokens.length === 0) return false;
+
+    const tooShort = tokens.filter((t) => t.length < VALUE_PROP_MIN);
+    if (tooShort.length > 0) {
+      setValuePropError(
+        `Proposition trop courte : ${tooShort.join(', ')} (min ${VALUE_PROP_MIN} caractères).`,
+      );
+      return false;
+    }
+    const tooLong = tokens.filter((t) => t.length > VALUE_PROP_MAX);
+    if (tooLong.length > 0) {
+      setValuePropError(
+        `Proposition trop longue : ${tooLong.join(', ')} (max ${VALUE_PROP_MAX} caractères).`,
+      );
+      return false;
+    }
+
+    setValueProps((prev) => {
+      const next = [...prev];
+      for (const t of tokens) {
+        if (next.length >= VALUE_PROPS_MAX) {
+          setValuePropError(`Maximum ${VALUE_PROPS_MAX} propositions de valeur.`);
+          break;
+        }
+        if (!next.some((k) => k.toLowerCase() === t.toLowerCase())) {
+          next.push(t);
+        }
+      }
+      return next;
+    });
+    if (valueProps.length + tokens.length <= VALUE_PROPS_MAX) {
+      setValuePropError(null);
+    }
+    return true;
+  };
+
+  const handleValuePropKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      if (valuePropInput.trim()) {
+        e.preventDefault();
+        if (tryAddValueProps(valuePropInput)) {
+          setValuePropInput('');
+        }
+      }
+    } else if (e.key === 'Backspace' && !valuePropInput && valueProps.length > 0) {
+      setValueProps((prev) => prev.slice(0, -1));
+    }
+  };
+
+  const handleValuePropBlur = () => {
+    if (valuePropInput.trim()) {
+      if (tryAddValueProps(valuePropInput)) {
+        setValuePropInput('');
+      }
+    }
+  };
+
+  const removeValueProp = (vp: string) => {
+    setValueProps((prev) => prev.filter((k) => k !== vp));
+    setValuePropError(null);
+  };
+
+  const tryAddCtas = (raw: string): boolean => {
+    const tokens = raw
+      .split(/[,\n]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tokens.length === 0) return false;
+
+    const tooShort = tokens.filter((t) => t.length < CTA_MIN);
+    if (tooShort.length > 0) {
+      setCtaError(`CTA trop court : ${tooShort.join(', ')} (min ${CTA_MIN} caractères).`);
+      return false;
+    }
+    const tooLong = tokens.filter((t) => t.length > CTA_MAX);
+    if (tooLong.length > 0) {
+      setCtaError(`CTA trop long : ${tooLong.join(', ')} (max ${CTA_MAX} caractères).`);
+      return false;
+    }
+
+    setCallToActions((prev) => {
+      const next = [...prev];
+      for (const t of tokens) {
+        if (next.length >= CTAS_MAX) {
+          setCtaError(`Maximum ${CTAS_MAX} calls to action.`);
+          break;
+        }
+        if (!next.some((k) => k.toLowerCase() === t.toLowerCase())) {
+          next.push(t);
+        }
+      }
+      return next;
+    });
+    if (callToActions.length + tokens.length <= CTAS_MAX) {
+      setCtaError(null);
+    }
+    return true;
+  };
+
+  const handleCtaKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      if (ctaInput.trim()) {
+        e.preventDefault();
+        if (tryAddCtas(ctaInput)) {
+          setCtaInput('');
+        }
+      }
+    } else if (e.key === 'Backspace' && !ctaInput && callToActions.length > 0) {
+      setCallToActions((prev) => prev.slice(0, -1));
+    }
+  };
+
+  const handleCtaBlur = () => {
+    if (ctaInput.trim()) {
+      if (tryAddCtas(ctaInput)) {
+        setCtaInput('');
+      }
+    }
+  };
+
+  const removeCta = (cta: string) => {
+    setCallToActions((prev) => prev.filter((k) => k !== cta));
+    setCtaError(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
@@ -475,6 +669,69 @@ export function ProductCreateDialog({
       return;
     }
 
+    const trimmedProductUrl = productUrl.trim();
+    if (trimmedProductUrl && !/^https?:\/\//i.test(trimmedProductUrl)) {
+      setError("L'URL du produit doit commencer par http:// ou https://.");
+      return;
+    }
+
+    if (targetAudience.length > TARGET_AUDIENCE_MAX) {
+      setError(`Audience cible trop longue (max ${TARGET_AUDIENCE_MAX} caractères).`);
+      return;
+    }
+
+    // Flush pending value-prop input
+    let pendingValueProps = valueProps;
+    if (valuePropInput.trim()) {
+      if (!tryAddValueProps(valuePropInput)) {
+        setError('Corrige les propositions de valeur invalides avant de continuer.');
+        return;
+      }
+      const tokens = valuePropInput
+        .split(/[,\n]+/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+      const merged = [...pendingValueProps];
+      for (const t of tokens) {
+        if (merged.length >= VALUE_PROPS_MAX) break;
+        if (!merged.some((k) => k.toLowerCase() === t.toLowerCase())) {
+          merged.push(t);
+        }
+      }
+      pendingValueProps = merged;
+      setValuePropInput('');
+    }
+    if (pendingValueProps.length > VALUE_PROPS_MAX) {
+      setError(`Maximum ${VALUE_PROPS_MAX} propositions de valeur.`);
+      return;
+    }
+
+    // Flush pending CTA input
+    let pendingCtas = callToActions;
+    if (ctaInput.trim()) {
+      if (!tryAddCtas(ctaInput)) {
+        setError('Corrige les CTA invalides avant de continuer.');
+        return;
+      }
+      const tokens = ctaInput
+        .split(/[,\n]+/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+      const merged = [...pendingCtas];
+      for (const t of tokens) {
+        if (merged.length >= CTAS_MAX) break;
+        if (!merged.some((k) => k.toLowerCase() === t.toLowerCase())) {
+          merged.push(t);
+        }
+      }
+      pendingCtas = merged;
+      setCtaInput('');
+    }
+    if (pendingCtas.length > CTAS_MAX) {
+      setError(`Maximum ${CTAS_MAX} calls to action.`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = {
@@ -550,6 +807,42 @@ export function ProductCreateDialog({
         body.reply_voice = null;
       }
       // edit mode + null: omit to preserve existing voice
+
+      // Studio fields — same omit-when-blank semantics in edit mode.
+      if (trimmedProductUrl) {
+        body.product_url = trimmedProductUrl;
+      } else if (!isEdit) {
+        body.product_url = null;
+      }
+
+      const trimmedAudience = targetAudience.trim();
+      if (trimmedAudience) {
+        body.target_audience = trimmedAudience;
+      } else if (!isEdit) {
+        body.target_audience = null;
+      }
+
+      // Chip arrays: in edit mode, omit when empty to preserve existing
+      // (consistent with HN/intent which keep arrays tied to a toggle, but
+      // here we don't have a toggle, so the chip count is the source of truth).
+      if (pendingValueProps.length > 0 || !isEdit) {
+        body.value_props = pendingValueProps;
+      }
+      if (pendingCtas.length > 0 || !isEdit) {
+        body.call_to_actions = pendingCtas;
+      }
+
+      if (contentVoice !== null) {
+        body.content_voice = contentVoice;
+      } else if (!isEdit) {
+        body.content_voice = null;
+      }
+
+      if (contentLanguage !== null) {
+        body.content_language = contentLanguage;
+      } else if (!isEdit) {
+        body.content_language = null;
+      }
 
       const url = isEdit
         ? `/api/products/${encodeURIComponent(trimmedId)}`
@@ -975,6 +1268,201 @@ export function ProductCreateDialog({
                   Ton utilisé pour les brouillons de réponse générés par l'IA.
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* Studio section */}
+          <div className="space-y-4 rounded-lg border p-4">
+            <div>
+              <h3 className="text-sm font-semibold">Studio de contenu</h3>
+              <p className="text-xs text-muted-foreground">
+                Configuration utilisée pour générer des drafts de posts marketing.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="product-url">URL du produit</Label>
+              <Input
+                id="product-url"
+                type="url"
+                value={productUrl}
+                onChange={(e) => setProductUrl(e.target.value)}
+                placeholder="https://exemple.com"
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">
+                URL principale (doit commencer par http:// ou https://).
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="product-target-audience">Audience cible</Label>
+              <Textarea
+                id="product-target-audience"
+                value={targetAudience}
+                onChange={(e) => setTargetAudience(e.target.value)}
+                placeholder="Ex: makers SaaS B2B francophones, PMs scale-up."
+                rows={3}
+                maxLength={TARGET_AUDIENCE_MAX}
+              />
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Décris brièvement à qui s'adresse le produit.
+                </p>
+                <span
+                  className={cn(
+                    'text-xs tabular-nums',
+                    targetAudience.length > TARGET_AUDIENCE_MAX
+                      ? 'text-destructive'
+                      : 'text-muted-foreground',
+                  )}
+                >
+                  {targetAudience.length}/{TARGET_AUDIENCE_MAX}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="product-value-props">Propositions de valeur</Label>
+              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
+                {valueProps.map((vp) => (
+                  <Badge key={vp} variant="secondary" className="gap-1 pl-2 pr-1">
+                    {vp}
+                    <button
+                      type="button"
+                      onClick={() => removeValueProp(vp)}
+                      className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
+                      aria-label={`Retirer ${vp}`}
+                    >
+                      <XIcon className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+                <input
+                  id="product-value-props"
+                  type="text"
+                  value={valuePropInput}
+                  onChange={(e) => {
+                    setValuePropInput(e.target.value);
+                    if (valuePropError) setValuePropError(null);
+                  }}
+                  onKeyDown={handleValuePropKeyDown}
+                  onBlur={handleValuePropBlur}
+                  placeholder={
+                    valueProps.length === 0
+                      ? 'Ex: scrape sans API officielle, résumé IA français'
+                      : ''
+                  }
+                  title="Ex: scrape sans API officielle, résumé IA français"
+                  className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Tape une proposition puis Entrée ou virgule ({VALUE_PROP_MIN} à {VALUE_PROP_MAX} caractères, {VALUE_PROPS_MAX} max).
+              </p>
+              {valuePropError && (
+                <p className="text-xs text-destructive" role="alert">
+                  {valuePropError}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="product-ctas">Calls to action</Label>
+              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
+                {callToActions.map((cta) => (
+                  <Badge key={cta} variant="secondary" className="gap-1 pl-2 pr-1">
+                    {cta}
+                    <button
+                      type="button"
+                      onClick={() => removeCta(cta)}
+                      className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
+                      aria-label={`Retirer ${cta}`}
+                    >
+                      <XIcon className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+                <input
+                  id="product-ctas"
+                  type="text"
+                  value={ctaInput}
+                  onChange={(e) => {
+                    setCtaInput(e.target.value);
+                    if (ctaError) setCtaError(null);
+                  }}
+                  onKeyDown={handleCtaKeyDown}
+                  onBlur={handleCtaBlur}
+                  placeholder={
+                    callToActions.length === 0
+                      ? 'Ex: Essaie gratuit sur ton subreddit, Demande une démo'
+                      : ''
+                  }
+                  title="Ex: Essaie gratuit sur ton subreddit, Demande une démo"
+                  className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Tape un CTA puis Entrée ou virgule ({CTA_MIN} à {CTA_MAX} caractères, {CTAS_MAX} max).
+              </p>
+              {ctaError && (
+                <p className="text-xs text-destructive" role="alert">
+                  {ctaError}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="product-content-voice">Voix éditoriale pour les posts</Label>
+              <Select
+                value={contentVoice ?? CONTENT_VOICE_NONE}
+                onValueChange={(value) =>
+                  setContentVoice(
+                    value === CONTENT_VOICE_NONE ? null : (value as ContentVoice),
+                  )
+                }
+              >
+                <SelectTrigger id="product-content-voice">
+                  <SelectValue placeholder={CONTENT_VOICE_DEFAULT_LABEL} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={CONTENT_VOICE_NONE}>
+                    {CONTENT_VOICE_DEFAULT_LABEL}
+                  </SelectItem>
+                  {CONTENT_VOICE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Différente de la voix des réponses si tu veux.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="product-content-language">Langue des posts</Label>
+              <Select
+                value={contentLanguage ?? 'fr'}
+                onValueChange={(value) =>
+                  setContentLanguage(value as ContentLanguage)
+                }
+              >
+                <SelectTrigger id="product-content-language">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CONTENT_LANGUAGE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Français par défaut.
+              </p>
             </div>
           </div>
 

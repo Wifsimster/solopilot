@@ -83,6 +83,10 @@ export interface TweetRecord {
 
 export type ReplyVoice = 'decontractee' | 'professionnelle' | 'directe' | 'aidante';
 
+export type ContentVoice = 'decontractee' | 'professionnelle' | 'directe' | 'aidante';
+
+export type ContentLanguage = 'fr' | 'en';
+
 export interface ProductRecord {
   id: string;
   name: string;
@@ -100,8 +104,32 @@ export interface ProductRecord {
   intent_keywords: string[];
   product_description: string | null;
   reply_voice: ReplyVoice | null;
+  product_url: string | null;
+  target_audience: string | null;
+  value_props: string[];
+  call_to_actions: string[];
+  content_voice: ContentVoice | null;
+  content_language: ContentLanguage | null;
   created_at: number;
   archived_at: number | null;
+}
+
+export type ContentDraftStatus = 'pending' | 'edited' | 'used' | 'discarded';
+
+export type TargetSource = 'x' | 'reddit' | 'generic';
+
+export interface ContentDraft {
+  id: number;
+  product_id: string;
+  kind: 'post';
+  target_source: TargetSource | null;
+  angle: string | null;
+  text: string;
+  edited_text: string | null;
+  status: ContentDraftStatus;
+  used_on: string | null;
+  generated_at: number;
+  used_at: number | null;
 }
 
 export type IntentSignalStatus = 'new' | 'snoozed' | 'dismissed' | 'replied';

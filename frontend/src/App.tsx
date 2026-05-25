@@ -11,6 +11,7 @@ import { SettingsPage } from "@/pages/settings";
 import { SetupPage } from "@/pages/setup";
 import { ProductsPage } from "@/pages/products";
 import { LeadsPage } from "@/pages/leads";
+import { StudioPage } from "@/pages/studio";
 
 export function App() {
   return (
@@ -26,6 +27,7 @@ export function App() {
                 <Route path="/summaries" element={<SummariesPage />} />
                 <Route path="/products" element={<ProductsPage />} />
                 <Route path="/leads" element={<LeadsPage />} />
+                <Route path="/studio" element={<StudioPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>
             </Routes>
