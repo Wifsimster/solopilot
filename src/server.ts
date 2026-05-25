@@ -65,6 +65,7 @@ import {
   listIntentSignals,
   updateIntentSignal,
   analyzeIntentSignal,
+  rematchIntentForProductAll,
   IntentSignalNotFoundError,
   intentSignalListQuerySchema,
   intentSignalPatchSchema,
@@ -107,6 +108,16 @@ function buildEnvDefaults(config: Config, cronSchedule: string) {
 function resolveProductId(queryValue: string | undefined): string {
   if (queryValue && queryValue.trim()) return queryValue.trim();
   return DEFAULT_PRODUCT_ID;
+}
+
+function sameKeywordSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  for (let i = 0; i < sortedA.length; i++) {
+    if (sortedA[i] !== sortedB[i]) return false;
+  }
+  return true;
 }
 
 function maskProduct(product: import('./db.js').ProductRecord): ProductView {
@@ -314,8 +325,48 @@ export function startServer(
         );
       }
     }
+    const existingView = toProductView(existing);
+    const previousIntentKeywords = existingView.intent_keywords;
+    const previousIntentEnabled = existingView.intent_enabled;
+
     const updated = updateProduct(id, parsed.data);
-    return c.json({ success: true, product: updated ? maskProduct(updated) : null });
+
+    let rematchScheduled = false;
+    if (updated) {
+      const updatedView = toProductView(updated);
+      const keywordsChanged = !sameKeywordSet(previousIntentKeywords, updatedView.intent_keywords);
+      const enabledFlippedOn =
+        !previousIntentEnabled && updatedView.intent_enabled && updatedView.intent_keywords.length > 0;
+
+      if (
+        updatedView.intent_enabled &&
+        updatedView.intent_keywords.length > 0 &&
+        (keywordsChanged || enabledFlippedOn)
+      ) {
+        rematchScheduled = true;
+        setImmediate(() => {
+          try {
+            const result = rematchIntentForProductAll(id);
+            logger.info('Intent rematch on keyword update', {
+              productId: id,
+              matched: result.matched,
+              scanned: result.scanned,
+            });
+          } catch (err) {
+            logger.warn('Intent rematch failed', {
+              productId: id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        });
+      }
+    }
+
+    return c.json({
+      success: true,
+      product: updated ? maskProduct(updated) : null,
+      rematchScheduled,
+    });
   });
 
   app.delete('/api/products/:id', (c) => {

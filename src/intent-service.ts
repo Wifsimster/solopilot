@@ -8,7 +8,11 @@ import { loadConfig } from './config.js';
 export const INTENT_STATUSES = ['new', 'snoozed', 'dismissed', 'replied'] as const;
 export type IntentStatus = (typeof INTENT_STATUSES)[number];
 
-export const intentStatusSchema = z.enum(INTENT_STATUSES);
+export const intentStatusSchema = z.enum(INTENT_STATUSES, {
+  errorMap: () => ({
+    message: 'Statut invalide (new, snoozed, dismissed ou replied).',
+  }),
+});
 
 export const intentSignalPatchSchema = z.object({
   status: intentStatusSchema.optional(),
@@ -122,6 +126,56 @@ export function matchIntentForProduct(
     logger.info('Intent signals matched', { productId, matched, items: rows.length });
   }
   return { matched };
+}
+
+export interface RematchIntentResult {
+  matched: number;
+  scanned: number;
+}
+
+export function rematchIntentForProductAll(productId: string): RematchIntentResult {
+  const productRecord = getProduct(productId);
+  if (!productRecord) {
+    return { matched: 0, scanned: 0 };
+  }
+  const product = toProductView(productRecord);
+  if (!product.intent_enabled || product.intent_keywords.length === 0) {
+    return { matched: 0, scanned: 0 };
+  }
+
+  const db = getDb();
+  const rows = db
+    .prepare(`SELECT id, text, source FROM tweets WHERE product_id = ?`)
+    .all(productId) as TweetTextRow[];
+
+  if (rows.length === 0) {
+    return { matched: 0, scanned: 0 };
+  }
+
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO intent_signals (item_id, product_id, source, matched_pattern, status, notes, created_at)
+     VALUES (?, ?, ?, ?, 'new', NULL, ?)`,
+  );
+
+  const insertMany = db.transaction((items: TweetTextRow[]) => {
+    let matched = 0;
+    const now = Date.now();
+    for (const item of items) {
+      const lowerText = item.text.toLowerCase();
+      for (const kw of product.intent_keywords) {
+        const lowerKw = kw.toLowerCase();
+        if (lowerKw.length === 0) continue;
+        if (lowerText.includes(lowerKw)) {
+          const result = insert.run(item.id, productId, item.source, kw, now);
+          if (result.changes > 0) matched++;
+        }
+      }
+    }
+    return matched;
+  });
+
+  const matched = insertMany(rows);
+  return { matched, scanned: rows.length };
 }
 
 export function listIntentSignals(opts: IntentSignalListOptions = {}): IntentSignalView[] {
@@ -277,13 +331,14 @@ export async function analyzeIntentSignal(signalId: number): Promise<IntentSigna
 
   const persistError = (message: string): IntentSignalView => {
     const now = Date.now();
+    const cleaned = message.trim();
     db.prepare(
       `UPDATE intent_signals
        SET ai_score = NULL, ai_explanation = NULL, ai_drafted_reply = NULL,
            ai_processed_at = ?, ai_error = ?
        WHERE id = ?`,
-    ).run(now, message, signalId);
-    logger.warn('Intent signal analysis failed', { signalId, error: message });
+    ).run(now, cleaned, signalId);
+    logger.warn('Intent signal analysis failed', { signalId, error: cleaned });
     return getIntentSignal(signalId)!;
   };
 
