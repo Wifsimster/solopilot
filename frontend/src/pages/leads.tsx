@@ -21,9 +21,10 @@ import {
   Sparkles,
   Copy,
   RefreshCw,
+  Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { IntentSignal, IntentSignalStatus } from '@/types';
+import type { IntentSignal, IntentSignalReply, IntentSignalStatus } from '@/types';
 
 const TEXT_TRUNCATE_AT = 280;
 const FETCH_LIMIT = 100;
@@ -94,6 +95,114 @@ function formatRelativeFr(epochSeconds: number): string {
   });
 }
 
+function ReplyVariantCard({
+  reply,
+  onToggleUsed,
+}: {
+  reply: IntentSignalReply;
+  onToggleUsed: (replyId: number, used: boolean) => Promise<void>;
+}) {
+  const [text, setText] = useState(reply.text);
+  const [lastSyncedText, setLastSyncedText] = useState(reply.text);
+  const [toggling, setToggling] = useState(false);
+
+  // Keep the local editable textarea in sync with the server value if the
+  // upstream reply changes (e.g. after a refetch) but preserve in-flight edits.
+  useEffect(() => {
+    if (reply.text !== lastSyncedText) {
+      if (text === lastSyncedText) {
+        setText(reply.text);
+      }
+      setLastSyncedText(reply.text);
+    }
+  }, [reply.text, lastSyncedText, text]);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Copié!');
+    } catch {
+      toast.error('Impossible de copier le brouillon.');
+    }
+  }, [text]);
+
+  const handleToggleUsed = useCallback(async () => {
+    setToggling(true);
+    try {
+      await onToggleUsed(reply.id, !reply.used);
+    } finally {
+      setToggling(false);
+    }
+  }, [onToggleUsed, reply.id, reply.used]);
+
+  return (
+    <div
+      className={`rounded-md border bg-muted/30 p-3 space-y-2 ${
+        reply.used ? 'border-l-4 border-l-emerald-500' : ''
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {reply.angle ? (
+          <Badge
+            variant={reply.used ? 'success' : 'outline'}
+            className="text-[10px] px-1.5 py-0"
+          >
+            {reply.used && <Check className="h-3 w-3 mr-1" />}
+            {reply.angle}
+          </Badge>
+        ) : (
+          reply.used && (
+            <Badge variant="success" className="text-[10px] px-1.5 py-0">
+              <Check className="h-3 w-3 mr-1" />
+              Utilisée
+            </Badge>
+          )
+        )}
+      </div>
+
+      <Textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={4}
+        aria-label="Variante de réponse"
+      />
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7"
+          onClick={handleCopy}
+          disabled={!text.trim()}
+        >
+          <Copy className="h-3.5 w-3.5 mr-1" />
+          Copier
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className={`h-7 ${
+            reply.used
+              ? 'border-emerald-500/60 text-emerald-700 dark:text-emerald-400 hover:text-emerald-700'
+              : ''
+          }`}
+          onClick={handleToggleUsed}
+          disabled={toggling}
+        >
+          {toggling ? (
+            <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+          ) : reply.used ? (
+            <Check className="h-3.5 w-3.5 mr-1" />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+          )}
+          {reply.used ? 'Marquée utilisée' : 'Marquer utilisée'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function LeadCard({
   signal,
   onMutate,
@@ -109,21 +218,22 @@ function LeadCard({
   const [savingNotes, setSavingNotes] = useState(false);
   const [busyAction, setBusyAction] = useState<IntentSignalStatus | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [replyDraft, setReplyDraft] = useState(signal.ai_drafted_reply ?? '');
-  const [lastSyncedReply, setLastSyncedReply] = useState<string | null>(
+  const [generatingVariants, setGeneratingVariants] = useState(false);
+  const [legacyReplyDraft, setLegacyReplyDraft] = useState(signal.ai_drafted_reply ?? '');
+  const [lastSyncedLegacyReply, setLastSyncedLegacyReply] = useState<string | null>(
     signal.ai_drafted_reply,
   );
 
-  // Keep the editable reply textarea in sync with the latest server value when
-  // a (re)analyze produces a new draft, but preserve in-flight user edits.
+  // Keep the editable legacy reply textarea in sync with the latest server
+  // value when a (re)analyze produces a new draft, but preserve in-flight edits.
   useEffect(() => {
-    if (signal.ai_drafted_reply !== lastSyncedReply) {
-      if (replyDraft === (lastSyncedReply ?? '')) {
-        setReplyDraft(signal.ai_drafted_reply ?? '');
+    if (signal.ai_drafted_reply !== lastSyncedLegacyReply) {
+      if (legacyReplyDraft === (lastSyncedLegacyReply ?? '')) {
+        setLegacyReplyDraft(signal.ai_drafted_reply ?? '');
       }
-      setLastSyncedReply(signal.ai_drafted_reply);
+      setLastSyncedLegacyReply(signal.ai_drafted_reply);
     }
-  }, [signal.ai_drafted_reply, lastSyncedReply, replyDraft]);
+  }, [signal.ai_drafted_reply, lastSyncedLegacyReply, legacyReplyDraft]);
 
   const isLong = signal.text.length > TEXT_TRUNCATE_AT;
   const displayedText = expanded || !isLong ? signal.text : `${signal.text.slice(0, TEXT_TRUNCATE_AT)}…`;
@@ -170,18 +280,81 @@ function LeadCard({
     }
   }, [analyzing, signal.id, onAnalyzed]);
 
-  const handleCopyReply = useCallback(async () => {
+  const handleCopyLegacyReply = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(replyDraft);
-      toast.success('Brouillon copié.');
+      await navigator.clipboard.writeText(legacyReplyDraft);
+      toast.success('Copié!');
     } catch {
       toast.error('Impossible de copier le brouillon.');
     }
-  }, [replyDraft]);
+  }, [legacyReplyDraft]);
+
+  const handleGenerateVariants = useCallback(
+    async (count: number) => {
+      if (generatingVariants) return;
+      setGeneratingVariants(true);
+      try {
+        const res = await fetch(
+          `/api/intent-signals/${signal.id}/replies/generate`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ count }),
+          },
+        );
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(json?.message || `Erreur HTTP ${res.status}`);
+          return;
+        }
+        if (json?.success === false) {
+          toast.error(json?.message || 'Échec de la génération.');
+          return;
+        }
+        toast.success('Variantes générées.');
+        onAnalyzed();
+      } catch {
+        toast.error('Erreur réseau lors de la génération.');
+      } finally {
+        setGeneratingVariants(false);
+      }
+    },
+    [generatingVariants, onAnalyzed, signal.id],
+  );
+
+  const handleToggleReplyUsed = useCallback(
+    async (replyId: number, used: boolean) => {
+      try {
+        const res = await fetch(`/api/intent-signal-replies/${replyId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ used }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json?.success === false) {
+          toast.error(json?.message || `Erreur HTTP ${res.status}`);
+          return;
+        }
+        toast.success(used ? 'Marquée utilisée.' : 'Marque retirée.');
+        onAnalyzed();
+      } catch {
+        toast.error('Erreur réseau lors de la mise à jour.');
+      }
+    },
+    [onAnalyzed],
+  );
 
   const aiAnalyzed = signal.ai_score !== null;
   const aiHasError = signal.ai_error !== null;
   const aiNotYetAnalyzed = !aiAnalyzed && !aiHasError;
+  const replies = signal.replies ?? [];
+  const hasVariants = replies.length > 0;
+  const hasLegacyReply = !hasVariants && signal.ai_drafted_reply !== null;
+  const aiRecommendsNoReply =
+    !hasVariants &&
+    !hasLegacyReply &&
+    signal.ai_score !== null &&
+    signal.ai_score < 40;
 
   return (
     <Card>
@@ -396,7 +569,50 @@ function LeadCard({
                 </div>
               )}
 
-              {signal.ai_drafted_reply !== null ? (
+              {hasVariants && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium">
+                      Variantes de réponse ({replies.length})
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Relis et adapte avant de poster.
+                    </p>
+                  </div>
+                  <div className="max-h-[480px] overflow-y-auto space-y-2 pr-1">
+                    {replies.map((reply) => (
+                      <ReplyVariantCard
+                        key={reply.id}
+                        reply={reply}
+                        onToggleUsed={handleToggleReplyUsed}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => handleGenerateVariants(3)}
+                      disabled={generatingVariants}
+                    >
+                      {generatingVariants ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          Génération...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-3 w-3 mr-1" />
+                          Générer 3 autres
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {hasLegacyReply && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <label
@@ -409,8 +625,8 @@ function LeadCard({
                       variant="outline"
                       size="sm"
                       className="h-7"
-                      onClick={handleCopyReply}
-                      disabled={!replyDraft.trim()}
+                      onClick={handleCopyLegacyReply}
+                      disabled={!legacyReplyDraft.trim()}
                     >
                       <Copy className="h-3.5 w-3.5 mr-1" />
                       Copier
@@ -418,18 +634,64 @@ function LeadCard({
                   </div>
                   <Textarea
                     id={`ai-reply-${signal.id}`}
-                    value={replyDraft}
-                    onChange={(e) => setReplyDraft(e.target.value)}
+                    value={legacyReplyDraft}
+                    onChange={(e) => setLegacyReplyDraft(e.target.value)}
                     rows={4}
                   />
                   <p className="text-xs text-muted-foreground">
                     Brouillon généré par IA — relis et adapte avant de poster.
                   </p>
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => handleGenerateVariants(3)}
+                      disabled={generatingVariants}
+                    >
+                      {generatingVariants ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          Génération...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-3 w-3 mr-1" />
+                          Générer 3 variantes
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground italic">
-                  L'IA recommande de ne pas répondre à ce lead.
-                </p>
+              )}
+
+              {aiRecommendsNoReply && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground italic">
+                    L'IA recommande de ne pas répondre à ce lead.
+                  </p>
+                  <div className="flex justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => handleGenerateVariants(3)}
+                      disabled={generatingVariants}
+                    >
+                      {generatingVariants ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          Génération...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-3 w-3 mr-1" />
+                          Générer quand même 3 variantes
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
               )}
 
               <div className="flex justify-end">
