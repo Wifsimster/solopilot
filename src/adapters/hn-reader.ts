@@ -20,6 +20,25 @@ const hnSearchSchema = z.object({
   hits: z.array(hnHitSchema).default([]),
 });
 
+const HTML_ENTITIES: Record<string, string> = {
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#x27;': "'",
+  '&apos;': "'",
+  '&#x2F;': '/',
+  '&nbsp;': ' ',
+};
+
+function sanitizeStoryText(input: string): string {
+  let out = input.replace(/<\/?p>/gi, '\n\n');
+  out = out.replace(/<[^>]+>/g, '');
+  out = out.replace(/&amp;|&lt;|&gt;|&quot;|&#x27;|&apos;|&#x2F;|&nbsp;/g, (m) => HTML_ENTITIES[m] ?? m);
+  out = out.replace(/\n{3,}/g, '\n\n');
+  return out.trim();
+}
+
 export interface HnReaderOptions {
   userAgent?: string;
 }
@@ -119,7 +138,7 @@ export function createHnReader(options: HnReaderOptions = {}): SourceReader {
 
       const title = hit.title ?? '';
       if (!title && !hit.story_text) continue;
-      const storyText = hit.story_text ?? '';
+      const storyText = hit.story_text ? sanitizeStoryText(hit.story_text) : '';
       const text = storyText ? `${title}\n\n${storyText}` : title;
       const author = hit.author ?? 'unknown';
       const itemUrl =

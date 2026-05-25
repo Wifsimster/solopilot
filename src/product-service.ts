@@ -37,20 +37,48 @@ const productBaseSchema = z.object({
   publish_cron: z.string().max(120).optional().nullable(),
   x_enabled: z.boolean().optional(),
   reddit_enabled: z.boolean().optional(),
-  reddit_subreddits: z.array(subredditNameSchema).max(50).optional().nullable(),
+  reddit_subreddits: z
+    .array(subredditNameSchema)
+    .max(50, { message: 'Trop de subreddits (max 50).' })
+    .optional()
+    .nullable(),
   hn_enabled: z.boolean().optional(),
-  hn_keywords: z.array(hnKeywordSchema).max(20).optional().nullable(),
+  hn_keywords: z
+    .array(hnKeywordSchema)
+    .max(20, { message: 'Trop de mots-cles Hacker News (max 20).' })
+    .optional()
+    .nullable(),
 });
 
-export const productCreateSchema = productBaseSchema.refine(
-  (data) => {
-    const x = data.x_enabled !== false;
-    const reddit = data.reddit_enabled === true;
-    const hn = data.hn_enabled === true;
-    return x || reddit || hn;
-  },
-  { message: 'Active au moins une source (X, Reddit ou Hacker News).', path: ['x_enabled'] },
-);
+export const productCreateSchema = productBaseSchema
+  .refine(
+    (data) => {
+      const x = data.x_enabled !== false;
+      const reddit = data.reddit_enabled === true;
+      const hn = data.hn_enabled === true;
+      return x || reddit || hn;
+    },
+    { message: 'Active au moins une source (X, Reddit ou Hacker News).', path: ['x_enabled'] },
+  )
+  .superRefine((data, ctx) => {
+    if (
+      data.reddit_enabled === true &&
+      (!data.reddit_subreddits || data.reddit_subreddits.length === 0)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reddit_subreddits'],
+        message: 'Au moins un subreddit est requis quand Reddit est active.',
+      });
+    }
+    if (data.hn_enabled === true && (!data.hn_keywords || data.hn_keywords.length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['hn_keywords'],
+        message: 'Au moins un mot-cle est requis quand Hacker News est active.',
+      });
+    }
+  });
 
 export const productUpdateSchema = productBaseSchema
   .partial()
