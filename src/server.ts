@@ -5,6 +5,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import cron from 'node-cron';
+import { z } from 'zod';
 import { logger } from './logger.js';
 import {
   getRunHistory,
@@ -90,6 +91,12 @@ import {
   contentDraftPatchSchema,
   ContentStudioError,
 } from './content-studio.js';
+import {
+  fetchGithubRepos,
+  bulkImportProducts,
+  bulkImportRequestSchema,
+  GithubImportError,
+} from './github-import.js';
 
 interface MissingCredential {
   key: string;
@@ -728,6 +735,87 @@ export function startServer(
       return c.json({ success: false, message: 'Brouillon introuvable.' }, 404);
     }
     return c.json({ success: true });
+  });
+
+  // --- GitHub Import API (available in both setup and operational mode) ---
+
+  const githubImportQuerySchema = z.object({
+    username: z
+      .string()
+      .trim()
+      .min(1, { message: 'Nom d\'utilisateur GitHub requis.' }),
+    includeForks: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => v === 'true'),
+    includeArchived: z
+      .enum(['true', 'false'])
+      .optional()
+      .transform((v) => v === 'true'),
+  });
+
+  app.get('/api/github-import/repos', async (c) => {
+    const parsed = githubImportQuerySchema.safeParse({
+      username: c.req.query('username') ?? '',
+      includeForks: c.req.query('includeForks'),
+      includeArchived: c.req.query('includeArchived'),
+    });
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Parametres de requete invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+
+    const githubToken =
+      (isConfigured ? config.GITHUB_TOKEN : undefined) ||
+      getSetting('GITHUB_TOKEN') ||
+      process.env.GITHUB_TOKEN ||
+      undefined;
+
+    try {
+      const repos = await fetchGithubRepos({
+        username: parsed.data.username,
+        includeForks: parsed.data.includeForks,
+        includeArchived: parsed.data.includeArchived,
+        githubToken,
+      });
+      return c.json({ success: true, repos });
+    } catch (err) {
+      const message =
+        err instanceof GithubImportError
+          ? err.message
+          : `Echec du chargement : ${err instanceof Error ? err.message : String(err)}`;
+      logger.warn('GitHub repos fetch failed', {
+        username: parsed.data.username,
+        error: message,
+      });
+      return c.json({ success: false, message });
+    }
+  });
+
+  app.post('/api/github-import/bulk', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = bulkImportRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees d\'import invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const result = bulkImportProducts(parsed.data);
+    return c.json(result);
   });
 
   if (!isConfigured) {
