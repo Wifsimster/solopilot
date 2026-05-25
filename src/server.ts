@@ -61,6 +61,12 @@ import {
   type ProductView,
 } from './product-service.js';
 import { DEFAULT_PRODUCT_ID } from './db.js';
+import {
+  listIntentSignals,
+  updateIntentSignal,
+  intentSignalListQuerySchema,
+  intentSignalPatchSchema,
+} from './intent-service.js';
 
 interface MissingCredential {
   key: string;
@@ -361,6 +367,55 @@ export function startServer(
     }
     setProductSetting(id, key, value);
     return c.json({ success: true, message: 'Parametre du produit mis a jour.' });
+  });
+
+  // --- Intent signals API (available in both setup and operational mode) ---
+
+  app.get('/api/intent-signals', (c) => {
+    const parsed = intentSignalListQuerySchema.safeParse({
+      productId: c.req.query('productId'),
+      status: c.req.query('status'),
+      limit: c.req.query('limit'),
+    });
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Parametres de requete invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const signals = listIntentSignals(parsed.data);
+    return c.json(signals);
+  });
+
+  app.patch('/api/intent-signals/:id', async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id < 1) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = intentSignalPatchSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de signal invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const updated = updateIntentSignal(id, parsed.data);
+    if (!updated) {
+      return c.json({ success: false, message: 'Signal introuvable.' }, 404);
+    }
+    return c.json(updated);
   });
 
   if (!isConfigured) {

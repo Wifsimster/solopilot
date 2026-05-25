@@ -7,11 +7,13 @@ import { storeItems } from './tweet-store.js';
 import { getTodayDateParis } from './date-utils.js';
 import { DEFAULT_PRODUCT_ID } from './db.js';
 import { getProduct, toProductView } from './product-service.js';
+import { matchIntentForProduct } from './intent-service.js';
 
 export interface CollectResult {
   fetched: number;
   newTweets: number;
   bySource: Record<string, { fetched: number; new: number }>;
+  intentSignals: number;
 }
 
 /**
@@ -40,6 +42,7 @@ export async function collectTweets(
   const bySource: Record<string, { fetched: number; new: number }> = {};
   let totalFetched = 0;
   let totalNew = 0;
+  const allNewItemIds: string[] = [];
 
   const xEnabled = product?.x_enabled ?? true;
   const xConfigured = !!config.X_SESSION_AUTH_TOKEN && !!config.X_SESSION_CSRF_TOKEN;
@@ -47,10 +50,14 @@ export async function collectTweets(
     try {
       const xClient = createXClient(config);
       const items = await xClient.fetchSince(productId, 0, { productId });
-      const newCount = items.length > 0 ? storeItems(items, collectionDate, productId) : 0;
-      bySource.x = { fetched: items.length, new: newCount };
+      const stored =
+        items.length > 0
+          ? storeItems(items, collectionDate, productId)
+          : { inserted: 0, insertedIds: [] };
+      bySource.x = { fetched: items.length, new: stored.inserted };
       totalFetched += items.length;
-      totalNew += newCount;
+      totalNew += stored.inserted;
+      allNewItemIds.push(...stored.insertedIds);
     } catch (err) {
       logger.error('X collection failed', {
         productId,
@@ -68,10 +75,14 @@ export async function collectTweets(
     try {
       const redditReader = createRedditReader({ subreddits: redditSubreddits });
       const items = await redditReader.fetchSince(productId, 0, { productId });
-      const newCount = items.length > 0 ? storeItems(items, collectionDate, productId) : 0;
-      bySource.reddit = { fetched: items.length, new: newCount };
+      const stored =
+        items.length > 0
+          ? storeItems(items, collectionDate, productId)
+          : { inserted: 0, insertedIds: [] };
+      bySource.reddit = { fetched: items.length, new: stored.inserted };
       totalFetched += items.length;
-      totalNew += newCount;
+      totalNew += stored.inserted;
+      allNewItemIds.push(...stored.insertedIds);
     } catch (err) {
       logger.error('Reddit collection failed', {
         productId,
@@ -87,10 +98,14 @@ export async function collectTweets(
     try {
       const hnReader = createHnReader();
       const items = await hnReader.fetchSince(productId, 0, { productId });
-      const newCount = items.length > 0 ? storeItems(items, collectionDate, productId) : 0;
-      bySource.hn = { fetched: items.length, new: newCount };
+      const stored =
+        items.length > 0
+          ? storeItems(items, collectionDate, productId)
+          : { inserted: 0, insertedIds: [] };
+      bySource.hn = { fetched: items.length, new: stored.inserted };
       totalFetched += items.length;
-      totalNew += newCount;
+      totalNew += stored.inserted;
+      allNewItemIds.push(...stored.insertedIds);
     } catch (err) {
       logger.error('Hacker News collection failed', {
         productId,
@@ -100,13 +115,27 @@ export async function collectTweets(
     }
   }
 
+  let intentSignals = 0;
+  if (allNewItemIds.length > 0) {
+    try {
+      const result = matchIntentForProduct(productId, allNewItemIds);
+      intentSignals = result.matched;
+    } catch (err) {
+      logger.warn('Intent matching failed', {
+        productId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   logger.info('Item collection complete', {
     productId,
     collectionDate,
     totalFetched,
     totalNew,
     bySource,
+    intentSignals,
   });
 
-  return { fetched: totalFetched, newTweets: totalNew, bySource };
+  return { fetched: totalFetched, newTweets: totalNew, bySource, intentSignals };
 }

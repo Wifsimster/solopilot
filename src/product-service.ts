@@ -20,6 +20,12 @@ const hnKeywordSchema = z
   .min(2, { message: 'Mot-cle Hacker News trop court (min 2 caracteres).' })
   .max(64, { message: 'Mot-cle Hacker News trop long (max 64 caracteres).' });
 
+const intentKeywordSchema = z
+  .string()
+  .trim()
+  .min(2, { message: 'Mot-cle d\'intention trop court (min 2 caracteres).' })
+  .max(128, { message: 'Mot-cle d\'intention trop long (max 128 caracteres).' });
+
 const productBaseSchema = z.object({
   id: slugSchema,
   name: z.string().min(1).max(120),
@@ -46,6 +52,12 @@ const productBaseSchema = z.object({
   hn_keywords: z
     .array(hnKeywordSchema)
     .max(20, { message: 'Trop de mots-cles Hacker News (max 20).' })
+    .optional()
+    .nullable(),
+  intent_enabled: z.boolean().optional(),
+  intent_keywords: z
+    .array(intentKeywordSchema)
+    .max(30, { message: 'Trop de mots-cles d\'intention (max 30).' })
     .optional()
     .nullable(),
 });
@@ -78,6 +90,16 @@ export const productCreateSchema = productBaseSchema
         message: 'Au moins un mot-cle est requis quand Hacker News est active.',
       });
     }
+    if (
+      data.intent_enabled === true &&
+      (!data.intent_keywords || data.intent_keywords.length === 0)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['intent_keywords'],
+        message: 'Au moins un mot-cle d\'intention est requis quand le matching est active.',
+      });
+    }
   });
 
 export const productUpdateSchema = productBaseSchema
@@ -103,13 +125,21 @@ export type ProductUpdateInput = z.infer<typeof productUpdateSchema>;
 export interface ProductView
   extends Omit<
     ProductRecord,
-    'reddit_subreddits' | 'x_enabled' | 'reddit_enabled' | 'hn_enabled' | 'hn_keywords'
+    | 'reddit_subreddits'
+    | 'x_enabled'
+    | 'reddit_enabled'
+    | 'hn_enabled'
+    | 'hn_keywords'
+    | 'intent_enabled'
+    | 'intent_keywords'
   > {
   x_enabled: boolean;
   reddit_enabled: boolean;
   reddit_subreddits: string[];
   hn_enabled: boolean;
   hn_keywords: string[];
+  intent_enabled: boolean;
+  intent_keywords: string[];
 }
 
 function deserializeStringArray(value: string | null): string[] {
@@ -133,6 +163,8 @@ export function toProductView(product: ProductRecord): ProductView {
     reddit_subreddits: deserializeStringArray(product.reddit_subreddits),
     hn_enabled: product.hn_enabled === 1,
     hn_keywords: deserializeStringArray(product.hn_keywords),
+    intent_enabled: product.intent_enabled === 1,
+    intent_keywords: deserializeStringArray(product.intent_keywords),
   };
 }
 
@@ -163,8 +195,8 @@ export function isProductActive(id: string): boolean {
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
-    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.name,
@@ -182,6 +214,10 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
     input.hn_enabled === true ? 1 : 0,
     input.hn_keywords && input.hn_keywords.length > 0
       ? JSON.stringify(input.hn_keywords)
+      : null,
+    input.intent_enabled === true ? 1 : 0,
+    input.intent_keywords && input.intent_keywords.length > 0
+      ? JSON.stringify(input.intent_keywords)
       : null,
   );
   logger.info('Product created', { productId: input.id });
@@ -242,6 +278,18 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
     values.push(
       patch.hn_keywords && patch.hn_keywords.length > 0
         ? JSON.stringify(patch.hn_keywords)
+        : null,
+    );
+  }
+  if (patch.intent_enabled !== undefined) {
+    sets.push('intent_enabled = ?');
+    values.push(patch.intent_enabled ? 1 : 0);
+  }
+  if (patch.intent_keywords !== undefined) {
+    sets.push('intent_keywords = ?');
+    values.push(
+      patch.intent_keywords && patch.intent_keywords.length > 0
+        ? JSON.stringify(patch.intent_keywords)
         : null,
     );
   }
