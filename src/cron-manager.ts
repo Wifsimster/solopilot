@@ -1,7 +1,8 @@
 import cron, { type ScheduledTask } from 'node-cron';
 import { logger } from './logger.js';
 import { triggerRun, triggerCollect } from './run-service.js';
-import { getSettingsMap } from './settings-service.js';
+import { getSettingsMap, getProductSettingsMap } from './settings-service.js';
+import { listProducts } from './product-service.js';
 import type { Config } from './config.js';
 
 const tasks = new Map<string, ScheduledTask>();
@@ -19,22 +20,37 @@ export function getCollectSchedule(): string {
   return getSchedule('collect');
 }
 
+function mergeProductConfig(
+  baseConfig: Config,
+  buildMergedConfig: (base: Config, overrides: Record<string, string>) => Config,
+  productId: string,
+): Config {
+  const overrides: Record<string, string> = {
+    ...getSettingsMap(),
+    ...getProductSettingsMap(productId),
+  };
+  return buildMergedConfig(baseConfig, overrides);
+}
+
 export function schedulePublishCron(
   schedule: string,
   baseConfig: Config,
   buildMergedConfig: (base: Config, overrides: Record<string, string>) => Config,
 ): boolean {
   return scheduleNamedCron('publish', schedule, async () => {
-    logger.info('Cron triggered — starting daily summary (publish)');
-    try {
-      const overrides = getSettingsMap();
-      const mergedConfig = buildMergedConfig(baseConfig, overrides);
-      await triggerRun(mergedConfig, 'cron');
-    } catch (err) {
-      logger.error('Daily summary failed', {
-        message: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined,
-      });
+    logger.info('Cron triggered — starting daily summary (publish) for all products');
+    const products = listProducts(false);
+    for (const product of products) {
+      try {
+        const mergedConfig = mergeProductConfig(baseConfig, buildMergedConfig, product.id);
+        await triggerRun(mergedConfig, 'cron', product.id);
+      } catch (err) {
+        logger.error('Daily summary failed', {
+          productId: product.id,
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      }
     }
   });
 }
@@ -45,16 +61,19 @@ export function scheduleCollectCron(
   buildMergedConfig: (base: Config, overrides: Record<string, string>) => Config,
 ): boolean {
   return scheduleNamedCron('collect', schedule, async () => {
-    logger.info('Cron triggered — starting tweet collection');
-    try {
-      const overrides = getSettingsMap();
-      const mergedConfig = buildMergedConfig(baseConfig, overrides);
-      await triggerCollect(mergedConfig);
-    } catch (err) {
-      logger.error('Tweet collection failed', {
-        message: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined,
-      });
+    logger.info('Cron triggered — starting tweet collection for all products');
+    const products = listProducts(false);
+    for (const product of products) {
+      try {
+        const mergedConfig = mergeProductConfig(baseConfig, buildMergedConfig, product.id);
+        await triggerCollect(mergedConfig, product.id);
+      } catch (err) {
+        logger.error('Tweet collection failed', {
+          productId: product.id,
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      }
     }
   });
 }

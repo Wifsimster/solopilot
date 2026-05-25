@@ -22,12 +22,16 @@ import {
 } from '@/components/ui/alert-dialog';
 import { MarkdownContent } from '@/components/markdown-content';
 import { toast } from 'sonner';
+import { useSelectedProduct, withProductId } from '@/lib/product-context';
 import type { StatusResponse } from '@/types';
 
 const POLL_INTERVAL_MS = 4_000;
 
 export function DashboardPage() {
-  const { data: status, loading, error, refetch } = useApi<StatusResponse>('/api/status');
+  const { selectedProductId } = useSelectedProduct();
+  const { data: status, loading, error, refetch } = useApi<StatusResponse>('/api/status', {
+    productId: selectedProductId,
+  });
   const [triggering, setTriggering] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wasRunning = useRef(false);
@@ -62,7 +66,9 @@ export function DashboardPage() {
   const handleTrigger = async () => {
     setTriggering(true);
     try {
-      const res = await fetch('/api/trigger', { method: 'POST' });
+      const res = await fetch(withProductId('/api/trigger', selectedProductId), {
+        method: 'POST',
+      });
       const data = await res.json();
       if (data.success) {
         toast.success(data.message);

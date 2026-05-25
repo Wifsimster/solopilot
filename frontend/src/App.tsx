@@ -3,27 +3,32 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "sonner";
 import { Layout } from "@/components/layout";
+import { ProductProvider } from "@/lib/product-context";
 import { DashboardPage } from "@/pages/dashboard";
 import { RunsPage } from "@/pages/runs";
 import { SummariesPage } from "@/pages/summaries";
 import { SettingsPage } from "@/pages/settings";
 import { SetupPage } from "@/pages/setup";
+import { ProductsPage } from "@/pages/products";
 
 export function App() {
   return (
     <ThemeProvider>
       <TooltipProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/setup" element={<SetupPage />} />
-            <Route element={<Layout />}>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/runs" element={<RunsPage />} />
-              <Route path="/summaries" element={<SummariesPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
+        <ProductProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/setup" element={<SetupPage />} />
+              <Route element={<Layout />}>
+                <Route path="/" element={<DashboardPage />} />
+                <Route path="/runs" element={<RunsPage />} />
+                <Route path="/summaries" element={<SummariesPage />} />
+                <Route path="/products" element={<ProductsPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Route>
+            </Routes>
+          </BrowserRouter>
+        </ProductProvider>
         <Toaster richColors position="bottom-right" />
       </TooltipProvider>
     </ThemeProvider>

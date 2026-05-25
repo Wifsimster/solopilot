@@ -1,4 +1,5 @@
-import { getDb, type SettingRecord } from './db.js';
+import { getDb, type SettingRecord, type ProductSettingRecord, DEFAULT_PRODUCT_ID } from './db.js';
+import { tryLoadConfigWithOverrides, type ConfigResult, type ConfigError } from './config.js';
 
 const EDITABLE_KEYS = [
   'AI_MODEL',
@@ -64,6 +65,57 @@ export function getSettingsMap(): Record<string, string> {
     map[s.key] = s.value;
   }
   return map;
+}
+
+export function getProductSetting(productId: string, key: string): string | undefined {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT value FROM product_settings WHERE product_id = ? AND key = ?')
+    .get(productId, key) as { value: string | null } | undefined;
+  return row?.value ?? undefined;
+}
+
+export function setProductSetting(productId: string, key: string, value: string | null): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO product_settings (product_id, key, value) VALUES (?, ?, ?)
+     ON CONFLICT(product_id, key) DO UPDATE SET value = excluded.value`,
+  ).run(productId, key, value);
+}
+
+export function deleteProductSetting(productId: string, key: string): void {
+  const db = getDb();
+  db.prepare('DELETE FROM product_settings WHERE product_id = ? AND key = ?').run(productId, key);
+}
+
+export function getProductSettings(productId: string): ProductSettingRecord[] {
+  const db = getDb();
+  return db
+    .prepare('SELECT * FROM product_settings WHERE product_id = ? ORDER BY key')
+    .all(productId) as ProductSettingRecord[];
+}
+
+export function getProductSettingsMap(productId: string): Record<string, string> {
+  const rows = getProductSettings(productId);
+  const map: Record<string, string> = {};
+  for (const r of rows) {
+    if (r.value !== null) map[r.key] = r.value;
+  }
+  return map;
+}
+
+/**
+ * Resolves config by merging in order: env → global settings → product_settings.
+ * Highest priority wins.
+ */
+export function tryLoadConfigForProduct(
+  productId: string = DEFAULT_PRODUCT_ID,
+): ConfigResult | ConfigError {
+  const overrides: Record<string, string> = {
+    ...getSettingsMap(),
+    ...getProductSettingsMap(productId),
+  };
+  return tryLoadConfigWithOverrides(overrides);
 }
 
 export function maskCredential(value: string): string {

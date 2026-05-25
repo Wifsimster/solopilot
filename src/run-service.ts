@@ -1,46 +1,67 @@
 import type { Config } from './config.js';
-import { getDb, type RunRecord } from './db.js';
+import { getDb, DEFAULT_PRODUCT_ID, type RunRecord } from './db.js';
 import { logger } from './logger.js';
 import { run } from './index.js';
 import { collectTweets } from './collect-service.js';
 import { sendDiscordNotification } from './adapters/discord-notifier.js';
-import { getSetting } from './settings-service.js';
+import { getSetting, getProductSetting } from './settings-service.js';
 import { releaseTweetsForRun, getCollectionDateForRun } from './tweet-store.js';
 import { deleteMonthlySummariesReferencingRun } from './monthly-summary-service.js';
+import { getProduct } from './product-service.js';
 
-let publishRunning = false;
-let collectRunning = false;
+const publishRunning = new Map<string, boolean>();
+const collectRunning = new Map<string, boolean>();
 
-export function isRunning(): boolean {
-  return publishRunning;
+export function isRunning(productId: string = DEFAULT_PRODUCT_ID): boolean {
+  return publishRunning.get(productId) === true;
 }
 
-export function isCollecting(): boolean {
-  return collectRunning;
+export function isCollecting(productId: string = DEFAULT_PRODUCT_ID): boolean {
+  return collectRunning.get(productId) === true;
+}
+
+export function isAnyRunning(): boolean {
+  for (const v of publishRunning.values()) if (v) return true;
+  return false;
+}
+
+export function isAnyCollecting(): boolean {
+  for (const v of collectRunning.values()) if (v) return true;
+  return false;
+}
+
+function resolveDiscordWebhook(config: Config, productId: string): string | undefined {
+  const product = getProduct(productId);
+  if (product?.discord_webhook) return product.discord_webhook;
+  const productSetting = getProductSetting(productId, 'DISCORD_WEBHOOK_URL');
+  if (productSetting) return productSetting;
+  return getSetting('DISCORD_WEBHOOK_URL') ?? config.DISCORD_WEBHOOK_URL;
 }
 
 /**
  * Hourly tweet collection — lightweight, no AI, no Discord.
- * Uses a separate concurrency guard so it doesn't block publish runs.
+ * Uses a separate concurrency guard per product so it doesn't block publish runs.
  */
 export async function triggerCollect(
   config: Config,
+  productId: string = DEFAULT_PRODUCT_ID,
 ): Promise<RunRecord> {
-  if (collectRunning) {
+  if (collectRunning.get(productId) === true) {
     throw new Error('A collection is already in progress');
   }
 
   const db = getDb();
   const insert = db.prepare(
-    `INSERT INTO runs (started_at, status, trigger_type) VALUES (datetime('now'), 'running', 'collect')`,
+    `INSERT INTO runs (started_at, status, trigger_type, product_id)
+     VALUES (datetime('now'), 'running', 'collect', ?)`,
   );
-  const { lastInsertRowid } = insert.run();
+  const { lastInsertRowid } = insert.run(productId);
   const runId = Number(lastInsertRowid);
 
-  collectRunning = true;
+  collectRunning.set(productId, true);
 
   try {
-    const result = await collectTweets(config);
+    const result = await collectTweets(config, productId);
 
     const status = result.fetched > 0 ? 'success' : 'no_tweets';
     db.prepare(
@@ -54,34 +75,35 @@ export async function triggerCollect(
       `UPDATE runs SET finished_at = datetime('now'), status = 'error', error_message = ? WHERE id = ?`,
     ).run(message, runId);
 
-    logger.error('Collection failed', { runId, error: message });
+    logger.error('Collection failed', { runId, productId, error: message });
     return db.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as RunRecord;
   } finally {
-    collectRunning = false;
+    collectRunning.set(productId, false);
   }
 }
 
 export async function triggerRun(
   config: Config,
   trigger: 'cron' | 'manual' = 'manual',
+  productId: string = DEFAULT_PRODUCT_ID,
 ): Promise<RunRecord> {
-  if (publishRunning) {
+  if (publishRunning.get(productId) === true) {
     throw new Error('A run is already in progress');
   }
 
   const db = getDb();
   const insert = db.prepare(
-    `INSERT INTO runs (started_at, status, trigger_type) VALUES (datetime('now'), 'running', ?)`,
+    `INSERT INTO runs (started_at, status, trigger_type, product_id)
+     VALUES (datetime('now'), 'running', ?, ?)`,
   );
-  const { lastInsertRowid } = insert.run(trigger);
+  const { lastInsertRowid } = insert.run(trigger, productId);
   const runId = Number(lastInsertRowid);
 
-  publishRunning = true;
+  publishRunning.set(productId, true);
 
   try {
-    await run(config);
+    await run(config, undefined, productId);
 
-    // Determine status based on what happened
     const lastRun = db.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as RunRecord;
     const status = lastRun.summary
       ? 'success'
@@ -94,10 +116,9 @@ export async function triggerRun(
       runId,
     );
 
-    // Send Discord notification for successful runs with a summary
     const finalRun = db.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as RunRecord;
     if (status === 'success' && finalRun.summary) {
-      const webhookUrl = getSetting('DISCORD_WEBHOOK_URL') ?? config.DISCORD_WEBHOOK_URL;
+      const webhookUrl = resolveDiscordWebhook(config, productId);
       if (webhookUrl) {
         try {
           const notifResult = await sendDiscordNotification(webhookUrl, finalRun.summary, runId);
@@ -109,6 +130,7 @@ export async function triggerRun(
         } catch (notifErr) {
           logger.error('Discord notification unexpected error', {
             runId,
+            productId,
             error: String(notifErr),
           });
           db.prepare('UPDATE runs SET notification_status = ? WHERE id = ?').run('failed', runId);
@@ -125,10 +147,10 @@ export async function triggerRun(
       `UPDATE runs SET finished_at = datetime('now'), status = 'error', error_message = ? WHERE id = ?`,
     ).run(message, runId);
 
-    logger.error('Run failed', { runId, error: message });
+    logger.error('Run failed', { runId, productId, error: message });
     return db.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as RunRecord;
   } finally {
-    publishRunning = false;
+    publishRunning.set(productId, false);
   }
 }
 
@@ -142,14 +164,22 @@ export function updateNotificationStatus(runId: number, status: string): void {
   db.prepare('UPDATE runs SET notification_status = ? WHERE id = ?').run(status, runId);
 }
 
-export function getRunHistory(limit = 20, offset = 0): RunRecord[] {
+export function getRunHistory(
+  limit = 20,
+  offset = 0,
+  productId: string = DEFAULT_PRODUCT_ID,
+): RunRecord[] {
   const db = getDb();
-  return db.prepare('SELECT * FROM runs ORDER BY id DESC LIMIT ? OFFSET ?').all(limit, offset) as RunRecord[];
+  return db
+    .prepare('SELECT * FROM runs WHERE product_id = ? ORDER BY id DESC LIMIT ? OFFSET ?')
+    .all(productId, limit, offset) as RunRecord[];
 }
 
-export function countRuns(): number {
+export function countRuns(productId: string = DEFAULT_PRODUCT_ID): number {
   const db = getDb();
-  const row = db.prepare('SELECT COUNT(*) as count FROM runs').get() as { count: number };
+  const row = db
+    .prepare('SELECT COUNT(*) as count FROM runs WHERE product_id = ?')
+    .get(productId) as { count: number };
   return row.count;
 }
 
@@ -170,9 +200,11 @@ export function recoverStaleRuns(): number {
   return result.changes;
 }
 
-export function getLastRun(): RunRecord | undefined {
+export function getLastRun(productId: string = DEFAULT_PRODUCT_ID): RunRecord | undefined {
   const db = getDb();
-  return db.prepare('SELECT * FROM runs ORDER BY id DESC LIMIT 1').get() as RunRecord | undefined;
+  return db
+    .prepare('SELECT * FROM runs WHERE product_id = ? ORDER BY id DESC LIMIT 1')
+    .get(productId) as RunRecord | undefined;
 }
 
 export function updateRunStats(
@@ -206,12 +238,16 @@ export function updateRunStats(
   }
 }
 
-export function getCurrentRunId(): number | undefined {
-  if (!publishRunning && !collectRunning) return undefined;
+export function getCurrentRunId(productId: string = DEFAULT_PRODUCT_ID): number | undefined {
+  if (publishRunning.get(productId) !== true && collectRunning.get(productId) !== true) {
+    return undefined;
+  }
   const db = getDb();
   const row = db
-    .prepare("SELECT id FROM runs WHERE status = 'running' ORDER BY id DESC LIMIT 1")
-    .get() as { id: number } | undefined;
+    .prepare(
+      "SELECT id FROM runs WHERE status = 'running' AND product_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .get(productId) as { id: number } | undefined;
   return row?.id;
 }
 
@@ -221,7 +257,9 @@ export function getCurrentRunId(): number | undefined {
  */
 export function deleteSummary(runId: number): { success: boolean; message: string } {
   const db = getDb();
-  const targetRun = db.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as RunRecord | undefined;
+  const targetRun = db.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as
+    | RunRecord
+    | undefined;
   if (!targetRun) {
     return { success: false, message: 'Run introuvable.' };
   }
@@ -250,12 +288,10 @@ export async function triggerRerun(
   config: Config,
   originalRunId: number,
 ): Promise<{ success: boolean; message: string; run?: RunRecord }> {
-  if (publishRunning) {
-    return { success: false, message: 'Un run est deja en cours.' };
-  }
-
   const db = getDb();
-  const originalRun = db.prepare('SELECT * FROM runs WHERE id = ?').get(originalRunId) as RunRecord | undefined;
+  const originalRun = db.prepare('SELECT * FROM runs WHERE id = ?').get(originalRunId) as
+    | RunRecord
+    | undefined;
   if (!originalRun) {
     return { success: false, message: 'Run introuvable.' };
   }
@@ -263,15 +299,18 @@ export async function triggerRerun(
     return { success: false, message: 'Ce run ne contient pas de resume a regenerer.' };
   }
 
-  // Determine collection date from tweets or run start time
-  const collectionDate = getCollectionDateForRun(originalRunId)
-    ?? originalRun.started_at.split('T')[0].split(' ')[0];
+  const productId = originalRun.product_id ?? DEFAULT_PRODUCT_ID;
+  if (publishRunning.get(productId) === true) {
+    return { success: false, message: 'Un run est deja en cours.' };
+  }
+
+  const collectionDate =
+    getCollectionDateForRun(originalRunId) ?? originalRun.started_at.split('T')[0].split(' ')[0];
 
   if (!collectionDate) {
     return { success: false, message: 'Impossible de determiner la date de collecte.' };
   }
 
-  // Soft-delete old run and release tweets atomically
   const doDelete = db.transaction(() => {
     db.prepare(
       `UPDATE runs SET summary = NULL, status = 'deleted', notification_status = NULL WHERE id = ?`,
@@ -281,17 +320,17 @@ export async function triggerRerun(
   });
   doDelete();
 
-  // Create new run and process
   const insert = db.prepare(
-    `INSERT INTO runs (started_at, status, trigger_type) VALUES (datetime('now'), 'running', 'manual')`,
+    `INSERT INTO runs (started_at, status, trigger_type, product_id)
+     VALUES (datetime('now'), 'running', 'manual', ?)`,
   );
-  const { lastInsertRowid } = insert.run();
+  const { lastInsertRowid } = insert.run(productId);
   const runId = Number(lastInsertRowid);
 
-  publishRunning = true;
+  publishRunning.set(productId, true);
 
   try {
-    await run(config, collectionDate);
+    await run(config, collectionDate, productId);
 
     const lastRun = db.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as RunRecord;
     const status = lastRun.summary
@@ -313,10 +352,10 @@ export async function triggerRerun(
       `UPDATE runs SET finished_at = datetime('now'), status = 'error', error_message = ? WHERE id = ?`,
     ).run(message, runId);
 
-    logger.error('Rerun failed', { runId, originalRunId, error: message });
+    logger.error('Rerun failed', { runId, originalRunId, productId, error: message });
     return { success: false, message: `Erreur lors de la regeneration : ${message}` };
   } finally {
-    publishRunning = false;
+    publishRunning.set(productId, false);
   }
 }
 
@@ -325,10 +364,15 @@ export interface SummaryFilters {
   search?: string;
 }
 
-export function getSuccessfulSummaries(limit = 20, offset = 0, filters?: SummaryFilters): RunRecord[] {
+export function getSuccessfulSummaries(
+  limit = 20,
+  offset = 0,
+  filters?: SummaryFilters,
+  productId: string = DEFAULT_PRODUCT_ID,
+): RunRecord[] {
   const db = getDb();
-  const clauses = [`status = 'success'`, `summary IS NOT NULL`];
-  const params: unknown[] = [];
+  const clauses = [`status = 'success'`, `summary IS NOT NULL`, `product_id = ?`];
+  const params: unknown[] = [productId];
 
   if (filters?.month) {
     const [year, mon] = filters.month.split('-').map(Number);
@@ -353,10 +397,13 @@ export function getSuccessfulSummaries(limit = 20, offset = 0, filters?: Summary
     .all(...params) as RunRecord[];
 }
 
-export function countSuccessfulSummaries(filters?: SummaryFilters): number {
+export function countSuccessfulSummaries(
+  filters?: SummaryFilters,
+  productId: string = DEFAULT_PRODUCT_ID,
+): number {
   const db = getDb();
-  const clauses = [`status = 'success'`, `summary IS NOT NULL`];
-  const params: unknown[] = [];
+  const clauses = [`status = 'success'`, `summary IS NOT NULL`, `product_id = ?`];
+  const params: unknown[] = [productId];
 
   if (filters?.month) {
     const [year, mon] = filters.month.split('-').map(Number);
@@ -379,7 +426,11 @@ export function countSuccessfulSummaries(filters?: SummaryFilters): number {
   return row.count;
 }
 
-export function getSuccessfulRunsByMonth(year: number, month: number): RunRecord[] {
+export function getSuccessfulRunsByMonth(
+  year: number,
+  month: number,
+  productId: string = DEFAULT_PRODUCT_ID,
+): RunRecord[] {
   const db = getDb();
   const from = `${year}-${String(month).padStart(2, '0')}-01`;
   const toMonth = month === 12 ? 1 : month + 1;
@@ -387,7 +438,7 @@ export function getSuccessfulRunsByMonth(year: number, month: number): RunRecord
   const to = `${toYear}-${String(toMonth).padStart(2, '0')}-01`;
   return db
     .prepare(
-      `SELECT * FROM runs WHERE status = 'success' AND summary IS NOT NULL AND started_at >= ? AND started_at < ? ORDER BY started_at ASC`,
+      `SELECT * FROM runs WHERE status = 'success' AND summary IS NOT NULL AND product_id = ? AND started_at >= ? AND started_at < ? ORDER BY started_at ASC`,
     )
-    .all(from, to) as RunRecord[];
+    .all(productId, from, to) as RunRecord[];
 }

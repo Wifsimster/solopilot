@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { NavLink, Link, Outlet, useLocation } from 'react-router-dom';
 import { useTheme } from '@/components/theme-provider';
 import { useApi } from '@/hooks/use-api';
@@ -10,8 +10,13 @@ import {
   SelectItem,
 } from '@/components/ui/select';
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { BrainCircuit, Menu } from 'lucide-react';
+import { BrainCircuit, Menu, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useSelectedProduct, DEFAULT_PRODUCT_ID } from '@/lib/product-context';
+import { ProductCreateDialog } from '@/components/product-create-dialog';
+import type { ProductRecord } from '@/types';
+
+const NEW_PRODUCT_VALUE = '__new__';
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
   return cn(
@@ -28,6 +33,79 @@ function mobileNavLinkClass({ isActive }: { isActive: boolean }) {
     isActive
       ? 'text-foreground font-medium bg-primary/10'
       : 'text-muted-foreground',
+  );
+}
+
+function ProductSwitcher({
+  className,
+  triggerClassName,
+}: {
+  className?: string;
+  triggerClassName?: string;
+}) {
+  const { selectedProductId, setSelectedProductId } = useSelectedProduct();
+  const { data: products, refetch } = useApi<ProductRecord[]>('/api/products');
+  const [createOpen, setCreateOpen] = useState(false);
+
+  // Filter out archived products from the switcher
+  const active = (products ?? []).filter((p) => !p.archived_at);
+
+  // If selected product is missing from the list (e.g. archived or first load
+  // before backend exists), still show the id so the value is controllable.
+  const hasSelected = active.some((p) => p.id === selectedProductId);
+
+  const handleChange = useCallback(
+    (value: string) => {
+      if (value === NEW_PRODUCT_VALUE) {
+        setCreateOpen(true);
+        return;
+      }
+      setSelectedProductId(value);
+    },
+    [setSelectedProductId],
+  );
+
+  const handleCreated = useCallback(
+    (product: ProductRecord) => {
+      refetch();
+      setSelectedProductId(product.id);
+    },
+    [refetch, setSelectedProductId],
+  );
+
+  return (
+    <div className={className}>
+      <Select value={selectedProductId} onValueChange={handleChange}>
+        <SelectTrigger
+          className={cn('h-8 w-[180px] text-xs', triggerClassName)}
+          aria-label="Produit sélectionné"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {!hasSelected && (
+            <SelectItem value={selectedProductId}>
+              {selectedProductId === DEFAULT_PRODUCT_ID ? 'Produit par défaut' : selectedProductId}
+            </SelectItem>
+          )}
+          {active.map((p) => (
+            <SelectItem key={p.id} value={p.id}>
+              {p.name}
+            </SelectItem>
+          ))}
+          <SelectItem value={NEW_PRODUCT_VALUE} className="text-primary">
+            <span className="inline-flex items-center gap-1">
+              <Plus className="h-3 w-3" />+ Nouveau produit
+            </span>
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      <ProductCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={handleCreated}
+      />
+    </div>
   );
 }
 
@@ -71,9 +149,13 @@ export function Layout() {
             <NavLink to="/runs" className={navLinkClass}>
               Historique
             </NavLink>
+            <NavLink to="/products" className={navLinkClass}>
+              Produits
+            </NavLink>
             <NavLink to="/settings" className={navLinkClass}>
               Paramètres
             </NavLink>
+            <ProductSwitcher />
             <Select value={theme} onValueChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}>
               <SelectTrigger className="h-8 w-[110px] text-xs" aria-label="Theme">
                 <SelectValue />
@@ -113,10 +195,14 @@ export function Layout() {
                 <NavLink to="/runs" className={mobileNavLinkClass}>
                   Historique
                 </NavLink>
+                <NavLink to="/products" className={mobileNavLinkClass}>
+                  Produits
+                </NavLink>
                 <NavLink to="/settings" className={mobileNavLinkClass}>
                   Paramètres
                 </NavLink>
-                <div className="pt-4 border-t border-primary/10">
+                <div className="pt-4 border-t border-primary/10 space-y-3">
+                  <ProductSwitcher triggerClassName="h-10 w-full text-sm" />
                   <Select value={theme} onValueChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}>
                     <SelectTrigger className="h-10 w-full text-sm" aria-label="Theme">
                       <SelectValue />

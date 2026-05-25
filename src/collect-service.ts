@@ -1,37 +1,90 @@
 import type { Config } from './config.js';
 import { logger } from './logger.js';
 import { createXClient } from './x-client.js';
-import { storeTweets } from './tweet-store.js';
+import { createRedditReader } from './adapters/reddit-reader.js';
+import { storeItems } from './tweet-store.js';
 import { getTodayDateParis } from './date-utils.js';
+import { DEFAULT_PRODUCT_ID } from './db.js';
+import { getProduct, toProductView } from './product-service.js';
+
+export interface CollectResult {
+  fetched: number;
+  newTweets: number;
+  bySource: Record<string, { fetched: number; new: number }>;
+}
 
 /**
- * Hourly collection: scrapes the timeline and stores tweets in the DB.
+ * Hourly collection: runs all enabled sources for a product and stores items.
  * No AI call, no summary — just data accumulation with deduplication.
+ * Failure of one source does not abort the others.
  */
 export async function collectTweets(
   config: Config,
-): Promise<{ fetched: number; newTweets: number }> {
+  productId: string = DEFAULT_PRODUCT_ID,
+): Promise<CollectResult> {
   const collectionDate = getTodayDateParis();
-  logger.info('Starting tweet collection', {
-    username: config.X_USERNAME,
+  const productRecord = getProduct(productId);
+  const product = productRecord ? toProductView(productRecord) : null;
+
+  logger.info('Starting item collection', {
+    productId,
     collectionDate,
+    xEnabled: product?.x_enabled ?? true,
+    redditEnabled: product?.reddit_enabled ?? false,
+    redditSubreddits: product?.reddit_subreddits?.length ?? 0,
   });
 
-  const xClient = createXClient(config);
-  const tweets = await xClient.fetchRecentTweets();
+  const bySource: Record<string, { fetched: number; new: number }> = {};
+  let totalFetched = 0;
+  let totalNew = 0;
 
-  if (tweets.length === 0) {
-    logger.info('No tweets found during collection');
-    return { fetched: 0, newTweets: 0 };
+  const xEnabled = product?.x_enabled ?? true;
+  const xConfigured = !!config.X_SESSION_AUTH_TOKEN && !!config.X_SESSION_CSRF_TOKEN;
+  if (xEnabled && xConfigured) {
+    try {
+      const xClient = createXClient(config);
+      const items = await xClient.fetchSince(productId, 0, { productId });
+      const newCount = items.length > 0 ? storeItems(items, collectionDate, productId) : 0;
+      bySource.x = { fetched: items.length, new: newCount };
+      totalFetched += items.length;
+      totalNew += newCount;
+    } catch (err) {
+      logger.error('X collection failed', {
+        productId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      bySource.x = { fetched: 0, new: 0 };
+    }
+  } else if (xEnabled && !xConfigured) {
+    logger.info('X enabled but session cookies missing — skipping', { productId });
   }
 
-  const newTweets = storeTweets(tweets, collectionDate);
+  const redditEnabled = product?.reddit_enabled ?? false;
+  const redditSubreddits = product?.reddit_subreddits ?? [];
+  if (redditEnabled && redditSubreddits.length > 0) {
+    try {
+      const redditReader = createRedditReader({ subreddits: redditSubreddits });
+      const items = await redditReader.fetchSince(productId, 0, { productId });
+      const newCount = items.length > 0 ? storeItems(items, collectionDate, productId) : 0;
+      bySource.reddit = { fetched: items.length, new: newCount };
+      totalFetched += items.length;
+      totalNew += newCount;
+    } catch (err) {
+      logger.error('Reddit collection failed', {
+        productId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      bySource.reddit = { fetched: 0, new: 0 };
+    }
+  }
 
-  logger.info('Tweet collection complete', {
-    fetched: tweets.length,
-    newTweets,
+  logger.info('Item collection complete', {
+    productId,
     collectionDate,
+    totalFetched,
+    totalNew,
+    bySource,
   });
 
-  return { fetched: tweets.length, newTweets };
+  return { fetched: totalFetched, newTweets: totalNew, bySource };
 }

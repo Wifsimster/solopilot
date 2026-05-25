@@ -1,5 +1,5 @@
 import type { Config } from './config.js';
-import { getDb, type MonthlySummaryRecord } from './db.js';
+import { getDb, DEFAULT_PRODUCT_ID, type MonthlySummaryRecord } from './db.js';
 import { getSuccessfulRunsByMonth } from './run-service.js';
 import { createAIFilter } from './ai-filter.js';
 import { logger } from './logger.js';
@@ -7,58 +7,89 @@ import { logger } from './logger.js';
 const MAX_INPUT_SUMMARIES = 10;
 const MAX_INPUT_CHARS = 20000;
 
-export async function generateMonthlySummary(config: Config, year: number, month: number): Promise<MonthlySummaryRecord> {
-  const runs = getSuccessfulRunsByMonth(year, month);
+export async function generateMonthlySummary(
+  config: Config,
+  year: number,
+  month: number,
+  productId: string = DEFAULT_PRODUCT_ID,
+): Promise<MonthlySummaryRecord> {
+  const runs = getSuccessfulRunsByMonth(year, month, productId);
 
   if (runs.length === 0) {
-    throw new Error(`Aucun run réussi avec résumé trouvé pour ${year}-${String(month).padStart(2, '0')}.`);
+    throw new Error(
+      `Aucun run réussi avec résumé trouvé pour ${year}-${String(month).padStart(2, '0')}.`,
+    );
   }
 
-  const summaries = runs
-    .map((r) => r.summary!)
-    .slice(0, MAX_INPUT_SUMMARIES);
+  const summaries = runs.map((r) => r.summary!).slice(0, MAX_INPUT_SUMMARIES);
 
   const totalChars = summaries.reduce((sum, s) => sum + s.length, 0);
   if (totalChars > MAX_INPUT_CHARS) {
-    logger.warn('Monthly summary input truncated', { totalChars, maxChars: MAX_INPUT_CHARS, summaryCount: summaries.length });
+    logger.warn('Monthly summary input truncated', {
+      totalChars,
+      maxChars: MAX_INPUT_CHARS,
+      summaryCount: summaries.length,
+      productId,
+    });
   }
 
   const aiFilter = createAIFilter(config);
   const monthlySummary = await aiFilter.synthesizeMonthlySummary(summaries, year, month);
 
   if (!monthlySummary) {
-    throw new Error(`L'IA n'a pas pu générer de résumé mensuel pour ${year}-${String(month).padStart(2, '0')}.`);
+    throw new Error(
+      `L'IA n'a pas pu générer de résumé mensuel pour ${year}-${String(month).padStart(2, '0')}.`,
+    );
   }
 
   const runIds = runs.map((r) => r.id);
   const db = getDb();
 
-  db.prepare(
-    `INSERT INTO monthly_summaries (year, month, summary, source_run_ids, generated_at)
-     VALUES (?, ?, ?, ?, datetime('now'))
-     ON CONFLICT(year, month) DO UPDATE SET
-       summary = excluded.summary,
-       source_run_ids = excluded.source_run_ids,
-       generated_at = excluded.generated_at`
-  ).run(year, month, monthlySummary, JSON.stringify(runIds));
+  const existing = db
+    .prepare('SELECT id FROM monthly_summaries WHERE product_id = ? AND year = ? AND month = ?')
+    .get(productId, year, month) as { id: number } | undefined;
 
-  logger.info('Monthly summary generated', { year, month, sourceRuns: runIds.length });
+  if (existing) {
+    db.prepare(
+      `UPDATE monthly_summaries
+       SET summary = ?, source_run_ids = ?, generated_at = datetime('now')
+       WHERE id = ?`,
+    ).run(monthlySummary, JSON.stringify(runIds), existing.id);
+  } else {
+    db.prepare(
+      `INSERT INTO monthly_summaries (year, month, summary, source_run_ids, generated_at, product_id)
+       VALUES (?, ?, ?, ?, datetime('now'), ?)`,
+    ).run(year, month, monthlySummary, JSON.stringify(runIds), productId);
+  }
 
-  return getMonthlySummary(year, month)!;
+  logger.info('Monthly summary generated', { year, month, sourceRuns: runIds.length, productId });
+
+  return getMonthlySummary(year, month, productId)!;
 }
 
-export function getMonthlySummary(year: number, month: number): MonthlySummaryRecord | undefined {
+export function getMonthlySummary(
+  year: number,
+  month: number,
+  productId: string = DEFAULT_PRODUCT_ID,
+): MonthlySummaryRecord | undefined {
   const db = getDb();
-  return db.prepare(
-    'SELECT * FROM monthly_summaries WHERE year = ? AND month = ?'
-  ).get(year, month) as MonthlySummaryRecord | undefined;
+  return db
+    .prepare(
+      'SELECT * FROM monthly_summaries WHERE product_id = ? AND year = ? AND month = ?',
+    )
+    .get(productId, year, month) as MonthlySummaryRecord | undefined;
 }
 
-export function listMonthlySummaries(limit = 12): MonthlySummaryRecord[] {
+export function listMonthlySummaries(
+  limit = 12,
+  productId: string = DEFAULT_PRODUCT_ID,
+): MonthlySummaryRecord[] {
   const db = getDb();
-  return db.prepare(
-    'SELECT * FROM monthly_summaries ORDER BY year DESC, month DESC LIMIT ?'
-  ).all(limit) as MonthlySummaryRecord[];
+  return db
+    .prepare(
+      'SELECT * FROM monthly_summaries WHERE product_id = ? ORDER BY year DESC, month DESC LIMIT ?',
+    )
+    .all(productId, limit) as MonthlySummaryRecord[];
 }
 
 /**
@@ -74,21 +105,28 @@ export function deleteMonthlySummariesReferencingRun(runId: number): void {
     const ids: number[] = JSON.parse(row.source_run_ids);
     if (ids.includes(runId)) {
       db.prepare('DELETE FROM monthly_summaries WHERE id = ?').run(row.id);
-      logger.info('Deleted stale monthly summary', { monthlySummaryId: row.id, deletedRunId: runId });
+      logger.info('Deleted stale monthly summary', {
+        monthlySummaryId: row.id,
+        deletedRunId: runId,
+      });
     }
   }
 }
 
-export function getAvailableMonths(): { year: number; month: number; run_count: number }[] {
+export function getAvailableMonths(
+  productId: string = DEFAULT_PRODUCT_ID,
+): { year: number; month: number; run_count: number }[] {
   const db = getDb();
-  return db.prepare(
-    `SELECT
-       CAST(strftime('%Y', started_at) AS INTEGER) as year,
-       CAST(strftime('%m', started_at) AS INTEGER) as month,
-       COUNT(*) as run_count
-     FROM runs
-     WHERE status = 'success' AND summary IS NOT NULL
-     GROUP BY strftime('%Y-%m', started_at)
-     ORDER BY year DESC, month DESC`
-  ).all() as { year: number; month: number; run_count: number }[];
+  return db
+    .prepare(
+      `SELECT
+         CAST(strftime('%Y', started_at) AS INTEGER) as year,
+         CAST(strftime('%m', started_at) AS INTEGER) as month,
+         COUNT(*) as run_count
+       FROM runs
+       WHERE status = 'success' AND summary IS NOT NULL AND product_id = ?
+       GROUP BY strftime('%Y-%m', started_at)
+       ORDER BY year DESC, month DESC`,
+    )
+    .all(productId) as { year: number; month: number; run_count: number }[];
 }

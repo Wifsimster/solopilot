@@ -70,9 +70,28 @@ export interface ApiMessage {
   message: string;
 }
 
+export type FeedItemSource = 'x' | 'reddit';
+
 export interface TweetRecord {
   id: string;
   text: string;
   createdAt: string;
   urls: string[];
+  /** Source of the item — defaults to 'x' for legacy rows that omit the field. */
+  source?: FeedItemSource;
+}
+
+export interface ProductRecord {
+  id: string;
+  name: string;
+  x_query: string | null;
+  discord_webhook: string | null;
+  ai_prompt_override: string | null;
+  collect_cron: string | null;
+  publish_cron: string | null;
+  x_enabled: boolean;
+  reddit_enabled: boolean;
+  reddit_subreddits: string[] | null;
+  created_at: number;
+  archived_at: number | null;
 }

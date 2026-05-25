@@ -37,6 +37,9 @@ import {
   getSettingsMap,
   getSetting,
   maskCredential,
+  getProductSettings,
+  setProductSetting,
+  getProductSettingsMap,
 } from './settings-service.js';
 import { REQUIRED_CREDENTIALS, type Config } from './config.js';
 import { countUnpublishedTweets, countTweetsForDate, getTweetsByRunId } from './tweet-store.js';
@@ -45,6 +48,19 @@ import { validateXCookies, detectGqlIds, DEFAULT_GQL_IDS } from './adapters/scra
 import { testDiscordWebhook, sendDiscordNotification } from './adapters/discord-notifier.js';
 import { reschedule, rescheduleCollect, getCurrentSchedule, getCollectSchedule } from './cron-manager.js';
 import { buildMergedConfig } from './scheduler.js';
+import {
+  listProducts,
+  getProduct,
+  createProduct,
+  updateProduct,
+  archiveProduct,
+  deleteProductHard,
+  productCreateSchema,
+  productUpdateSchema,
+  toProductView,
+  type ProductView,
+} from './product-service.js';
+import { DEFAULT_PRODUCT_ID } from './db.js';
 
 interface MissingCredential {
   key: string;
@@ -80,6 +96,27 @@ function buildEnvDefaults(config: Config, cronSchedule: string) {
   };
 }
 
+function resolveProductId(queryValue: string | undefined): string {
+  if (queryValue && queryValue.trim()) return queryValue.trim();
+  return DEFAULT_PRODUCT_ID;
+}
+
+function maskProduct(product: import('./db.js').ProductRecord): ProductView {
+  const view = toProductView(product);
+  return {
+    ...view,
+    discord_webhook: view.discord_webhook ? maskCredential(view.discord_webhook) : null,
+  };
+}
+
+function buildProductConfig(baseConfig: Config, productId: string): Config {
+  const overrides: Record<string, string> = {
+    ...getSettingsMap(),
+    ...getProductSettingsMap(productId),
+  };
+  return buildMergedConfig(baseConfig, overrides);
+}
+
 export function startServer(
   config: Config | null,
   missingCredentials: MissingCredential[] | null,
@@ -89,7 +126,6 @@ export function startServer(
   const app = new Hono();
   const isConfigured = config !== null;
 
-  // Basic auth if ADMIN_PASSWORD is set
   if (process.env.ADMIN_PASSWORD) {
     app.use(
       '*',
@@ -100,19 +136,16 @@ export function startServer(
     );
   }
 
-  // CSRF protection on state-mutating requests
   app.use('*', async (c, next) => {
     const method = c.req.method;
     if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
       return next();
     }
-    // Allow health check without CSRF
     if (c.req.path === '/healthz') {
       return next();
     }
     const origin = c.req.header('origin');
     const referer = c.req.header('referer');
-    // If Origin is present, it must match the request host
     if (origin) {
       const requestHost = c.req.header('host');
       try {
@@ -125,7 +158,6 @@ export function startServer(
         return c.json({ success: false, message: 'Forbidden: invalid origin' }, 403);
       }
     } else if (referer) {
-      // Fallback to Referer check
       const requestHost = c.req.header('host');
       try {
         const refererHost = new URL(referer).host;
@@ -137,12 +169,9 @@ export function startServer(
         return c.json({ success: false, message: 'Forbidden: invalid referer' }, 403);
       }
     }
-    // If neither Origin nor Referer is present, allow the request
-    // (CLI tools, curl, etc. don't send these headers)
     return next();
   });
 
-  // Health check (no auth)
   app.get('/healthz', (c) => {
     if (isConfigured) {
       return c.json({ status: 'ok' });
@@ -156,8 +185,6 @@ export function startServer(
     );
   });
 
-  // --- API endpoints (JSON only) ---
-
   app.get('/api/version', (c) => {
     return c.json({
       version: process.env.APP_VERSION || 'dev',
@@ -165,7 +192,6 @@ export function startServer(
     });
   });
 
-  // Setup status
   app.get('/api/setup', (c) => {
     const credentials = REQUIRED_CREDENTIALS.map((cred) => ({
       ...cred,
@@ -174,8 +200,131 @@ export function startServer(
     return c.json({ configured: isConfigured, credentials });
   });
 
+  // --- Products API (available in both setup and operational mode) ---
+
+  app.get('/api/products', (c) => {
+    const includeArchived = c.req.query('includeArchived') === 'true';
+    const products = listProducts(includeArchived).map(maskProduct);
+    return c.json(products);
+  });
+
+  app.post('/api/products', async (c) => {
+    const body = await c.req.json();
+    const parsed = productCreateSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de produit invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    if (getProduct(parsed.data.id)) {
+      return c.json({ success: false, message: 'Un produit avec cet identifiant existe deja.' }, 409);
+    }
+    const product = createProduct(parsed.data);
+    return c.json({ success: true, product: maskProduct(product) });
+  });
+
+  app.get('/api/products/:id', (c) => {
+    const id = c.req.param('id');
+    const product = getProduct(id);
+    if (!product) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    return c.json(maskProduct(product));
+  });
+
+  app.put('/api/products/:id', async (c) => {
+    const id = c.req.param('id');
+    const existing = getProduct(id);
+    if (!existing) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    const body = await c.req.json();
+    const parsed = productUpdateSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de produit invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const effectiveXEnabled =
+      parsed.data.x_enabled !== undefined ? parsed.data.x_enabled : existing.x_enabled === 1;
+    const effectiveRedditEnabled =
+      parsed.data.reddit_enabled !== undefined
+        ? parsed.data.reddit_enabled
+        : existing.reddit_enabled === 1;
+    if (!effectiveXEnabled && !effectiveRedditEnabled) {
+      return c.json(
+        { success: false, message: 'Active au moins une source (X ou Reddit).' },
+        400,
+      );
+    }
+    const updated = updateProduct(id, parsed.data);
+    return c.json({ success: true, product: updated ? maskProduct(updated) : null });
+  });
+
+  app.delete('/api/products/:id', (c) => {
+    const id = c.req.param('id');
+    const hard = c.req.query('hard') === 'true';
+    if (id === DEFAULT_PRODUCT_ID) {
+      return c.json(
+        { success: false, message: 'Le produit par defaut ne peut pas etre supprime.' },
+        400,
+      );
+    }
+    const existing = getProduct(id);
+    if (!existing) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    if (hard) {
+      const ok = deleteProductHard(id);
+      if (!ok) {
+        return c.json({ success: false, message: 'Suppression impossible.' }, 400);
+      }
+      return c.json({ success: true, message: 'Produit supprime definitivement.' });
+    }
+    const ok = archiveProduct(id);
+    if (!ok) {
+      return c.json({ success: false, message: 'Produit deja archive.' }, 400);
+    }
+    return c.json({ success: true, message: 'Produit archive.' });
+  });
+
+  app.get('/api/products/:id/settings', (c) => {
+    const id = c.req.param('id');
+    if (!getProduct(id)) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    const settings = getProductSettings(id).map((s) =>
+      isCredentialKey(s.key) && s.value ? { ...s, value: maskCredential(s.value) } : s,
+    );
+    return c.json(settings);
+  });
+
+  app.put('/api/products/:id/settings', async (c) => {
+    const id = c.req.param('id');
+    if (!getProduct(id)) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    const body = await c.req.json();
+    const key = typeof body.key === 'string' ? body.key.trim() : '';
+    const value = body.value === null ? null : typeof body.value === 'string' ? body.value : '';
+    if (!key) {
+      return c.json({ success: false, message: 'La cle est requise.' }, 400);
+    }
+    setProductSetting(id, key, value);
+    return c.json({ success: true, message: 'Parametre du produit mis a jour.' });
+  });
+
   if (!isConfigured) {
-    // In setup mode — limited API
     app.post('/api/trigger', (c) =>
       c.json({
         success: false,
@@ -205,27 +354,28 @@ export function startServer(
       }),
     );
   } else {
-    // Normal operational mode — full API
-
     app.get('/api/status', (c) => {
-      const lastRun = getLastRun();
+      const productId = resolveProductId(c.req.query('productId'));
+      const lastRun = getLastRun(productId);
       return c.json({
-        running: isRunning(),
-        collecting: isCollecting(),
+        running: isRunning(productId),
+        collecting: isCollecting(productId),
         configured: true,
         lastRun,
         cronSchedule,
         collectCronSchedule: getCollectSchedule() || config.COLLECT_CRON_SCHEDULE,
-        totalRuns: countRuns(),
+        totalRuns: countRuns(productId),
+        productId,
       });
     });
 
     app.get('/api/runs', (c) => {
       const limit = Number(c.req.query('limit') || '20');
       const offset = Number(c.req.query('offset') || '0');
-      const type = c.req.query('type'); // optional: 'collect', 'cron', 'manual'
-      const runs = getRunHistory(limit, offset);
-      const total = countRuns();
+      const type = c.req.query('type');
+      const productId = resolveProductId(c.req.query('productId'));
+      const runs = getRunHistory(limit, offset, productId);
+      const total = countRuns(productId);
       if (type) {
         const filtered = runs.filter((r) => r.trigger_type === type);
         return c.json({ runs: filtered, total });
@@ -235,12 +385,14 @@ export function startServer(
 
     app.get('/api/collect-status', (c) => {
       const today = getTodayDateParis();
+      const productId = resolveProductId(c.req.query('productId'));
       return c.json({
-        collecting: isCollecting(),
+        collecting: isCollecting(productId),
         today,
-        tweetsCollected: countTweetsForDate(today),
-        tweetsUnpublished: countUnpublishedTweets(today),
+        tweetsCollected: countTweetsForDate(today, productId),
+        tweetsUnpublished: countUnpublishedTweets(today, productId),
         collectCronSchedule: getCollectSchedule() || config.COLLECT_CRON_SCHEDULE,
+        productId,
       });
     });
 
@@ -318,36 +470,45 @@ export function startServer(
     app.get('/api/summaries', (c) => {
       const limit = Number(c.req.query('limit') || '20');
       const offset = Number(c.req.query('offset') || '0');
-      const month = c.req.query('month'); // YYYY-MM format
+      const month = c.req.query('month');
       const search = c.req.query('search');
+      const productId = resolveProductId(c.req.query('productId'));
       const filters = {
         ...(month && /^\d{4}-\d{2}$/.test(month) ? { month } : {}),
         ...(search && search.trim() ? { search: search.trim() } : {}),
       };
       const hasFilters = Object.keys(filters).length > 0;
-      const summaries = getSuccessfulSummaries(limit, offset, hasFilters ? filters : undefined);
-      const total = countSuccessfulSummaries(hasFilters ? filters : undefined);
+      const summaries = getSuccessfulSummaries(
+        limit,
+        offset,
+        hasFilters ? filters : undefined,
+        productId,
+      );
+      const total = countSuccessfulSummaries(hasFilters ? filters : undefined, productId);
       return c.json({ summaries, total });
     });
 
     app.get('/api/monthly-summaries', (c) => {
-      const summaries = listMonthlySummaries();
+      const productId = resolveProductId(c.req.query('productId'));
+      const summaries = listMonthlySummaries(12, productId);
       return c.json(summaries);
     });
 
     app.get('/api/monthly-summaries/available', (c) => {
-      return c.json(getAvailableMonths());
+      const productId = resolveProductId(c.req.query('productId'));
+      return c.json(getAvailableMonths(productId));
     });
 
     app.get('/api/monthly-summaries/:year/:month', (c) => {
       const year = Number(c.req.param('year'));
       const month = Number(c.req.param('month'));
+      const productId = resolveProductId(c.req.query('productId'));
       if (!year || !month || month < 1 || month > 12) {
         return c.json({ error: 'Année et mois invalides.' }, 400);
       }
-      const summary = getMonthlySummary(year, month);
+      const summary = getMonthlySummary(year, month, productId);
       if (!summary) {
-        const runs = getSuccessfulRunsByMonth(year, month);
+        const runs = getSuccessfulRunsByMonth(year, month, productId);
         return c.json({ exists: false, availableRuns: runs.length });
       }
       return c.json({ exists: true, summary });
@@ -357,13 +518,15 @@ export function startServer(
       const body = await c.req.json();
       const year = Number(body.year);
       const month = Number(body.month);
+      const productId = resolveProductId(
+        typeof body.productId === 'string' ? body.productId : c.req.query('productId'),
+      );
       if (!year || !month || month < 1 || month > 12) {
         return c.json({ success: false, message: 'Année et mois invalides.' }, 400);
       }
       try {
-        const overrides = getSettingsMap();
-        const mergedConfig = buildMergedConfig(config, overrides);
-        const summary = await generateMonthlySummary(mergedConfig, year, month);
+        const mergedConfig = buildProductConfig(config, productId);
+        const summary = await generateMonthlySummary(mergedConfig, year, month, productId);
         return c.json({ success: true, summary });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -386,8 +549,9 @@ export function startServer(
         return c.json({ success: false, message: 'ID de run invalide.' }, 400);
       }
 
-      const overrides = getSettingsMap();
-      const mergedConfig = buildMergedConfig(config, overrides);
+      const targetRun = getRunById(runId);
+      const productId = targetRun?.product_id ?? DEFAULT_PRODUCT_ID;
+      const mergedConfig = buildProductConfig(config, productId);
       const result = await triggerRerun(mergedConfig, runId);
       return c.json(result, result.success ? 200 : 400);
     });
@@ -501,15 +665,16 @@ export function startServer(
     });
 
     app.post('/api/trigger', async (c) => {
-      if (isRunning()) {
+      const productId = resolveProductId(c.req.query('productId'));
+      if (isRunning(productId)) {
         return c.json({ success: false, message: 'Un run est déjà en cours.' });
       }
 
-      const overrides = getSettingsMap();
-      const mergedConfig = buildMergedConfig(config, overrides);
+      const mergedConfig = buildProductConfig(config, productId);
 
-      triggerRun(mergedConfig, 'manual').catch((err) => {
+      triggerRun(mergedConfig, 'manual', productId).catch((err) => {
         logger.error('Manual trigger failed', {
+          productId,
           error: err instanceof Error ? err.message : String(err),
         });
       });
@@ -521,15 +686,16 @@ export function startServer(
     });
 
     app.post('/api/trigger-collect', async (c) => {
-      if (isCollecting()) {
+      const productId = resolveProductId(c.req.query('productId'));
+      if (isCollecting(productId)) {
         return c.json({ success: false, message: 'Une collecte est déjà en cours.' });
       }
 
-      const overrides = getSettingsMap();
-      const mergedConfig = buildMergedConfig(config, overrides);
+      const mergedConfig = buildProductConfig(config, productId);
 
-      triggerCollect(mergedConfig).catch((err) => {
+      triggerCollect(mergedConfig, productId).catch((err) => {
         logger.error('Manual collect trigger failed', {
+          productId,
           error: err instanceof Error ? err.message : String(err),
         });
       });
@@ -539,8 +705,6 @@ export function startServer(
         message: 'Collecte de tweets lancée !',
       });
     });
-
-    // --- Discord webhook ---
 
     app.post('/api/discord-webhook', async (c) => {
       const body = await c.req.json();
@@ -605,7 +769,10 @@ export function startServer(
         }, 400);
       }
 
-      const webhookUrl = getSetting('DISCORD_WEBHOOK_URL') ?? config.DISCORD_WEBHOOK_URL;
+      const productId = targetRun.product_id ?? DEFAULT_PRODUCT_ID;
+      const product = getProduct(productId);
+      const webhookUrl =
+        product?.discord_webhook ?? getSetting('DISCORD_WEBHOOK_URL') ?? config.DISCORD_WEBHOOK_URL;
       if (!webhookUrl) {
         return c.json({
           success: false,
@@ -654,10 +821,8 @@ export function startServer(
     });
   }
 
-  // --- Serve React SPA static files ---
   app.use('/*', serveStatic({ root: './dist/frontend' }));
 
-  // SPA fallback — serve index.html for all non-API routes
   app.get('*', async (c) => {
     try {
       const indexPath = path.join(process.cwd(), 'dist', 'frontend', 'index.html');
@@ -668,7 +833,6 @@ export function startServer(
     }
   });
 
-  // Error handler
   app.onError((err, c) => {
     logger.error('HTTP error', { error: err.message, path: c.req.path });
     return c.text('Internal Server Error', 500);
@@ -684,4 +848,3 @@ export function startServer(
 
   return app;
 }
-

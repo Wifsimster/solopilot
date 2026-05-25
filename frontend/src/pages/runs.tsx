@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { MarkdownContent } from "@/components/markdown-content";
 import { AlertCircle } from "lucide-react";
 import { formatDateFr } from "@/lib/utils";
+import { useSelectedProduct } from "@/lib/product-context";
 import type { RunRecord } from "@/types";
 
 const PAGE_SIZE = 20;
@@ -74,8 +75,10 @@ function RunCard({ run }: { run: RunRecord }) {
 
 export function RunsPage() {
   const [page, setPage] = useState(0);
+  const { selectedProductId } = useSelectedProduct();
   const { data, loading, error } = useApi<{ runs: RunRecord[]; total: number }>(
-    `/api/runs?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`
+    `/api/runs?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
+    { productId: selectedProductId }
   );
 
   if (loading && !data) {
