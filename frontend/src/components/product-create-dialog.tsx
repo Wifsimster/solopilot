@@ -6,6 +6,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -16,7 +23,18 @@ import {
 import { toast } from 'sonner';
 import { X as XIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ProductRecord } from '@/types';
+import type { ProductRecord, ReplyVoice } from '@/types';
+
+const PRODUCT_DESCRIPTION_MAX = 2000;
+const REPLY_VOICE_DEFAULT_LABEL = 'Par défaut (professionnelle)';
+const REPLY_VOICE_OPTIONS: { value: ReplyVoice; label: string }[] = [
+  { value: 'decontractee', label: 'Décontractée' },
+  { value: 'professionnelle', label: 'Professionnelle' },
+  { value: 'directe', label: 'Directe' },
+  { value: 'aidante', label: 'Aidante' },
+];
+const REPLY_VOICE_VALUES: ReplyVoice[] = REPLY_VOICE_OPTIONS.map((o) => o.value);
+const REPLY_VOICE_NONE = '__none__';
 
 type DialogMode = 'create' | 'edit';
 
@@ -76,6 +94,8 @@ export function ProductCreateDialog({
   const [intentKeywordError, setIntentKeywordError] = useState<string | null>(null);
   const [discordWebhook, setDiscordWebhook] = useState('');
   const [aiPromptOverride, setAiPromptOverride] = useState('');
+  const [productDescription, setProductDescription] = useState('');
+  const [replyVoice, setReplyVoice] = useState<ReplyVoice | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,6 +122,8 @@ export function ProductCreateDialog({
       setIntentKeywordError(null);
       setDiscordWebhook('');
       setAiPromptOverride('');
+      setProductDescription('');
+      setReplyVoice(null);
       setSubmitting(false);
       setError(null);
       return;
@@ -127,6 +149,13 @@ export function ProductCreateDialog({
       // discord_webhook is masked from backend — leave blank so user can re-enter only if changing
       setDiscordWebhook('');
       setAiPromptOverride(initialValues.ai_prompt_override ?? '');
+      setProductDescription(initialValues.product_description ?? '');
+      setReplyVoice(
+        initialValues.reply_voice &&
+          REPLY_VOICE_VALUES.includes(initialValues.reply_voice)
+          ? initialValues.reply_voice
+          : null,
+      );
       setError(null);
     }
   }, [open, initialValues]);
@@ -441,6 +470,11 @@ export function ProductCreateDialog({
       return;
     }
 
+    if (productDescription.length > PRODUCT_DESCRIPTION_MAX) {
+      setError(`Description trop longue (max ${PRODUCT_DESCRIPTION_MAX} caractères).`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = {
@@ -501,6 +535,21 @@ export function ProductCreateDialog({
         body.ai_prompt_override = null;
       }
       // edit mode + blank: omit to preserve existing prompt override
+
+      const trimmedDescription = productDescription.trim();
+      if (trimmedDescription) {
+        body.product_description = trimmedDescription;
+      } else if (!isEdit) {
+        body.product_description = null;
+      }
+      // edit mode + blank: omit to preserve existing description
+
+      if (replyVoice !== null) {
+        body.reply_voice = replyVoice;
+      } else if (!isEdit) {
+        body.reply_voice = null;
+      }
+      // edit mode + null: omit to preserve existing voice
 
       const url = isEdit
         ? `/api/products/${encodeURIComponent(trimmedId)}`
@@ -861,6 +910,70 @@ export function ProductCreateDialog({
                     {intentKeywordError}
                   </p>
                 )}
+              </div>
+            </div>
+
+            <div className="border-t" />
+
+            {/* AI analysis context — applies to lead analysis, independent of matching toggle */}
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="product-description">
+                  Description du produit (pour l'IA)
+                </Label>
+                <Textarea
+                  id="product-description"
+                  value={productDescription}
+                  onChange={(e) => setProductDescription(e.target.value)}
+                  placeholder="Ex: un SaaS de planification Discord pour communautés gaming. Plan gratuit jusqu'à 100 membres."
+                  rows={4}
+                  maxLength={PRODUCT_DESCRIPTION_MAX}
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    Utilisée pour analyser la pertinence des leads et rédiger des
+                    réponses contextuelles.
+                  </p>
+                  <span
+                    className={cn(
+                      'text-xs tabular-nums',
+                      productDescription.length > PRODUCT_DESCRIPTION_MAX
+                        ? 'text-destructive'
+                        : 'text-muted-foreground',
+                    )}
+                  >
+                    {productDescription.length}/{PRODUCT_DESCRIPTION_MAX}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="product-reply-voice">Ton des réponses</Label>
+                <Select
+                  value={replyVoice ?? REPLY_VOICE_NONE}
+                  onValueChange={(value) =>
+                    setReplyVoice(
+                      value === REPLY_VOICE_NONE ? null : (value as ReplyVoice),
+                    )
+                  }
+                >
+                  <SelectTrigger id="product-reply-voice">
+                    <SelectValue placeholder={REPLY_VOICE_DEFAULT_LABEL} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={REPLY_VOICE_NONE}>
+                      {REPLY_VOICE_DEFAULT_LABEL}
+                    </SelectItem>
+                    {REPLY_VOICE_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Ton utilisé pour les brouillons de réponse générés par l'IA.
+                </p>
               </div>
             </div>
           </div>
