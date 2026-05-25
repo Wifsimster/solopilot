@@ -223,11 +223,45 @@ export function ProductCreateDialog({
       if (!isEdit) {
         body.id = trimmedId;
       }
-      body.x_query = xEnabled && xQuery.trim() ? xQuery.trim() : null;
+
+      // In edit mode, blank inputs mean "keep existing" for text-like fields
+      // whose UX advertises this behavior (or where intent is ambiguous —
+      // default to omit-when-blank to avoid wiping stored values).
+      // The X query is only persisted when the X source is enabled; disabling X
+      // is an explicit user action that nulls the column.
+      if (xEnabled) {
+        const trimmedXQuery = xQuery.trim();
+        if (trimmedXQuery) {
+          body.x_query = trimmedXQuery;
+        } else if (!isEdit) {
+          body.x_query = null;
+        }
+        // edit mode + blank: omit to preserve existing value
+      } else {
+        body.x_query = null;
+      }
+
+      // Subreddits are tied to the Reddit toggle: required when enabled
+      // (validated above), explicitly cleared when disabled.
       body.reddit_subreddits = redditEnabled && pendingSubs.length > 0 ? pendingSubs : null;
-      if (discordWebhook.trim()) body.discord_webhook = discordWebhook.trim();
-      else if (isEdit) body.discord_webhook = null;
-      body.ai_prompt_override = aiPromptOverride.trim() ? aiPromptOverride.trim() : null;
+
+      const trimmedWebhook = discordWebhook.trim();
+      if (trimmedWebhook) {
+        body.discord_webhook = trimmedWebhook;
+      } else if (!isEdit) {
+        body.discord_webhook = null;
+      }
+      // edit mode + blank: omit to preserve the stored webhook (the placeholder
+      // explicitly says "laisser vide pour conserver"). There is no
+      // explicit "clear webhook" action today.
+
+      const trimmedPrompt = aiPromptOverride.trim();
+      if (trimmedPrompt) {
+        body.ai_prompt_override = trimmedPrompt;
+      } else if (!isEdit) {
+        body.ai_prompt_override = null;
+      }
+      // edit mode + blank: omit to preserve existing prompt override
 
       const url = isEdit
         ? `/api/products/${encodeURIComponent(trimmedId)}`
