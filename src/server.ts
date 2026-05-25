@@ -63,12 +63,20 @@ import {
 import { DEFAULT_PRODUCT_ID } from './db.js';
 import {
   listIntentSignals,
+  getIntentSignal,
   updateIntentSignal,
   analyzeIntentSignal,
+  generateRepliesOnly,
+  listRepliesForSignal,
+  getReply,
+  updateReplyUsedFlag,
   rematchIntentForProductAll,
   IntentSignalNotFoundError,
+  IntentReplyGenerationError,
   intentSignalListQuerySchema,
   intentSignalPatchSchema,
+  generateRepliesSchema,
+  intentReplyPatchSchema,
 } from './intent-service.js';
 import {
   generatePosts,
@@ -488,8 +496,22 @@ export function startServer(
     if (!Number.isInteger(id) || id < 1) {
       return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
     }
+    const body = await c.req.json().catch(() => ({}));
+    const parsed = generateRepliesSchema.safeParse(
+      body && typeof body === 'object' ? body : {},
+    );
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de generation invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
     try {
-      const updated = await analyzeIntentSignal(id);
+      const updated = await analyzeIntentSignal(id, { count: parsed.data.count });
       return c.json(updated);
     } catch (err) {
       if (err instanceof IntentSignalNotFoundError) {
@@ -504,6 +526,87 @@ export function startServer(
         500,
       );
     }
+  });
+
+  app.get('/api/intent-signals/:id/replies', (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id < 1) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    const signal = getIntentSignal(id);
+    if (!signal) {
+      return c.json({ success: false, message: 'Signal introuvable.' }, 404);
+    }
+    return c.json(listRepliesForSignal(id));
+  });
+
+  app.post('/api/intent-signals/:id/replies/generate', async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id < 1) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    const signal = getIntentSignal(id);
+    if (!signal) {
+      return c.json({ success: false, message: 'Signal introuvable.' }, 404);
+    }
+    const body = await c.req.json().catch(() => ({}));
+    const parsed = generateRepliesSchema.safeParse(
+      body && typeof body === 'object' ? body : {},
+    );
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de generation invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const count = parsed.data.count ?? 3;
+    const productRecord = getProduct(signal.product_id);
+    const product = productRecord ? toProductView(productRecord) : null;
+    try {
+      const replies = await generateRepliesOnly(signal, product, { count });
+      return c.json({ success: true, replies });
+    } catch (err) {
+      const message =
+        err instanceof IntentReplyGenerationError
+          ? err.message
+          : `Echec de la generation : ${err instanceof Error ? err.message : String(err)}`;
+      return c.json({ success: false, message });
+    }
+  });
+
+  app.patch('/api/intent-signal-replies/:id', async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id < 1) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = intentReplyPatchSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de variante invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const existing = getReply(id);
+    if (!existing) {
+      return c.json({ success: false, message: 'Variante introuvable.' }, 404);
+    }
+    const updated = updateReplyUsedFlag(id, parsed.data.used);
+    if (!updated) {
+      return c.json({ success: false, message: 'Variante introuvable.' }, 404);
+    }
+    return c.json(updated);
   });
 
   // --- Content Studio API (available in both setup and operational mode) ---

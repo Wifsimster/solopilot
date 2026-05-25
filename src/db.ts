@@ -93,6 +93,15 @@ export interface IntentSignalRecord {
   ai_error: string | null;
 }
 
+export interface IntentSignalReplyRecord {
+  id: number;
+  intent_signal_id: number;
+  angle: string | null;
+  text: string;
+  used: number;
+  generated_at: number;
+}
+
 export interface ProductSettingRecord {
   product_id: string;
   key: string;
@@ -216,6 +225,19 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'intent_signals', 'ai_drafted_reply', `TEXT`);
   addColumnIfMissing(database, 'intent_signals', 'ai_processed_at', `INTEGER`);
   addColumnIfMissing(database, 'intent_signals', 'ai_error', `TEXT`);
+
+  database.exec(`CREATE TABLE IF NOT EXISTS intent_signal_replies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    intent_signal_id INTEGER NOT NULL REFERENCES intent_signals(id) ON DELETE CASCADE,
+    angle TEXT,
+    text TEXT NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    generated_at INTEGER NOT NULL
+  )`);
+
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_isr_signal ON intent_signal_replies(intent_signal_id, generated_at DESC)`,
+  );
 
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_tweets_product_collection ON tweets(product_id, collection_date, used_in_run_id)`,

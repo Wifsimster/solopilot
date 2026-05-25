@@ -134,6 +134,14 @@ export interface ContentDraft {
 
 export type IntentSignalStatus = 'new' | 'snoozed' | 'dismissed' | 'replied';
 
+export interface IntentSignalReply {
+  id: number;
+  angle: string | null;
+  text: string;
+  used: boolean;
+  generated_at: number;
+}
+
 export interface IntentSignal {
   id: number;
   item_id: string;
@@ -151,4 +159,5 @@ export interface IntentSignal {
   ai_drafted_reply: string | null;
   ai_processed_at: number | null;
   ai_error: string | null;
+  replies: IntentSignalReply[];
 }
