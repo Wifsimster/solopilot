@@ -33,6 +33,9 @@ const SUBREDDIT_REGEX = /^[A-Za-z0-9_]{2,21}$/;
 const HN_KEYWORD_MIN = 2;
 const HN_KEYWORD_MAX = 64;
 const HN_KEYWORDS_MAX = 20;
+const INTENT_KEYWORD_MIN = 2;
+const INTENT_KEYWORD_MAX = 128;
+const INTENT_KEYWORDS_MAX = 30;
 
 function slugify(input: string): string {
   return input
@@ -67,6 +70,10 @@ export function ProductCreateDialog({
   const [hnKeywords, setHnKeywords] = useState<string[]>([]);
   const [hnKeywordInput, setHnKeywordInput] = useState('');
   const [hnKeywordError, setHnKeywordError] = useState<string | null>(null);
+  const [intentEnabled, setIntentEnabled] = useState(false);
+  const [intentKeywords, setIntentKeywords] = useState<string[]>([]);
+  const [intentKeywordInput, setIntentKeywordInput] = useState('');
+  const [intentKeywordError, setIntentKeywordError] = useState<string | null>(null);
   const [discordWebhook, setDiscordWebhook] = useState('');
   const [aiPromptOverride, setAiPromptOverride] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -89,6 +96,10 @@ export function ProductCreateDialog({
       setHnKeywords([]);
       setHnKeywordInput('');
       setHnKeywordError(null);
+      setIntentEnabled(false);
+      setIntentKeywords([]);
+      setIntentKeywordInput('');
+      setIntentKeywordError(null);
       setDiscordWebhook('');
       setAiPromptOverride('');
       setSubmitting(false);
@@ -109,6 +120,10 @@ export function ProductCreateDialog({
       setHnKeywords(initialValues.hn_keywords ?? []);
       setHnKeywordInput('');
       setHnKeywordError(null);
+      setIntentEnabled(initialValues.intent_enabled ?? false);
+      setIntentKeywords(initialValues.intent_keywords ?? []);
+      setIntentKeywordInput('');
+      setIntentKeywordError(null);
       // discord_webhook is masked from backend — leave blank so user can re-enter only if changing
       setDiscordWebhook('');
       setAiPromptOverride(initialValues.ai_prompt_override ?? '');
@@ -243,6 +258,73 @@ export function ProductCreateDialog({
     setHnKeywordError(null);
   };
 
+  const tryAddIntentKeywords = (raw: string): boolean => {
+    const tokens = raw
+      .split(/[,\n]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tokens.length === 0) return false;
+
+    const tooShort = tokens.filter((t) => t.length < INTENT_KEYWORD_MIN);
+    if (tooShort.length > 0) {
+      setIntentKeywordError(
+        `Mot-clé trop court : ${tooShort.join(', ')} (min ${INTENT_KEYWORD_MIN} caractères).`,
+      );
+      return false;
+    }
+    const tooLong = tokens.filter((t) => t.length > INTENT_KEYWORD_MAX);
+    if (tooLong.length > 0) {
+      setIntentKeywordError(
+        `Mot-clé trop long : ${tooLong.join(', ')} (max ${INTENT_KEYWORD_MAX} caractères).`,
+      );
+      return false;
+    }
+
+    setIntentKeywords((prev) => {
+      const next = [...prev];
+      for (const t of tokens) {
+        if (next.length >= INTENT_KEYWORDS_MAX) {
+          setIntentKeywordError(`Maximum ${INTENT_KEYWORDS_MAX} mots-clés d'intention.`);
+          break;
+        }
+        if (!next.some((k) => k.toLowerCase() === t.toLowerCase())) {
+          next.push(t);
+        }
+      }
+      return next;
+    });
+    if (intentKeywords.length + tokens.length <= INTENT_KEYWORDS_MAX) {
+      setIntentKeywordError(null);
+    }
+    return true;
+  };
+
+  const handleIntentKeywordKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      if (intentKeywordInput.trim()) {
+        e.preventDefault();
+        if (tryAddIntentKeywords(intentKeywordInput)) {
+          setIntentKeywordInput('');
+        }
+      }
+    } else if (e.key === 'Backspace' && !intentKeywordInput && intentKeywords.length > 0) {
+      setIntentKeywords((prev) => prev.slice(0, -1));
+    }
+  };
+
+  const handleIntentKeywordBlur = () => {
+    if (intentKeywordInput.trim()) {
+      if (tryAddIntentKeywords(intentKeywordInput)) {
+        setIntentKeywordInput('');
+      }
+    }
+  };
+
+  const removeIntentKeyword = (kw: string) => {
+    setIntentKeywords((prev) => prev.filter((k) => k !== kw));
+    setIntentKeywordError(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
@@ -327,6 +409,38 @@ export function ProductCreateDialog({
       return;
     }
 
+    // Flush pending intent keyword input
+    let pendingIntentKeywords = intentKeywords;
+    if (intentEnabled && intentKeywordInput.trim()) {
+      if (!tryAddIntentKeywords(intentKeywordInput)) {
+        setError("Corrige les mots-cles d'intention invalides avant de continuer.");
+        return;
+      }
+      const tokens = intentKeywordInput
+        .split(/[,\n]+/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+      const merged = [...pendingIntentKeywords];
+      for (const t of tokens) {
+        if (merged.length >= INTENT_KEYWORDS_MAX) break;
+        if (!merged.some((k) => k.toLowerCase() === t.toLowerCase())) {
+          merged.push(t);
+        }
+      }
+      pendingIntentKeywords = merged;
+      setIntentKeywordInput('');
+    }
+
+    if (intentEnabled && pendingIntentKeywords.length === 0) {
+      setError("Ajoute au moins un mot-cle d'intention.");
+      return;
+    }
+
+    if (intentEnabled && pendingIntentKeywords.length > INTENT_KEYWORDS_MAX) {
+      setError(`Maximum ${INTENT_KEYWORDS_MAX} mots-cles d'intention par produit.`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = {
@@ -334,6 +448,7 @@ export function ProductCreateDialog({
         x_enabled: xEnabled,
         reddit_enabled: redditEnabled,
         hn_enabled: hnEnabled,
+        intent_enabled: intentEnabled,
       };
       if (!isEdit) {
         body.id = trimmedId;
@@ -364,6 +479,10 @@ export function ProductCreateDialog({
       // the current array (never null — validated above); when disabled,
       // explicitly clear with null.
       body.hn_keywords = hnEnabled ? pendingHnKeywords : null;
+
+      // Intent keywords: when enabled, send the current array (validated above);
+      // when disabled, explicitly clear with null.
+      body.intent_keywords = intentEnabled ? pendingIntentKeywords : null;
 
       const trimmedWebhook = discordWebhook.trim();
       if (trimmedWebhook) {
@@ -666,6 +785,80 @@ export function ProductCreateDialog({
                 {hnKeywordError && (
                   <p className="mt-1 text-xs text-destructive" role="alert">
                     {hnKeywordError}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Intent matching section */}
+          <div className="space-y-4 rounded-lg border p-4">
+            <div>
+              <h3 className="text-sm font-semibold">Détection d'intention</h3>
+              <p className="text-xs text-muted-foreground">
+                Repère automatiquement les messages exprimant un besoin lié à ton produit.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="intent-enabled" className="flex flex-col gap-0.5">
+                  <span>Intent matching</span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Génère des opportunités à partir des sources activées.
+                  </span>
+                </Label>
+                <Switch
+                  id="intent-enabled"
+                  checked={intentEnabled}
+                  onCheckedChange={setIntentEnabled}
+                  aria-label="Activer la détection d'intention"
+                />
+              </div>
+              <div className={cn(!intentEnabled && 'opacity-50 pointer-events-none')}>
+                <Label htmlFor="product-intent-keywords" className="text-xs">
+                  Mots-clés d'intention
+                </Label>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
+                  {intentKeywords.map((kw) => (
+                    <Badge key={kw} variant="secondary" className="gap-1 pl-2 pr-1">
+                      {kw}
+                      <button
+                        type="button"
+                        onClick={() => removeIntentKeyword(kw)}
+                        disabled={!intentEnabled}
+                        className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
+                        aria-label={`Retirer ${kw}`}
+                      >
+                        <XIcon className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                  <input
+                    id="product-intent-keywords"
+                    type="text"
+                    value={intentKeywordInput}
+                    onChange={(e) => {
+                      setIntentKeywordInput(e.target.value);
+                      if (intentKeywordError) setIntentKeywordError(null);
+                    }}
+                    onKeyDown={handleIntentKeywordKeyDown}
+                    onBlur={handleIntentKeywordBlur}
+                    placeholder={
+                      intentKeywords.length === 0
+                        ? 'alternative à figma, je cherche un outil pour, quelqu\'un utilise'
+                        : ''
+                    }
+                    disabled={!intentEnabled}
+                    className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Tape une expression puis Entrée ou virgule ({INTENT_KEYWORD_MIN} à {INTENT_KEYWORD_MAX} caractères, {INTENT_KEYWORDS_MAX} max).
+                </p>
+                {intentKeywordError && (
+                  <p className="mt-1 text-xs text-destructive" role="alert">
+                    {intentKeywordError}
                   </p>
                 )}
               </div>
