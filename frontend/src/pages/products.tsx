@@ -24,9 +24,10 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import { ProductCreateDialog } from '@/components/product-create-dialog';
+import { GithubImportDialog } from '@/components/github-import-dialog';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
-import { Plus, Archive, Loader2, Pencil, ExternalLink } from 'lucide-react';
+import { Plus, Archive, Loader2, Pencil, ExternalLink, Github } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateFr } from '@/lib/utils';
 import { useSelectedProduct } from '@/lib/product-context';
@@ -99,6 +100,7 @@ export function ProductsPage() {
   const { data, loading, error, refetch } = useApi<ProductRecord[]>('/api/products');
   const { selectedProductId, setSelectedProductId } = useSelectedProduct();
   const [createOpen, setCreateOpen] = useState(false);
+  const [githubImportOpen, setGithubImportOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductRecord | null>(null);
   const [archivingId, setArchivingId] = useState<string | null>(null);
 
@@ -165,10 +167,16 @@ export function ProductsPage() {
         title="Produits"
         description={`${active.length} produit${active.length !== 1 ? 's' : ''} actif${active.length !== 1 ? 's' : ''}`}
         actions={
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Nouveau produit
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setGithubImportOpen(true)}>
+              <Github className="h-4 w-4" aria-hidden="true" />
+              Importer depuis GitHub
+            </Button>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Nouveau produit
+            </Button>
+          </>
         }
       />
 
@@ -326,6 +334,12 @@ export function ProductsPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={handleCreated}
+      />
+
+      <GithubImportDialog
+        open={githubImportOpen}
+        onOpenChange={setGithubImportOpen}
+        onImported={() => refetch()}
       />
 
       <ProductCreateDialog
