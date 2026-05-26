@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,9 +21,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { X as XIcon } from 'lucide-react';
+import { Loader2, Search, X as XIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ContentLanguage, ContentVoice, ProductRecord, ReplyVoice } from '@/types';
+import type {
+  ContentLanguage,
+  ContentVoice,
+  ProductRecord,
+  ReplyVoice,
+  SubredditSearchResult,
+} from '@/types';
 
 const PRODUCT_DESCRIPTION_MAX = 2000;
 const REPLY_VOICE_DEFAULT_LABEL = 'Par défaut (professionnelle)';
@@ -79,6 +85,19 @@ const INTENT_KEYWORD_MIN = 2;
 const INTENT_KEYWORD_MAX = 128;
 const INTENT_KEYWORDS_MAX = 30;
 
+function formatSubscribers(count: number): string {
+  if (!count || count < 0) return '0 membre';
+  if (count >= 1_000_000) {
+    const m = count / 1_000_000;
+    return `${m >= 10 ? m.toFixed(0) : m.toFixed(1)}M membres`;
+  }
+  if (count >= 1_000) {
+    const k = count / 1_000;
+    return `${k >= 10 ? k.toFixed(0) : k.toFixed(1)}k membres`;
+  }
+  return `${count} membre${count > 1 ? 's' : ''}`;
+}
+
 function slugify(input: string): string {
   return input
     .toLowerCase()
@@ -108,6 +127,11 @@ export function ProductCreateDialog({
   const [subreddits, setSubreddits] = useState<string[]>([]);
   const [subredditInput, setSubredditInput] = useState('');
   const [subredditError, setSubredditError] = useState<string | null>(null);
+  const [subredditResults, setSubredditResults] = useState<SubredditSearchResult[]>([]);
+  const [subredditSearchLoading, setSubredditSearchLoading] = useState(false);
+  const [subredditSearchOpen, setSubredditSearchOpen] = useState(false);
+  const [subredditActiveIndex, setSubredditActiveIndex] = useState(-1);
+  const subredditSearchAbortRef = useRef<AbortController | null>(null);
   const [hnEnabled, setHnEnabled] = useState(false);
   const [hnKeywords, setHnKeywords] = useState<string[]>([]);
   const [hnKeywordInput, setHnKeywordInput] = useState('');
@@ -146,6 +170,12 @@ export function ProductCreateDialog({
       setSubreddits([]);
       setSubredditInput('');
       setSubredditError(null);
+      setSubredditResults([]);
+      setSubredditSearchLoading(false);
+      setSubredditSearchOpen(false);
+      setSubredditActiveIndex(-1);
+      subredditSearchAbortRef.current?.abort();
+      subredditSearchAbortRef.current = null;
       setHnEnabled(false);
       setHnKeywords([]);
       setHnKeywordInput('');
@@ -182,6 +212,10 @@ export function ProductCreateDialog({
       setSubreddits(initialValues.reddit_subreddits ?? []);
       setSubredditInput('');
       setSubredditError(null);
+      setSubredditResults([]);
+      setSubredditSearchLoading(false);
+      setSubredditSearchOpen(false);
+      setSubredditActiveIndex(-1);
       setHnEnabled(initialValues.hn_enabled ?? false);
       setHnKeywords(initialValues.hn_keywords ?? []);
       setHnKeywordInput('');
@@ -259,11 +293,50 @@ export function ProductCreateDialog({
   };
 
   const handleSubredditKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const visibleResults = subredditResults.filter(
+      (r) => !subreddits.some((s) => s.toLowerCase() === r.name.toLowerCase()),
+    );
+    const dropdownOpen = subredditSearchOpen && visibleResults.length > 0;
+
+    if (e.key === 'ArrowDown' && dropdownOpen) {
+      e.preventDefault();
+      setSubredditActiveIndex((prev) =>
+        prev < visibleResults.length - 1 ? prev + 1 : 0,
+      );
+      return;
+    }
+    if (e.key === 'ArrowUp' && dropdownOpen) {
+      e.preventDefault();
+      setSubredditActiveIndex((prev) =>
+        prev > 0 ? prev - 1 : visibleResults.length - 1,
+      );
+      return;
+    }
+    if (e.key === 'Escape' && subredditSearchOpen) {
+      e.preventDefault();
+      setSubredditSearchOpen(false);
+      setSubredditActiveIndex(-1);
+      return;
+    }
+
     if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
+      if (
+        e.key === 'Enter' &&
+        dropdownOpen &&
+        subredditActiveIndex >= 0 &&
+        subredditActiveIndex < visibleResults.length
+      ) {
+        e.preventDefault();
+        addSubredditFromResult(visibleResults[subredditActiveIndex]);
+        return;
+      }
       if (subredditInput.trim()) {
         e.preventDefault();
         if (tryAddSubreddits(subredditInput)) {
           setSubredditInput('');
+          setSubredditResults([]);
+          setSubredditSearchOpen(false);
+          setSubredditActiveIndex(-1);
         }
       }
     } else if (e.key === 'Backspace' && !subredditInput && subreddits.length > 0) {
@@ -272,6 +345,7 @@ export function ProductCreateDialog({
   };
 
   const handleSubredditBlur = () => {
+    setSubredditSearchOpen(false);
     if (subredditInput.trim()) {
       if (tryAddSubreddits(subredditInput)) {
         setSubredditInput('');
@@ -279,10 +353,74 @@ export function ProductCreateDialog({
     }
   };
 
+  const handleSubredditFocus = () => {
+    if (subredditInput.trim().length >= 2) {
+      setSubredditSearchOpen(true);
+    }
+  };
+
   const removeSubreddit = (sub: string) => {
     setSubreddits((prev) => prev.filter((s) => s !== sub));
     setSubredditError(null);
   };
+
+  const addSubredditFromResult = (result: SubredditSearchResult) => {
+    setSubreddits((prev) => {
+      if (prev.some((s) => s.toLowerCase() === result.name.toLowerCase())) return prev;
+      return [...prev, result.name];
+    });
+    setSubredditInput('');
+    setSubredditError(null);
+    setSubredditResults([]);
+    setSubredditSearchOpen(false);
+    setSubredditActiveIndex(-1);
+  };
+
+  useEffect(() => {
+    if (!open || !redditEnabled) {
+      return;
+    }
+    const query = subredditInput.trim().replace(/^\/?r\//i, '');
+    if (query.length < 2) {
+      subredditSearchAbortRef.current?.abort();
+      subredditSearchAbortRef.current = null;
+      setSubredditResults([]);
+      setSubredditSearchLoading(false);
+      setSubredditActiveIndex(-1);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      subredditSearchAbortRef.current?.abort();
+      const controller = new AbortController();
+      subredditSearchAbortRef.current = controller;
+      setSubredditSearchLoading(true);
+      fetch(
+        `/api/reddit/search-subreddits?q=${encodeURIComponent(query)}&limit=8`,
+        { signal: controller.signal },
+      )
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json() as Promise<{ results?: SubredditSearchResult[] }>;
+        })
+        .then((data) => {
+          if (controller.signal.aborted) return;
+          setSubredditResults(data.results ?? []);
+          setSubredditActiveIndex(-1);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === 'AbortError') return;
+          setSubredditResults([]);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSubredditSearchLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [subredditInput, redditEnabled, open]);
 
   const tryAddHnKeywords = (raw: string): boolean => {
     const tokens = raw
@@ -1016,42 +1154,129 @@ export function ProductCreateDialog({
                 <Label htmlFor="product-subreddits" className="text-xs">
                   Subreddits
                 </Label>
-                <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
-                  {subreddits.map((sub) => (
-                    <Badge
-                      key={sub}
-                      variant="secondary"
-                      className="gap-1 pl-2 pr-1 font-mono"
-                    >
-                      r/{sub}
-                      <button
-                        type="button"
-                        onClick={() => removeSubreddit(sub)}
-                        disabled={!redditEnabled}
-                        className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
-                        aria-label={`Retirer r/${sub}`}
+                <div className="relative">
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
+                    {subreddits.map((sub) => (
+                      <Badge
+                        key={sub}
+                        variant="secondary"
+                        className="gap-1 pl-2 pr-1 font-mono"
                       >
-                        <XIcon className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                  <input
-                    id="product-subreddits"
-                    type="text"
-                    value={subredditInput}
-                    onChange={(e) => {
-                      setSubredditInput(e.target.value);
-                      if (subredditError) setSubredditError(null);
-                    }}
-                    onKeyDown={handleSubredditKeyDown}
-                    onBlur={handleSubredditBlur}
-                    placeholder={subreddits.length === 0 ? 'webdev, SaaS, ...' : ''}
-                    disabled={!redditEnabled}
-                    className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
-                  />
+                        r/{sub}
+                        <button
+                          type="button"
+                          onClick={() => removeSubreddit(sub)}
+                          disabled={!redditEnabled}
+                          className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
+                          aria-label={`Retirer r/${sub}`}
+                        >
+                          <XIcon className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                    <div className="relative flex flex-1 items-center min-w-[160px]">
+                      <Search className="pointer-events-none absolute left-0 h-3.5 w-3.5 text-muted-foreground" />
+                      <input
+                        id="product-subreddits"
+                        type="text"
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-expanded={subredditSearchOpen}
+                        aria-controls="subreddit-search-listbox"
+                        aria-activedescendant={
+                          subredditActiveIndex >= 0
+                            ? `subreddit-result-${subredditActiveIndex}`
+                            : undefined
+                        }
+                        value={subredditInput}
+                        onChange={(e) => {
+                          setSubredditInput(e.target.value);
+                          if (subredditError) setSubredditError(null);
+                          setSubredditSearchOpen(e.target.value.trim().length >= 2);
+                        }}
+                        onKeyDown={handleSubredditKeyDown}
+                        onBlur={handleSubredditBlur}
+                        onFocus={handleSubredditFocus}
+                        placeholder={
+                          subreddits.length === 0 ? 'Recherche un subreddit…' : ''
+                        }
+                        disabled={!redditEnabled}
+                        className="flex-1 bg-transparent pl-5 pr-5 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+                      />
+                      {subredditSearchLoading && (
+                        <Loader2 className="pointer-events-none absolute right-0 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                      )}
+                    </div>
+                  </div>
+                  {subredditSearchOpen && redditEnabled && (() => {
+                    const visibleResults = subredditResults.filter(
+                      (r) =>
+                        !subreddits.some(
+                          (s) => s.toLowerCase() === r.name.toLowerCase(),
+                        ),
+                    );
+                    const showEmpty =
+                      !subredditSearchLoading &&
+                      subredditInput.trim().length >= 2 &&
+                      visibleResults.length === 0;
+                    if (visibleResults.length === 0 && !showEmpty) return null;
+                    return (
+                      <ul
+                        id="subreddit-search-listbox"
+                        role="listbox"
+                        className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-auto rounded-md border border-input bg-popover text-popover-foreground shadow-md"
+                      >
+                        {visibleResults.map((result, idx) => (
+                          <li
+                            key={result.name}
+                            id={`subreddit-result-${idx}`}
+                            role="option"
+                            aria-selected={idx === subredditActiveIndex}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              addSubredditFromResult(result);
+                            }}
+                            onMouseEnter={() => setSubredditActiveIndex(idx)}
+                            className={cn(
+                              'flex cursor-pointer items-start gap-2 px-3 py-2 text-sm',
+                              idx === subredditActiveIndex
+                                ? 'bg-accent text-accent-foreground'
+                                : 'hover:bg-accent hover:text-accent-foreground',
+                            )}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-sm font-medium">
+                                  r/{result.name}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {formatSubscribers(result.subscribers)}
+                                </span>
+                                {result.over18 && (
+                                  <span className="rounded bg-destructive/15 px-1 text-[10px] font-semibold uppercase text-destructive">
+                                    NSFW
+                                  </span>
+                                )}
+                              </div>
+                              {(result.title || result.description) && (
+                                <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                                  {result.description || result.title}
+                                </p>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                        {showEmpty && (
+                          <li className="px-3 py-2 text-xs text-muted-foreground">
+                            Aucun subreddit trouvé pour «&nbsp;{subredditInput.trim()}&nbsp;».
+                          </li>
+                        )}
+                      </ul>
+                    );
+                  })()}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Tape le nom du subreddit (sans «&nbsp;r/&nbsp;»), puis Entrée, virgule ou espace.
+                  Tape pour rechercher un subreddit, ou colle plusieurs noms séparés par une virgule.
                 </p>
                 {subredditError && (
                   <p className="mt-1 text-xs text-destructive" role="alert">

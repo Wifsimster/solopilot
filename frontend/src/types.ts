@@ -81,6 +81,15 @@ export interface TweetRecord {
   source?: FeedItemSource;
 }
 
+export interface SubredditSearchResult {
+  name: string;
+  title: string;
+  description: string;
+  subscribers: number;
+  over18: boolean;
+  iconUrl: string | null;
+}
+
 export type ReplyVoice = 'decontractee' | 'professionnelle' | 'directe' | 'aidante';
 
 export type ContentVoice = 'decontractee' | 'professionnelle' | 'directe' | 'aidante';

@@ -46,6 +46,7 @@ import { REQUIRED_CREDENTIALS, type Config } from './config.js';
 import { countUnpublishedTweets, countTweetsForDate, getTweetsByRunId } from './tweet-store.js';
 import { getTodayDateParis } from './date-utils.js';
 import { validateXCookies, detectGqlIds, DEFAULT_GQL_IDS } from './adapters/scraper-reader.js';
+import { searchSubreddits } from './adapters/reddit-reader.js';
 import { testDiscordWebhook, sendDiscordNotification } from './adapters/discord-notifier.js';
 import { reschedule, rescheduleCollect, getCurrentSchedule, getCollectSchedule } from './cron-manager.js';
 import { buildMergedConfig } from './scheduler.js';
@@ -447,6 +448,40 @@ export function startServer(
     }
     setProductSetting(id, key, value);
     return c.json({ success: true, message: 'Parametre du produit mis a jour.' });
+  });
+
+  // --- Reddit subreddit search (available in both setup and operational mode) ---
+
+  app.get('/api/reddit/search-subreddits', async (c) => {
+    const q = (c.req.query('q') ?? '').trim();
+    if (!q) {
+      return c.json({ results: [] });
+    }
+    if (q.length > 64) {
+      return c.json(
+        { success: false, message: 'La requete est trop longue (max 64 caracteres).' },
+        400,
+      );
+    }
+    const rawLimit = Number(c.req.query('limit'));
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 25) : 8;
+    const includeNsfw = c.req.query('includeNsfw') === 'true';
+    try {
+      const results = await searchSubreddits(q, { limit, includeNsfw });
+      return c.json({ results });
+    } catch (err) {
+      logger.warn('Reddit subreddit search failed', {
+        q,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return c.json(
+        {
+          success: false,
+          message: 'Recherche Reddit indisponible. Reessaie plus tard.',
+        },
+        502,
+      );
+    }
   });
 
   // --- Intent signals API (available in both setup and operational mode) ---

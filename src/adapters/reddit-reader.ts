@@ -26,6 +26,107 @@ const redditListingSchema = z.object({
   }),
 });
 
+const subredditSearchChildSchema = z.object({
+  kind: z.string().optional(),
+  data: z.object({
+    display_name: z.string(),
+    title: z.string().optional().default(''),
+    public_description: z.string().optional().default(''),
+    subscribers: z.number().nullable().optional(),
+    over18: z.boolean().optional().default(false),
+    icon_img: z.string().optional().default(''),
+    community_icon: z.string().optional().default(''),
+    subreddit_type: z.string().optional(),
+  }),
+});
+
+const subredditSearchListingSchema = z.object({
+  data: z.object({
+    children: z.array(subredditSearchChildSchema).default([]),
+  }),
+});
+
+export interface SubredditSearchResult {
+  name: string;
+  title: string;
+  description: string;
+  subscribers: number;
+  over18: boolean;
+  iconUrl: string | null;
+}
+
+export async function searchSubreddits(
+  query: string,
+  options: { limit?: number; userAgent?: string; includeNsfw?: boolean } = {},
+): Promise<SubredditSearchResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const limit = Math.min(Math.max(options.limit ?? 8, 1), 25);
+  const userAgent = options.userAgent ?? USER_AGENT;
+  const includeNsfw = options.includeNsfw ?? false;
+
+  const params = new URLSearchParams({
+    q: trimmed,
+    limit: String(limit),
+    include_over_18: includeNsfw ? 'on' : 'off',
+    sort: 'relevance',
+  });
+  const url = `https://www.reddit.com/subreddits/search.json?${params.toString()}`;
+
+  const response = await fetch(url, {
+    headers: { 'User-Agent': userAgent, accept: 'application/json' },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+
+  if (response.status === 429) {
+    logger.warn('Reddit: subreddit search rate limited (HTTP 429)', { query: trimmed });
+    return [];
+  }
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(
+      `Reddit: HTTP ${response.status} ${response.statusText}${body ? ` — ${body.slice(0, 200)}` : ''}`,
+    );
+  }
+
+  const json = (await response.json()) as unknown;
+  const parsed = subredditSearchListingSchema.safeParse(json);
+  if (!parsed.success) {
+    logger.warn('Reddit: failed to parse subreddit search listing', {
+      query: trimmed,
+      errors: parsed.error.issues.map((i) => i.message),
+    });
+    return [];
+  }
+
+  const results: SubredditSearchResult[] = [];
+  const seen = new Set<string>();
+  for (const child of parsed.data.data.children) {
+    const sub = child.data;
+    if (!SUBREDDIT_PATTERN.test(sub.display_name)) continue;
+    if (sub.subreddit_type && sub.subreddit_type !== 'public' && sub.subreddit_type !== 'restricted') {
+      continue;
+    }
+    const key = sub.display_name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const rawIcon = sub.community_icon || sub.icon_img || '';
+    const iconUrl = rawIcon ? rawIcon.split('?')[0] || null : null;
+
+    results.push({
+      name: sub.display_name,
+      title: sub.title ?? '',
+      description: sub.public_description ?? '',
+      subscribers: typeof sub.subscribers === 'number' ? sub.subscribers : 0,
+      over18: Boolean(sub.over18),
+      iconUrl,
+    });
+  }
+  return results;
+}
+
 export interface RedditReaderOptions {
   /** Subreddit names (without the r/ prefix). Validated against SUBREDDIT_PATTERN. */
   subreddits: string[];
