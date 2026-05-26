@@ -18,17 +18,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { humanizeCron, nextCronDate, formatTimeUntil } from '@/lib/utils';
-import {
-  AlertDialog,
-  AlertDialogTrigger,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogAction,
-  AlertDialogCancel,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDialog } from '@/components/responsive-dialog';
 import { MarkdownContent } from '@/components/markdown-content';
 import { toast } from 'sonner';
 import { useSelectedProduct, withProductId } from '@/lib/product-context';
@@ -147,27 +137,22 @@ export function DashboardPage() {
         title="Dashboard"
         description="Supervision du bot X AI Weekly"
         actions={
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button disabled={running || triggering} aria-label="Lancer un run maintenant">
+          <ConfirmDialog
+            trigger={
+              <Button
+                disabled={running || triggering}
+                aria-label="Lancer un run maintenant"
+                className="hidden sm:inline-flex"
+              >
                 <Play className="h-4 w-4" aria-hidden="true" />
                 {running || triggering ? 'Run en cours…' : 'Lancer un run'}
               </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Lancer un run maintenant ?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Cette action va déclencher un scraping de votre timeline X et générer un résumé
-                  IA des actualités.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Annuler</AlertDialogCancel>
-                <AlertDialogAction onClick={handleTrigger}>Lancer le run</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+            }
+            title="Lancer un run maintenant ?"
+            description="Cette action va déclencher un scraping de votre timeline X et générer un résumé IA des actualités."
+            confirmLabel="Lancer le run"
+            onConfirm={handleTrigger}
+          />
         }
       />
 
@@ -275,6 +260,24 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Mobile FAB — primary action stays reachable */}
+      <ConfirmDialog
+        trigger={
+          <Button
+            size="lg"
+            disabled={running || triggering}
+            aria-label="Lancer un run maintenant"
+            className="sm:hidden fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+72px)] z-30 h-14 w-14 rounded-full shadow-lg p-0"
+          >
+            <Play className="h-5 w-5" aria-hidden="true" />
+          </Button>
+        }
+        title="Lancer un run maintenant ?"
+        description="Cette action va déclencher un scraping de votre timeline X et générer un résumé IA des actualités."
+        confirmLabel="Lancer le run"
+        onConfirm={handleTrigger}
+      />
     </div>
   );
 }
