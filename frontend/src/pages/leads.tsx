@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApi } from '@/hooks/use-api';
 import { useSelectedProduct } from '@/lib/product-context';
+import { formatRelativeFr } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -75,24 +76,6 @@ function scoreBadgeVariant(score: number): 'secondary' | 'warning' | 'success' {
   if (score >= 70) return 'success';
   if (score >= 40) return 'warning';
   return 'secondary';
-}
-
-function formatRelativeFr(epochSeconds: number): string {
-  if (!epochSeconds) return '—';
-  const ms = epochSeconds > 1e12 ? epochSeconds : epochSeconds * 1000;
-  const diffSec = Math.floor((Date.now() - ms) / 1000);
-  if (diffSec < 60) return 'à l’instant';
-  const minutes = Math.floor(diffSec / 60);
-  if (minutes < 60) return `il y a ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `il y a ${hours} h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `il y a ${days} j`;
-  return new Date(ms).toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
 }
 
 function ReplyVariantCard({

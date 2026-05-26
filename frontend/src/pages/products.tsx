@@ -4,7 +4,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Table,
   TableHeader,
@@ -25,7 +24,9 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import { ProductCreateDialog } from '@/components/product-create-dialog';
-import { AlertCircle, Plus, Archive, Loader2, Pencil, ExternalLink } from 'lucide-react';
+import { PageHeader } from '@/components/page-header';
+import { ErrorState } from '@/components/error-state';
+import { Plus, Archive, Loader2, Pencil, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateFr } from '@/lib/utils';
 import { useSelectedProduct } from '@/lib/product-context';
@@ -47,7 +48,7 @@ function SourceBadges({ product }: { product: ProductRecord }) {
   return (
     <div className="flex flex-wrap items-center gap-1">
       {xActive && (
-        <Badge variant="secondary" className="text-xs" title="Source X activée">
+        <Badge variant="secondary" className="text-xs" aria-label="Source X activée">
           X
         </Badge>
       )}
@@ -55,7 +56,7 @@ function SourceBadges({ product }: { product: ProductRecord }) {
         <Badge
           variant="secondary"
           className="text-xs"
-          title={`Subreddits : ${product.reddit_subreddits?.join(', ')}`}
+          aria-label={`${subCount} subreddit${subCount !== 1 ? 's' : ''} : ${product.reddit_subreddits?.join(', ')}`}
         >
           r/{subCount}
         </Badge>
@@ -64,7 +65,7 @@ function SourceBadges({ product }: { product: ProductRecord }) {
         <Badge
           variant="secondary"
           className="text-xs"
-          title={`Mots-clés Hacker News : ${product.hn_keywords?.join(', ')}`}
+          aria-label={`${hnCount} mot${hnCount !== 1 ? 's' : ''}-clé${hnCount !== 1 ? 's' : ''} Hacker News : ${product.hn_keywords?.join(', ')}`}
         >
           hn:{hnCount}
         </Badge>
@@ -73,7 +74,7 @@ function SourceBadges({ product }: { product: ProductRecord }) {
         <Badge
           variant="success"
           className="text-xs"
-          title={`Mots-clés d'intention : ${product.intent_keywords?.join(', ')}`}
+          aria-label={`${intentCount} mot${intentCount !== 1 ? 's' : ''}-clé${intentCount !== 1 ? 's' : ''} d'intention : ${product.intent_keywords?.join(', ')}`}
         >
           Intent: {intentCount}
         </Badge>
@@ -144,16 +145,12 @@ export function ProductsPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Produits</h1>
-          <p className="text-muted-foreground">Gestion des produits</p>
-        </div>
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            Impossible de charger la liste des produits : {error}
-          </AlertDescription>
-        </Alert>
+        <PageHeader title="Produits" description="Gestion des produits" />
+        <ErrorState
+          message={error}
+          context="Impossible de charger la liste des produits"
+          onRetry={refetch}
+        />
       </div>
     );
   }
@@ -164,19 +161,17 @@ export function ProductsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Produits</h1>
-          <p className="text-muted-foreground">
-            {active.length} produit{active.length !== 1 ? 's' : ''} actif
-            {active.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" />
-          Nouveau produit
-        </Button>
-      </div>
+      <PageHeader
+        title="Produits"
+        description={`${active.length} produit${active.length !== 1 ? 's' : ''} actif${active.length !== 1 ? 's' : ''}`}
+        actions={
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Nouveau produit
+          </Button>
+        }
+      />
+
 
       {products.length === 0 ? (
         <Card>

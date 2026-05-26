@@ -4,17 +4,20 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CookiesCard } from '@/components/settings/cookies-card';
 import { GraphqlCard } from '@/components/settings/graphql-card';
 import { ProductSettingsCard } from '@/components/settings/product-settings-card';
+import { PageHeader } from '@/components/page-header';
+import { ErrorState } from '@/components/error-state';
+import { ShieldAlert } from 'lucide-react';
 import type { ConfigResponse } from '@/types';
 
 export function SettingsPage() {
-  const { data: config, loading, refetch } = useApi<ConfigResponse>('/api/config');
+  const { data: config, loading, error, refetch } = useApi<ConfigResponse>('/api/config');
 
-  if (loading || !config) {
+  if (loading && !config) {
     return (
       <div className="space-y-6">
-        <div>
-          <Skeleton className="h-8 w-40" />
-          <Skeleton className="mt-2 h-4 w-96" />
+        <div className="space-y-2">
+          <Skeleton className="h-9 w-40" />
+          <Skeleton className="h-5 w-96" />
         </div>
         <Skeleton className="h-48 rounded-lg" />
         <Skeleton className="h-64 rounded-lg" />
@@ -24,21 +27,34 @@ export function SettingsPage() {
     );
   }
 
+  if (error || !config) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Paramètres"
+          description="Configuration globale et par produit"
+        />
+        <ErrorState
+          message={error ?? 'Configuration indisponible'}
+          context="Impossible de charger les paramètres"
+          onRetry={refetch}
+        />
+      </div>
+    );
+  }
+
   const { credentialInfo } = config;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Paramètres</h1>
-        <p className="text-muted-foreground">
-          Configuration globale (identité X) et configuration par produit (requête, webhook,
-          plannings, prompt IA).
-        </p>
-      </div>
+      <PageHeader
+        title="Paramètres"
+        description="Configuration globale (identité X) et configuration par produit (requête, webhook, plannings, prompt IA)."
+      />
 
-      {/* Page-level auth warning banner */}
       {!credentialInfo.hasAuth && (
-        <Alert variant="warning">
+        <Alert variant="warning" role="alert">
+          <ShieldAlert className="h-4 w-4" />
           <AlertDescription>
             <strong>Dashboard non protégé</strong> — Configurez la variable d'environnement{' '}
             <code className="font-mono text-xs">ADMIN_PASSWORD</code> pour sécuriser l'accès aux
@@ -49,17 +65,15 @@ export function SettingsPage() {
 
       <ProductSettingsCard />
 
-      <div>
-        <h2 className="text-base font-semibold mb-1">Paramètres globaux</h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Ces paramètres s'appliquent à l'ensemble des produits (identité X partagée).
+      <div className="pt-2">
+        <h2 className="text-lg font-semibold">Paramètres globaux</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Ces paramètres s'appliquent à l'ensemble des produits (identité X partagée). Reddit et
+          Hacker News (Algolia) ne nécessitent pas d'authentification.
         </p>
       </div>
 
       <CookiesCard credentialInfo={credentialInfo} onSaved={refetch} />
-      <p className="text-xs text-muted-foreground -mt-2">
-        Reddit et Hacker News (Algolia) ne nécessitent pas d'authentification.
-      </p>
       <GraphqlCard envDefaults={config.envDefaults} onSaved={refetch} />
     </div>
   );

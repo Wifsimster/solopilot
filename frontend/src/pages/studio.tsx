@@ -27,6 +27,7 @@ import {
   Save,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatRelativeFr } from '@/lib/utils';
 import type { ContentDraft, ContentDraftStatus, TargetSource } from '@/types';
 
 type StatusFilter = ContentDraftStatus;
@@ -93,24 +94,6 @@ function statusBadgeVariant(
   if (status === 'edited') return 'warning';
   if (status === 'discarded') return 'destructive';
   return 'secondary';
-}
-
-function formatRelativeFr(epochSeconds: number | null | undefined): string {
-  if (!epochSeconds) return '—';
-  const ms = epochSeconds > 1e12 ? epochSeconds : epochSeconds * 1000;
-  const diffSec = Math.floor((Date.now() - ms) / 1000);
-  if (diffSec < 60) return 'à l’instant';
-  const minutes = Math.floor(diffSec / 60);
-  if (minutes < 60) return `il y a ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `il y a ${hours} h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `il y a ${days} j`;
-  return new Date(ms).toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
 }
 
 interface DraftCardProps {
