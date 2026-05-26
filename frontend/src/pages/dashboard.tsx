@@ -2,12 +2,21 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useApi } from '@/hooks/use-api';
 import { StatusBadge } from '@/components/status-badge';
 import { StatCard } from '@/components/stat-card';
+import { PageHeader } from '@/components/page-header';
+import { ErrorState } from '@/components/error-state';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Link } from 'react-router-dom';
-import { Activity, Clock, Zap, AlertCircle, Timer } from 'lucide-react';
+import {
+  Activity,
+  Timer,
+  CalendarClock,
+  ArrowRight,
+  Play,
+  AlertCircle,
+} from 'lucide-react';
 import { humanizeCron, nextCronDate, formatTimeUntil } from '@/lib/utils';
 import {
   AlertDialog,
@@ -27,12 +36,18 @@ import type { StatusResponse } from '@/types';
 
 const POLL_INTERVAL_MS = 4_000;
 
+function isCookieError(message: string | null | undefined): boolean {
+  if (!message) return false;
+  return /401|403|404|Session cookies/i.test(message);
+}
+
 export function DashboardPage() {
   const { selectedProductId } = useSelectedProduct();
   const { data: status, loading, error, refetch } = useApi<StatusResponse>('/api/status', {
     productId: selectedProductId,
   });
   const [triggering, setTriggering] = useState(false);
+  const [liveMessage, setLiveMessage] = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wasRunning = useRef(false);
 
@@ -48,7 +63,6 @@ export function DashboardPage() {
     pollRef.current = setInterval(() => refetch(), POLL_INTERVAL_MS);
   }, [refetch, stopPolling]);
 
-  // Auto-poll while a run or collection is active
   useEffect(() => {
     const isActive = status?.running || status?.collecting;
     if (isActive && !pollRef.current) {
@@ -57,7 +71,7 @@ export function DashboardPage() {
     } else if (!isActive && wasRunning.current) {
       stopPolling();
       wasRunning.current = false;
-      // One final refetch to get the completed state
+      setLiveMessage('Run terminé — résultats à jour ci-dessous.');
       refetch();
     }
     return stopPolling;
@@ -72,7 +86,7 @@ export function DashboardPage() {
       const data = await res.json();
       if (data.success) {
         toast.success(data.message);
-        // Start polling immediately after triggering
+        setLiveMessage('Run démarré.');
         startPolling();
         wasRunning.current = true;
       } else {
@@ -86,35 +100,32 @@ export function DashboardPage() {
     }
   };
 
-  if (loading) {
+  if (loading && !status) {
     return (
       <div className="space-y-6">
-        <div>
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="mt-2 h-4 w-72" />
+        <div className="space-y-2">
+          <Skeleton className="h-9 w-48" />
+          <Skeleton className="h-5 w-72" />
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           <Skeleton className="h-24 rounded-lg" />
           <Skeleton className="h-24 rounded-lg" />
           <Skeleton className="h-24 rounded-lg" />
         </div>
-        <Skeleton className="h-48 rounded-lg" />
+        <Skeleton className="h-64 rounded-lg" />
       </div>
     );
   }
+
   if (error) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">Supervision du bot X AI Weekly</p>
-        </div>
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            Impossible de charger le statut : {error}
-          </AlertDescription>
-        </Alert>
+        <PageHeader title="Dashboard" description="Supervision du bot X AI Weekly" />
+        <ErrorState
+          message={error}
+          context="Impossible de charger le statut"
+          onRetry={refetch}
+        />
       </div>
     );
   }
@@ -124,22 +135,45 @@ export function DashboardPage() {
   const { lastRun, cronSchedule, running, totalRuns } = status;
   const nextRun = nextCronDate(cronSchedule);
   const nextRunLabel = nextRun ? formatTimeUntil(nextRun) : null;
-  const cookiesExpired =
-    lastRun?.error_message?.includes('401') ||
-    lastRun?.error_message?.includes('403') ||
-    lastRun?.error_message?.includes('404') ||
-    lastRun?.error_message?.includes('Session cookies') ||
-    false;
+  const cookiesExpired = isCookieError(lastRun?.error_message);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">Supervision du bot X AI Weekly</p>
+      <div className="sr-only" role="status" aria-live="polite">
+        {liveMessage}
       </div>
 
+      <PageHeader
+        title="Dashboard"
+        description="Supervision du bot X AI Weekly"
+        actions={
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button disabled={running || triggering} aria-label="Lancer un run maintenant">
+                <Play className="h-4 w-4" aria-hidden="true" />
+                {running || triggering ? 'Run en cours…' : 'Lancer un run'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Lancer un run maintenant ?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Cette action va déclencher un scraping de votre timeline X et générer un résumé
+                  IA des actualités.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Annuler</AlertDialogCancel>
+                <AlertDialogAction onClick={handleTrigger}>Lancer le run</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        }
+      />
+
       {cookiesExpired && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" role="alert">
+          <AlertCircle className="h-4 w-4" />
           <AlertTitle>Session cookies expirés</AlertTitle>
           <AlertDescription>
             Vos cookies de session X semblent avoir expiré.{' '}
@@ -151,99 +185,96 @@ export function DashboardPage() {
         </Alert>
       )}
 
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4">
-        <StatCard title="Total runs" icon={Activity}>
-          {totalRuns}
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        <StatCard
+          title="Statut actuel"
+          icon={Activity}
+          tone={running ? 'warning' : 'success'}
+        >
+          {running ? <StatusBadge status="running" /> : <span>Inactif</span>}
         </StatCard>
-        <StatCard title="Planification" icon={Clock}>
-          <span className="text-base">{humanizeCron(cronSchedule)}</span>
-        </StatCard>
-        <StatCard title="Prochain run" icon={Timer}>
+        <StatCard
+          title="Prochain run"
+          icon={Timer}
+          hint={humanizeCron(cronSchedule)}
+        >
           {running ? (
             <StatusBadge status="running" />
           ) : nextRunLabel ? (
-            <span className="text-base">dans {nextRunLabel}</span>
+            <span>dans {nextRunLabel}</span>
           ) : (
-            <span className="text-muted-foreground text-base">—</span>
+            <span className="text-muted-foreground">—</span>
           )}
         </StatCard>
-        <StatCard title="Statut actuel" icon={Zap}>
-          {running ? (
-            <StatusBadge status="running" />
-          ) : (
-            <span className="text-muted-foreground text-base">Inactif</span>
-          )}
+        <StatCard title="Runs cumulés" icon={CalendarClock}>
+          <span className="tabular-nums">{totalRuns}</span>
         </StatCard>
       </div>
 
-      {lastRun && (
+      {lastRun ? (
         <Card>
-          <CardHeader>
-            <div className="font-semibold">Dernier run</div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
-              <div>
-                <p className="text-sm text-muted-foreground">Statut</p>
+          <CardContent className="p-5 sm:p-6 space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Dernier run · #{lastRun.id}
+                </p>
+                <p className="text-base font-semibold">{lastRun.started_at}</p>
+              </div>
+              <div className="flex items-center gap-3">
                 <StatusBadge status={lastRun.status} />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Date</p>
-                <p className="font-medium">{lastRun.started_at}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Messages collectés</p>
-                <p className="font-medium">{lastRun.tweets_fetched}</p>
+                <span className="text-sm text-muted-foreground">
+                  {lastRun.tweets_fetched} message{lastRun.tweets_fetched !== 1 ? 's' : ''}
+                </span>
               </div>
             </div>
 
             {lastRun.summary && (
-              <div className="rounded-lg border border-l-4 border-l-primary/30 p-4">
-                <p className="font-semibold mb-2">Synthèse de la veille</p>
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Synthèse de la veille
+                </p>
                 <MarkdownContent content={lastRun.summary} className="text-sm" />
               </div>
             )}
 
             {lastRun.error_message && (
-              <details open>
-                <summary className="cursor-pointer font-medium text-destructive">Erreur</summary>
-                <pre className="mt-2 rounded-lg bg-muted p-4 text-xs overflow-x-auto max-h-96">
+              <details className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+                <summary className="cursor-pointer font-medium text-destructive text-sm">
+                  Détail de l'erreur
+                </summary>
+                <pre className="mt-2 rounded bg-background p-3 text-xs overflow-x-auto max-h-96 whitespace-pre-wrap">
                   {lastRun.error_message}
                 </pre>
               </details>
             )}
+
+            <div className="flex flex-wrap gap-2 pt-1 border-t -mx-5 sm:-mx-6 px-5 sm:px-6 -mb-1">
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/summaries" className="gap-1">
+                  Toutes les synthèses
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/runs" className="gap-1">
+                  Historique complet
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
-      )}
-
-      {!lastRun && (
+      ) : (
         <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            Aucun run enregistré.
+          <CardContent className="py-10 text-center space-y-3">
+            <p className="text-muted-foreground">Aucun run enregistré pour le moment.</p>
+            <p className="text-sm text-muted-foreground">
+              Lancez un premier run pour voir apparaître ici votre synthèse IA.
+            </p>
           </CardContent>
         </Card>
       )}
-
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button disabled={running || triggering} className="w-full sm:w-auto">
-            {running || triggering ? 'Run en cours...' : 'Lancer un run maintenant'}
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Lancer un run maintenant ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Cette action va déclencher un scraping de votre timeline X et générer un résumé IA des
-              actualités.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <AlertDialogAction onClick={handleTrigger}>Lancer le run</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

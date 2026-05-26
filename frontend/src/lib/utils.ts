@@ -125,6 +125,28 @@ export function formatDateFr(dateStr: string | null | undefined): string {
 }
 
 /**
+ * Format a past timestamp (epoch seconds or millis) as a relative French label.
+ * Falls back to a localized date for anything older than a week.
+ */
+export function formatRelativeFr(epoch: number | null | undefined): string {
+  if (!epoch) return '—';
+  const ms = epoch > 1e12 ? epoch : epoch * 1000;
+  const diffSec = Math.floor((Date.now() - ms) / 1000);
+  if (diffSec < 60) return 'à l’instant';
+  const minutes = Math.floor(diffSec / 60);
+  if (minutes < 60) return `il y a ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `il y a ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `il y a ${days} j`;
+  return new Date(ms).toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+/**
  * Format a duration between now and a future date as a French relative string.
  */
 export function formatTimeUntil(target: Date): string {

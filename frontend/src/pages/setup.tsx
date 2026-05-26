@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Settings as SettingsIcon, ArrowRight } from "lucide-react";
 import type { SetupResponse } from "@/types";
 
 export function SetupPage() {
@@ -11,14 +12,16 @@ export function SetupPage() {
 
   if (loading || !setup) {
     return (
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="text-center">
-          <Skeleton className="h-10 w-10 mx-auto rounded-full" />
-          <Skeleton className="mt-2 h-8 w-64 mx-auto" />
-          <Skeleton className="mt-2 h-4 w-96 mx-auto" />
+      <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-muted/30">
+        <div className="max-w-2xl w-full mx-auto space-y-6">
+          <div className="text-center space-y-3">
+            <Skeleton className="h-14 w-14 mx-auto rounded-full" />
+            <Skeleton className="h-8 w-64 mx-auto" />
+            <Skeleton className="h-4 w-96 mx-auto" />
+          </div>
+          <Skeleton className="h-2 w-full rounded-full" />
+          <Skeleton className="h-64 rounded-lg" />
         </div>
-        <Skeleton className="h-2 w-full rounded-full" />
-        <Skeleton className="h-64 rounded-lg" />
       </div>
     );
   }
@@ -28,23 +31,37 @@ export function SetupPage() {
   const totalCount = credentials.length;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="text-center">
-        <div className="text-4xl mb-2">&#9881;</div>
-        <h1 className="text-2xl font-bold tracking-tight">Configuration requise</h1>
-        <p className="text-muted-foreground">
-          Le bot a besoin de quelques variables d'environnement pour fonctionner. {configuredCount} sur {totalCount} sont configurées.
-        </p>
-      </div>
-
-      <div className="flex gap-1" role="progressbar" aria-valuemin={0} aria-valuenow={configuredCount} aria-valuemax={totalCount} aria-label="Progression de la configuration">
-        {credentials.map((cred) => (
+    <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-muted/30">
+      <div className="max-w-2xl w-full mx-auto space-y-6">
+        <div className="text-center space-y-3">
           <div
-            key={cred.key}
-            className={`h-1.5 flex-1 rounded-full ${cred.configured ? "bg-success" : "bg-destructive"}`}
-          />
-        ))}
-      </div>
+            className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary"
+            aria-hidden="true"
+          >
+            <SettingsIcon className="h-7 w-7" />
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Configuration requise</h1>
+          <p className="text-muted-foreground">
+            Le bot a besoin de quelques variables d'environnement pour fonctionner.{' '}
+            <strong className="text-foreground">{configuredCount}</strong> sur {totalCount} sont configurées.
+          </p>
+        </div>
+
+        <div
+          className="flex gap-1"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuenow={configuredCount}
+          aria-valuemax={totalCount}
+          aria-label={`Progression de la configuration : ${configuredCount} sur ${totalCount}`}
+        >
+          {credentials.map((cred) => (
+            <div
+              key={cred.key}
+              className={`h-2 flex-1 rounded-full transition-colors ${cred.configured ? 'bg-success' : 'bg-muted-foreground/20'}`}
+            />
+          ))}
+        </div>
 
       <Card>
         <CardHeader>
@@ -115,15 +132,19 @@ export function SetupPage() {
         </CardContent>
       </Card>
 
-      {configured ? (
-        <Button asChild className="w-full">
-          <Link to="/">Accéder au dashboard</Link>
-        </Button>
-      ) : (
-        <Button disabled className="w-full">
-          En attente de configuration...
-        </Button>
-      )}
+        {configured ? (
+          <Button asChild className="w-full" size="lg">
+            <Link to="/">
+              Accéder au dashboard
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </Button>
+        ) : (
+          <Button disabled className="w-full" size="lg">
+            En attente de configuration…
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
