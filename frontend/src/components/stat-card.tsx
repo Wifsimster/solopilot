@@ -1,25 +1,48 @@
-import type { LucideIcon } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import type { LucideIcon } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
-export function StatCard({
-  title,
-  icon: Icon,
-  children,
-}: {
+type StatTone = 'default' | 'success' | 'warning' | 'destructive';
+
+const toneStyles: Record<StatTone, string> = {
+  default: 'bg-primary/10 text-primary',
+  success: 'bg-success/10 text-success',
+  warning: 'bg-warning/10 text-warning',
+  destructive: 'bg-destructive/10 text-destructive',
+};
+
+interface StatCardProps {
   title: string;
   icon?: LucideIcon;
+  tone?: StatTone;
+  hint?: string;
   children: React.ReactNode;
-}) {
+}
+
+export function StatCard({ title, icon: Icon, tone = 'default', hint, children }: StatCardProps) {
   return (
-    <Card className="border-l-4 border-l-primary/20">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-          {Icon && <Icon className="h-4 w-4 text-primary" />}
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{children}</div>
+    <Card>
+      <CardContent className="flex items-start gap-3 p-4 sm:p-5">
+        {Icon && (
+          <div
+            className={cn(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+              toneStyles[tone],
+            )}
+            aria-hidden="true"
+          >
+            <Icon className="h-5 w-5" />
+          </div>
+        )}
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {title}
+          </p>
+          <div className="text-xl sm:text-2xl font-semibold tracking-tight truncate">
+            {children}
+          </div>
+          {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        </div>
       </CardContent>
     </Card>
   );

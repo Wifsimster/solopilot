@@ -11,6 +11,9 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { TweetListPanel } from "@/components/tweet-list-panel";
 import { MarkdownContent } from "@/components/markdown-content";
+import { PageHeader } from "@/components/page-header";
+import { Pagination } from "@/components/pagination";
+import { usePagination } from "@/hooks/use-pagination";
 import {
   AlertDialog,
   AlertDialogTrigger,
@@ -41,10 +44,10 @@ function formatDate(dateStr: string): string {
 export function SummariesPage() {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Synthèses</h1>
-        <p className="text-muted-foreground">Historique des résumés IA quotidiens et mensuels</p>
-      </div>
+      <PageHeader
+        title="Synthèses"
+        description="Historique des résumés IA quotidiens et mensuels"
+      />
 
       <Tabs defaultValue="daily">
         <TabsList>
@@ -64,23 +67,25 @@ export function SummariesPage() {
 
 function DailyView() {
   const { selectedProductId } = useSelectedProduct();
-  const [page, setPage] = useState(0);
+  const pagination = usePagination({ limit: 10 });
   const [filterMonth, setFilterMonth] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const limit = 10;
 
   // Debounce search input (300ms)
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchInput);
-      setPage(0);
+      pagination.reset();
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchInput]);
+  }, [searchInput, pagination]);
 
   // Build API URL with filters
-  const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
+  const params = new URLSearchParams({
+    limit: String(pagination.limit),
+    offset: String(pagination.offset),
+  });
   if (filterMonth) params.set("month", filterMonth);
   if (debouncedSearch) params.set("search", debouncedSearch);
 
@@ -100,7 +105,7 @@ function DailyView() {
     setFilterMonth("");
     setSearchInput("");
     setDebouncedSearch("");
-    setPage(0);
+    pagination.reset();
   };
 
   // Build month options from available data
@@ -119,25 +124,24 @@ function DailyView() {
     );
   }
 
-  const totalPages = data ? Math.ceil(data.total / limit) : 0;
+  const totalPages = data ? pagination.totalPages(data.total) : 0;
 
   return (
     <div className="space-y-4">
       {/* Filter bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-center">
+        <div className="relative flex-1 sm:max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
           <Input
-            placeholder="Rechercher dans les résumés..."
+            placeholder="Rechercher dans les résumés…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             className="pl-9"
             aria-label="Rechercher dans le contenu des résumés"
-            title="Recherche dans le texte des résumés IA"
           />
         </div>
-        <Select value={filterMonth} onValueChange={(v) => { setFilterMonth(v); setPage(0); }}>
-          <SelectTrigger className="w-[200px]">
+        <Select value={filterMonth} onValueChange={(v) => { setFilterMonth(v); pagination.reset(); }}>
+          <SelectTrigger className="w-full sm:w-[200px]" aria-label="Filtrer par mois">
             <SelectValue placeholder="Tous les mois" />
           </SelectTrigger>
           <SelectContent>
@@ -148,7 +152,7 @@ function DailyView() {
         </Select>
         {hasFilters && (
           <Button variant="ghost" size="sm" onClick={handleResetFilters}>
-            <RotateCcw className="h-4 w-4 mr-1" />
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
             Réinitialiser
           </Button>
         )}
@@ -175,29 +179,12 @@ function DailyView() {
             ))}
           </div>
 
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page === 0}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                Précédent
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                Page {page + 1} / {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages - 1}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Suivant
-              </Button>
-            </div>
-          )}
+          <Pagination
+            page={pagination.page}
+            totalPages={totalPages}
+            onPrev={pagination.prev}
+            onNext={pagination.next}
+          />
         </>
       )}
     </div>
@@ -281,57 +268,58 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
   };
 
   return (
-    <Card className="border-l-4 border-l-primary/20">
-      <CardHeader className="pb-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
-            <Calendar className="h-4 w-4 text-primary" />
-            <span className="font-medium text-sm sm:text-base">{formatDate(run.started_at)}</span>
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Calendar className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+            <span className="font-medium text-sm sm:text-base truncate">{formatDate(run.started_at)}</span>
+            <Badge variant="outline" className="ml-1 shrink-0">#{run.id}</Badge>
+            {notifStatus === "sent" && <Badge variant="success">Discord</Badge>}
           </div>
-          <div className="flex items-center gap-2">
-            {notifStatus === "sent" && (
-              <Badge variant="success">Discord</Badge>
-            )}
+          <div className="flex items-center gap-1.5">
             {run.tweets_fetched > 0 ? (
               <Sheet>
                 <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-auto p-0" aria-label="Voir les tweets">
-                    <Badge variant="secondary" className="hover:bg-secondary/80 transition-colors">
-                      <MessageSquare className="h-3 w-3 mr-1" />
-                      {run.tweets_fetched} tweets
-                    </Badge>
+                  <Button variant="ghost" size="sm" className="h-9 px-2 text-xs" aria-label={`Voir les ${run.tweets_fetched} tweets de ce run`}>
+                    <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                    {run.tweets_fetched}
                   </Button>
                 </SheetTrigger>
                 <SheetContent>
                   <SheetHeader>
-                    <SheetTitle>{run.tweets_fetched} tweets - Run #{run.id}</SheetTitle>
+                    <SheetTitle>{run.tweets_fetched} tweets — Run #{run.id}</SheetTitle>
                     <SheetDescription>{formatDate(run.started_at)}</SheetDescription>
                   </SheetHeader>
                   <TweetListPanel runId={run.id} tweetCount={run.tweets_fetched} />
                 </SheetContent>
               </Sheet>
             ) : (
-              <Badge variant="secondary">{run.tweets_fetched} tweets</Badge>
+              <Badge variant="secondary" className="text-xs">{run.tweets_fetched} tweets</Badge>
             )}
-            <Badge variant="outline">Run #{run.id}</Badge>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={handleRerun}
-              className="h-7 w-7 p-0"
-              title="Régénérer le résumé"
-            >
-              {rerunning ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : rerunResult === "success" ? (
-                <Check className="h-3.5 w-3.5 text-success" />
-              ) : rerunResult === "error" ? (
-                <X className="h-3.5 w-3.5 text-destructive" />
-              ) : (
-                <RefreshCw className="h-3.5 w-3.5" />
-              )}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  disabled={busy}
+                  onClick={handleRerun}
+                  className="h-9 w-9"
+                  aria-label="Régénérer le résumé"
+                >
+                  {rerunning ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : rerunResult === "success" ? (
+                    <Check className="h-4 w-4 text-success" />
+                  ) : rerunResult === "error" ? (
+                    <X className="h-4 w-4 text-destructive" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Régénérer ce résumé</TooltipContent>
+            </Tooltip>
             {discordConfigured && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -340,15 +328,15 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
                     size="sm"
                     disabled={busy}
                     onClick={handleSendDiscord}
-                    className="h-7 px-2 text-xs"
+                    className="h-9 px-3 text-xs"
                     aria-label="Envoyer sur Discord"
                   >
                     {sending ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <>
-                        <Send className="h-3.5 w-3.5 mr-1" />
-                        Discord
+                        <Send className="h-4 w-4" aria-hidden="true" />
+                        <span className="hidden sm:inline">Discord</span>
                       </>
                     )}
                   </Button>
@@ -358,19 +346,24 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
             )}
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={busy}
-                  className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                  title="Supprimer le résumé"
-                >
-                  {deleting ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-3.5 w-3.5" />
-                  )}
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      disabled={busy}
+                      className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      aria-label="Supprimer le résumé"
+                    >
+                      {deleting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Supprimer ce résumé</TooltipContent>
+                </Tooltip>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
@@ -531,12 +524,22 @@ function MonthlyView() {
   );
 }
 
+function parseRunIds(raw: string | null | undefined): number[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((n) => typeof n === "number") : [];
+  } catch {
+    return [];
+  }
+}
+
 function MonthlySummaryCard({ summary }: { summary: MonthlySummaryRecord }) {
   const [expanded, setExpanded] = useState(false);
-  const runIds: number[] = JSON.parse(summary.source_run_ids);
+  const runIds = parseRunIds(summary.source_run_ids);
 
   return (
-    <Card className="border-l-4 border-l-primary/40">
+    <Card className="border-l-4 border-l-primary/30">
       <CardHeader className="pb-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
