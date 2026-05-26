@@ -10,22 +10,22 @@ import {
   SelectItem,
 } from '@/components/ui/select';
 import {
-  Sheet,
-  SheetTrigger,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerBody,
+} from '@/components/ui/drawer';
+import { MobileBottomNav } from '@/components/mobile-bottom-nav';
 import {
   BrainCircuit,
-  Menu,
+  History,
+  Package,
+  Settings as SettingsIcon,
   Target,
   Wand2,
   LayoutDashboard,
   FileText,
-  History,
-  Package,
-  Settings as SettingsIcon,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -82,9 +82,9 @@ function navLinkClass({ isActive }: { isActive: boolean }) {
   );
 }
 
-function mobileNavLinkClass({ isActive }: { isActive: boolean }) {
+function drawerNavLinkClass({ isActive }: { isActive: boolean }) {
   return cn(
-    'flex items-center gap-3 py-3 px-3 text-base transition-colors rounded-md',
+    'flex items-center gap-3 py-3 px-3 text-base rounded-md transition-colors min-h-[48px]',
     isActive
       ? 'text-foreground font-medium bg-primary/10'
       : 'text-muted-foreground hover:text-foreground hover:bg-muted',
@@ -146,11 +146,11 @@ export function Layout() {
   const { data: versionInfo } = useApi<{ version: string; buildDate: string | null }>(
     '/api/version',
   );
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
-    setSheetOpen(false);
+    setDrawerOpen(false);
   }, [location.pathname]);
 
   return (
@@ -161,22 +161,27 @@ export function Layout() {
       >
         Aller au contenu principal
       </a>
-      <nav
-        className="border-b bg-card/80 backdrop-blur-md sticky top-0 z-50"
-        aria-label="Navigation principale"
+
+      {/* Header — compact on mobile, full nav on desktop */}
+      <header
+        className="border-b bg-card/80 backdrop-blur-md sticky top-0 z-40"
+        aria-label="En-tête"
       >
         <div className="container mx-auto flex items-center justify-between gap-3 px-4 h-14">
           <Link
             to="/"
-            className="font-bold text-lg flex items-center gap-2 hover:text-primary transition-colors shrink-0"
+            className="font-bold text-base sm:text-lg flex items-center gap-2 hover:text-primary transition-colors shrink-0"
           >
             <BrainCircuit className="h-5 w-5 text-primary" />
             <span className="hidden sm:inline">X AI Weekly Bot</span>
-            <span className="sm:hidden">XAI</span>
+            <span className="sm:hidden">XAI Bot</span>
           </Link>
 
           {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-1 flex-1 ml-4">
+          <nav
+            className="hidden md:flex items-center gap-1 flex-1 ml-4"
+            aria-label="Navigation principale"
+          >
             {NAV_SECTIONS.map((section, sectionIdx) => (
               <div key={section.id} className="flex items-center gap-3">
                 {sectionIdx > 0 && (
@@ -195,8 +200,9 @@ export function Layout() {
                 ))}
               </div>
             ))}
-          </div>
+          </nav>
 
+          {/* Desktop right cluster */}
           <div className="hidden md:flex items-center gap-2 shrink-0">
             <ProductSwitcher />
             <Select
@@ -214,70 +220,21 @@ export function Layout() {
             </Select>
           </div>
 
-          {/* Mobile sheet nav */}
-          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-            <SheetTrigger asChild>
-              <button
-                className="md:hidden inline-flex items-center justify-center h-10 w-10 -mr-2 hover:bg-muted rounded-md transition-colors"
-                aria-label="Ouvrir le menu de navigation"
-              >
-                <Menu className="h-5 w-5" />
-              </button>
-            </SheetTrigger>
-            <SheetContent>
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
-                  <BrainCircuit className="h-5 w-5 text-primary" />
-                  Navigation
-                </SheetTitle>
-              </SheetHeader>
-              <div className="mt-6 space-y-6">
-                {NAV_SECTIONS.map((section) => (
-                  <div key={section.id} className="space-y-1">
-                    <p className="px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      {section.label}
-                    </p>
-                    {section.items.map((item) => (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        end={item.end}
-                        className={mobileNavLinkClass}
-                      >
-                        <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                        {item.label}
-                      </NavLink>
-                    ))}
-                  </div>
-                ))}
-                <div className="pt-4 border-t space-y-3">
-                  <ProductSwitcher triggerClassName="h-10 w-full text-sm" />
-                  <Select
-                    value={theme}
-                    onValueChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}
-                  >
-                    <SelectTrigger
-                      className="h-10 w-full text-sm"
-                      aria-label="Thème de l'interface"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="system">Système</SelectItem>
-                      <SelectItem value="light">Clair</SelectItem>
-                      <SelectItem value="dark">Sombre</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </SheetContent>
-          </Sheet>
+          {/* Mobile — compact product switcher only */}
+          <div className="md:hidden shrink-0">
+            <ProductSwitcher triggerClassName="h-9 w-[140px] text-xs" />
+          </div>
         </div>
-      </nav>
-      <main id="main-content" className="container mx-auto flex-1 px-3 py-4 sm:px-4 sm:py-6">
+      </header>
+
+      <main
+        id="main-content"
+        className="container mx-auto flex-1 px-3 py-4 sm:px-4 sm:py-6 pb-24 md:pb-6"
+      >
         <Outlet />
       </main>
-      <footer className="border-t py-4">
+
+      <footer className="hidden md:block border-t py-4">
         <div className="container mx-auto px-4">
           <p className="text-xs text-muted-foreground">
             X AI Weekly Bot v{versionInfo?.version || 'dev'}
@@ -295,6 +252,63 @@ export function Layout() {
           </p>
         </div>
       </footer>
+
+      {/* Mobile bottom nav + "more" drawer */}
+      <MobileBottomNav onMore={() => setDrawerOpen(true)} />
+
+      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <DrawerContent className="max-h-[85dvh]">
+          <DrawerHeader>
+            <DrawerTitle className="flex items-center gap-2">
+              <BrainCircuit className="h-5 w-5 text-primary" />
+              Navigation
+            </DrawerTitle>
+          </DrawerHeader>
+          <DrawerBody>
+            <div className="space-y-5">
+              {NAV_SECTIONS.map((section) => (
+                <div key={section.id} className="space-y-1">
+                  <p className="px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {section.label}
+                  </p>
+                  {section.items.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.end}
+                      className={drawerNavLinkClass}
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      {item.label}
+                    </NavLink>
+                  ))}
+                </div>
+              ))}
+              <div className="pt-4 border-t space-y-2">
+                <p className="px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Apparence
+                </p>
+                <Select
+                  value={theme}
+                  onValueChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}
+                >
+                  <SelectTrigger className="h-11 w-full text-sm" aria-label="Thème de l'interface">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="system">Système</SelectItem>
+                    <SelectItem value="light">Clair</SelectItem>
+                    <SelectItem value="dark">Sombre</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="px-3 pt-2 text-xs text-muted-foreground">
+                v{versionInfo?.version || 'dev'}
+              </p>
+            </div>
+          </DrawerBody>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }

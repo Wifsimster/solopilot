@@ -7,26 +7,22 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { TweetListPanel } from "@/components/tweet-list-panel";
 import { MarkdownContent } from "@/components/markdown-content";
 import { PageHeader } from "@/components/page-header";
 import { Pagination } from "@/components/pagination";
 import { usePagination } from "@/hooks/use-pagination";
+import { ConfirmDialog } from "@/components/responsive-dialog";
 import {
-  AlertDialog,
-  AlertDialogTrigger,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogAction,
-  AlertDialogCancel,
-} from "@/components/ui/alert-dialog";
-import { buttonVariants } from "@/components/ui/button";
-import { Calendar, TrendingUp, Loader2, Send, Check, X, Search, RotateCcw, Trash2, RefreshCw, MessageSquare } from "lucide-react";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Calendar, TrendingUp, Loader2, Send, Check, X, Search, RotateCcw, Trash2, RefreshCw, MessageSquare, MoreVertical } from "lucide-react";
 import { toast } from "sonner";
 import { useSelectedProduct, withProductId } from "@/lib/product-context";
 import type { RunRecord, MonthlySummaryRecord, AvailableMonth, ConfigResponse } from "@/types";
@@ -128,34 +124,37 @@ function DailyView() {
 
   return (
     <div className="space-y-4">
-      {/* Filter bar */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-center">
-        <div className="relative flex-1 sm:max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-          <Input
-            placeholder="Rechercher dans les résumés…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="pl-9"
-            aria-label="Rechercher dans le contenu des résumés"
-          />
+      {/* Filter bar — sticky on mobile under the header */}
+      <div className="sticky top-14 z-20 -mx-3 sm:mx-0 px-3 sm:px-0 py-2 sm:py-0 bg-background/95 backdrop-blur sm:bg-transparent sm:backdrop-blur-none border-b sm:border-0">
+        <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-center">
+          <div className="relative flex-1 sm:max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <Input
+              placeholder="Rechercher…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="pl-9 h-10"
+              aria-label="Rechercher dans le contenu des résumés"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={filterMonth} onValueChange={(v) => { setFilterMonth(v); pagination.reset(); }}>
+              <SelectTrigger className="flex-1 sm:w-[200px] h-10" aria-label="Filtrer par mois">
+                <SelectValue placeholder="Tous les mois" />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {hasFilters && (
+              <Button variant="ghost" size="icon" onClick={handleResetFilters} aria-label="Réinitialiser les filtres" className="h-10 w-10 shrink-0">
+                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            )}
+          </div>
         </div>
-        <Select value={filterMonth} onValueChange={(v) => { setFilterMonth(v); pagination.reset(); }}>
-          <SelectTrigger className="w-full sm:w-[200px]" aria-label="Filtrer par mois">
-            <SelectValue placeholder="Tous les mois" />
-          </SelectTrigger>
-          <SelectContent>
-            {monthOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={handleResetFilters}>
-            <RotateCcw className="h-4 w-4" aria-hidden="true" />
-            Réinitialiser
-          </Button>
-        )}
       </div>
 
       {!data || data.summaries.length === 0 ? (
@@ -188,6 +187,87 @@ function DailyView() {
         </>
       )}
     </div>
+  );
+}
+
+interface SummaryActionsMenuProps {
+  busy: boolean;
+  rerunning: boolean;
+  rerunResult: "success" | "error" | null;
+  sending: boolean;
+  deleting: boolean;
+  discordConfigured: boolean;
+  onRerun: () => void;
+  onSendDiscord: () => void;
+  onDelete: () => void;
+}
+
+function SummaryActionsMenu({
+  busy,
+  rerunning,
+  rerunResult,
+  sending,
+  deleting,
+  discordConfigured,
+  onRerun,
+  onSendDiscord,
+  onDelete,
+}: SummaryActionsMenuProps) {
+  const rerunIcon = rerunning ? (
+    <Loader2 className="animate-spin" />
+  ) : rerunResult === "success" ? (
+    <Check className="text-success" />
+  ) : rerunResult === "error" ? (
+    <X className="text-destructive" />
+  ) : (
+    <RefreshCw />
+  );
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon"
+          disabled={busy}
+          className="h-9 w-9"
+          aria-label="Actions sur le résumé"
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreVertical className="h-4 w-4" />}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+        <DropdownMenuItem onSelect={onRerun} disabled={busy}>
+          {rerunIcon}
+          <span>Régénérer le résumé</span>
+        </DropdownMenuItem>
+        {discordConfigured && (
+          <DropdownMenuItem onSelect={onSendDiscord} disabled={busy}>
+            {sending ? <Loader2 className="animate-spin" /> : <Send />}
+            <span>Envoyer sur Discord</span>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <ConfirmDialog
+          trigger={
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={busy}
+              onSelect={(e) => e.preventDefault()}
+            >
+              {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+              <span>Supprimer</span>
+            </DropdownMenuItem>
+          }
+          title="Supprimer ce résumé ?"
+          description="Cette action est irréversible. Le résumé sera définitivement supprimé et les tweets associés seront libérés pour une éventuelle régénération."
+          confirmLabel="Supprimer"
+          confirmVariant="destructive"
+          onConfirm={onDelete}
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -297,93 +377,17 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
             ) : (
               <Badge variant="secondary" className="text-xs">{run.tweets_fetched} tweets</Badge>
             )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  disabled={busy}
-                  onClick={handleRerun}
-                  className="h-9 w-9"
-                  aria-label="Régénérer le résumé"
-                >
-                  {rerunning ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : rerunResult === "success" ? (
-                    <Check className="h-4 w-4 text-success" />
-                  ) : rerunResult === "error" ? (
-                    <X className="h-4 w-4 text-destructive" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Régénérer ce résumé</TooltipContent>
-            </Tooltip>
-            {discordConfigured && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    onClick={handleSendDiscord}
-                    className="h-9 px-3 text-xs"
-                    aria-label="Envoyer sur Discord"
-                  >
-                    {sending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Send className="h-4 w-4" aria-hidden="true" />
-                        <span className="hidden sm:inline">Discord</span>
-                      </>
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Envoyer ce résumé sur Discord</TooltipContent>
-              </Tooltip>
-            )}
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      disabled={busy}
-                      className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
-                      aria-label="Supprimer le résumé"
-                    >
-                      {deleting ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Supprimer ce résumé</TooltipContent>
-                </Tooltip>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Supprimer ce résumé ?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Cette action est irréversible. Le résumé sera définitivement supprimé
-                    et les tweets associés seront libérés pour une éventuelle régénération.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Annuler</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleDelete}
-                    className={buttonVariants({ variant: "destructive" })}
-                  >
-                    Supprimer
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <SummaryActionsMenu
+              busy={busy}
+              rerunning={rerunning}
+              rerunResult={rerunResult}
+              sending={sending}
+              deleting={deleting}
+              discordConfigured={discordConfigured}
+              onRerun={handleRerun}
+              onSendDiscord={handleSendDiscord}
+              onDelete={handleDelete}
+            />
           </div>
         </div>
       </CardHeader>
