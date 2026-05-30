@@ -243,6 +243,135 @@ export async function fetchGithubRepos(opts: GithubFetchOpts): Promise<GithubRep
 }
 
 // ---------------------------------------------------------------------------
+// Repo context (for AI grounding)
+// ---------------------------------------------------------------------------
+
+export type GithubRepoContext = {
+  description: string | null;
+  language: string | null;
+  topics: string[];
+  readmeExcerpt: string | null;
+};
+
+const README_EXCERPT_MAX_CHARS = 4000;
+
+/**
+ * Parse a GitHub repository URL into its owner/repo pair. Accepts the canonical
+ * `https://github.com/owner/repo` form (with optional `.git`, trailing slash or
+ * deeper paths like `/tree/main`), returning `null` for anything that is not a
+ * github.com repository URL.
+ */
+export function parseGithubRepoUrl(url: string): { owner: string; repo: string } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return null;
+  }
+  if (parsed.hostname !== 'github.com' && parsed.hostname !== 'www.github.com') {
+    return null;
+  }
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (segments.length < 2) return null;
+  const owner = segments[0];
+  let repo = segments[1];
+  if (repo.toLowerCase().endsWith('.git')) repo = repo.slice(0, -4);
+  if (!/^[A-Za-z0-9-]+$/.test(owner) || !/^[A-Za-z0-9._-]+$/.test(repo)) {
+    return null;
+  }
+  return { owner, repo };
+}
+
+/**
+ * Best-effort fetch of a repository's description, primary language, topics and
+ * a README excerpt, used to ground AI suggestions on the product's repo. Returns
+ * `null` when the URL is not a GitHub repo or the metadata request fails; README
+ * failures are tolerated (the rest of the context is still returned).
+ */
+export async function fetchGithubRepoContext(
+  productUrl: string,
+  githubToken?: string,
+): Promise<GithubRepoContext | null> {
+  const target = parseGithubRepoUrl(productUrl);
+  if (!target) return null;
+  const { owner, repo } = target;
+
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'x-ai-weekly-bot/1.x',
+  };
+  if (githubToken) {
+    headers.Authorization = `Bearer ${githubToken}`;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+
+  try {
+    const metaRes = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+      { headers, signal: controller.signal },
+    );
+    if (!metaRes.ok) {
+      logger.warn('GitHub repo context metadata fetch failed', {
+        owner,
+        repo,
+        status: metaRes.status,
+      });
+      return null;
+    }
+    const meta = (await metaRes.json()) as {
+      description?: string | null;
+      language?: string | null;
+      topics?: string[];
+    };
+
+    let readmeExcerpt: string | null = null;
+    try {
+      const readmeRes = await fetch(
+        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/readme`,
+        {
+          headers: { ...headers, Accept: 'application/vnd.github.raw' },
+          signal: controller.signal,
+        },
+      );
+      if (readmeRes.ok) {
+        const text = await readmeRes.text();
+        const trimmed = text.trim();
+        if (trimmed) {
+          readmeExcerpt =
+            trimmed.length > README_EXCERPT_MAX_CHARS
+              ? `${trimmed.slice(0, README_EXCERPT_MAX_CHARS)}…`
+              : trimmed;
+        }
+      }
+    } catch {
+      // README is optional context — ignore failures.
+    }
+
+    return {
+      description: meta.description ?? null,
+      language: meta.language ?? null,
+      topics: Array.isArray(meta.topics) ? meta.topics.filter((t) => typeof t === 'string') : [],
+      readmeExcerpt,
+    };
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      logger.warn('GitHub repo context fetch timed out', { owner, repo });
+    } else {
+      logger.warn('GitHub repo context fetch failed', {
+        owner,
+        repo,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // bulkImportProducts
 // ---------------------------------------------------------------------------
 

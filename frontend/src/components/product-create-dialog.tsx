@@ -137,6 +137,75 @@ const parseCtas = makeLengthParser(
   (j) => `CTA trop long : ${j} (max ${CTA_MAX} caractères).`,
 );
 
+interface AiSuggestionOptions<T> {
+  endpoint: string;
+  /** Build the request body, or return null (after toasting) to abort. */
+  buildBody: () => Record<string, unknown> | null;
+  /** Pull the typed value out of the JSON response, or null when missing. */
+  extract: (data: Record<string, unknown>) => T | null | undefined;
+  /** Apply the suggestion to the form. */
+  apply: (value: T) => void;
+  successMessage: string;
+}
+
+/**
+ * Drives a "Proposer avec l'IA" suggestion: owns the loading flag, POSTs the
+ * body, surfaces success/error toasts, and applies the result. Shared by every
+ * generatable field so the per-field handlers stay declarative.
+ */
+function useAiSuggestion<T>(options: AiSuggestionOptions<T>): {
+  suggesting: boolean;
+  suggest: () => Promise<void>;
+} {
+  const [suggesting, setSuggesting] = useState(false);
+  const suggest = async () => {
+    const body = options.buildBody();
+    if (!body) return;
+    setSuggesting(true);
+    try {
+      const res = await fetch(options.endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      const value = res.ok && data.success !== false ? options.extract(data) : undefined;
+      if (value === null || value === undefined) {
+        toast.error(data.message || `Erreur HTTP ${res.status}`);
+        return;
+      }
+      options.apply(value);
+      toast.success(options.successMessage);
+    } catch {
+      toast.error('Erreur réseau lors de la suggestion.');
+    } finally {
+      setSuggesting(false);
+    }
+  };
+  return { suggesting, suggest };
+}
+
+/** Small "Proposer avec l'IA" button rendered next to a generatable field. */
+function SuggestButton({ suggesting, onClick }: { suggesting: boolean; onClick: () => void }) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-7 gap-1.5 text-xs"
+      onClick={onClick}
+      disabled={suggesting}
+    >
+      {suggesting ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+      ) : (
+        <Sparkles className="h-3.5 w-3.5" aria-hidden />
+      )}
+      {suggesting ? 'Génération...' : "Proposer avec l'IA"}
+    </Button>
+  );
+}
+
 interface FormState {
   name: string;
   id: string;
@@ -641,6 +710,28 @@ interface IntentSectionProps {
 
 /** "Détection d'intention" card: intent toggle + keywords + AI analysis context. */
 function IntentSection({ state, set, intentRef }: IntentSectionProps) {
+  const description = useAiSuggestion<string>({
+    endpoint: '/api/content/suggest-description',
+    buildBody: () => {
+      const name = state.name.trim();
+      if (!name) {
+        toast.error('Renseigne le nom du produit avant de générer une description.');
+        return null;
+      }
+      return {
+        name,
+        product_url: state.productUrl.trim() || null,
+        target_audience: state.targetAudience.trim() || null,
+        value_props: state.valueProps,
+        content_language: state.contentLanguage ?? 'fr',
+      };
+    },
+    extract: (data) =>
+      typeof data.product_description === 'string' ? data.product_description : null,
+    apply: (value) => set('productDescription', value.slice(0, PRODUCT_DESCRIPTION_MAX)),
+    successMessage: "Description du produit proposée par l'IA.",
+  });
+
   return (
     <div className="space-y-4 rounded-lg border p-4">
       <div>
@@ -696,7 +787,10 @@ function IntentSection({ state, set, intentRef }: IntentSectionProps) {
       {/* AI analysis context — applies to lead analysis, independent of matching toggle */}
       <div className="space-y-3">
         <div className="space-y-2">
-          <Label htmlFor="product-description">Description du produit (pour l'IA)</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="product-description">Description du produit (pour l'IA)</Label>
+            <SuggestButton suggesting={description.suggesting} onClick={description.suggest} />
+          </div>
           <Textarea
             id="product-description"
             value={state.productDescription}
@@ -760,76 +854,71 @@ interface StudioSectionProps {
 
 /** "Studio de contenu" card: URL, audience, value props, CTAs, voice & language. */
 function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps) {
-  const [suggestingAudience, setSuggestingAudience] = useState(false);
-
-  const handleSuggestAudience = async () => {
-    const trimmedName = state.name.trim();
-    if (!trimmedName) {
-      toast.error('Renseigne le nom du produit avant de générer une audience cible.');
-      return;
+  // Shared guard: every suggestion needs at least the product name.
+  const requireName = (): string | null => {
+    const trimmed = state.name.trim();
+    if (!trimmed) {
+      toast.error('Renseigne le nom du produit avant de générer du contenu.');
+      return null;
     }
-    setSuggestingAudience(true);
-    try {
-      const res = await fetch('/api/content/suggest-audience', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: trimmedName,
-          product_url: state.productUrl.trim() || null,
-          product_description: state.productDescription.trim() || null,
-          value_props: state.valueProps,
-          content_language: state.contentLanguage ?? 'fr',
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.success === false || !data.target_audience) {
-        toast.error(data.message || `Erreur HTTP ${res.status}`);
-        return;
-      }
-      set('targetAudience', String(data.target_audience).slice(0, TARGET_AUDIENCE_MAX));
-      toast.success("Audience cible proposée par l'IA.");
-    } catch {
-      toast.error('Erreur réseau lors de la suggestion.');
-    } finally {
-      setSuggestingAudience(false);
-    }
+    return trimmed;
   };
 
-  const [suggestingCtas, setSuggestingCtas] = useState(false);
+  const audience = useAiSuggestion<string>({
+    endpoint: '/api/content/suggest-audience',
+    buildBody: () => {
+      const name = requireName();
+      if (!name) return null;
+      return {
+        name,
+        product_url: state.productUrl.trim() || null,
+        product_description: state.productDescription.trim() || null,
+        value_props: state.valueProps,
+        content_language: state.contentLanguage ?? 'fr',
+      };
+    },
+    extract: (data) => (typeof data.target_audience === 'string' ? data.target_audience : null),
+    apply: (value) => set('targetAudience', value.slice(0, TARGET_AUDIENCE_MAX)),
+    successMessage: "Audience cible proposée par l'IA.",
+  });
 
-  const handleSuggestCtas = async () => {
-    const trimmedName = state.name.trim();
-    if (!trimmedName) {
-      toast.error('Renseigne le nom du produit avant de générer des calls to action.');
-      return;
-    }
-    setSuggestingCtas(true);
-    try {
-      const res = await fetch('/api/content/suggest-ctas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: trimmedName,
-          product_url: state.productUrl.trim() || null,
-          product_description: state.productDescription.trim() || null,
-          target_audience: state.targetAudience.trim() || null,
-          value_props: state.valueProps,
-          content_language: state.contentLanguage ?? 'fr',
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.success === false || !Array.isArray(data.call_to_actions)) {
-        toast.error(data.message || `Erreur HTTP ${res.status}`);
-        return;
-      }
-      set('callToActions', (data.call_to_actions as string[]).slice(0, CTAS_MAX));
-      toast.success("Calls to action proposés par l'IA.");
-    } catch {
-      toast.error('Erreur réseau lors de la suggestion.');
-    } finally {
-      setSuggestingCtas(false);
-    }
-  };
+  const valuePropsSuggestion = useAiSuggestion<string[]>({
+    endpoint: '/api/content/suggest-value-props',
+    buildBody: () => {
+      const name = requireName();
+      if (!name) return null;
+      return {
+        name,
+        product_url: state.productUrl.trim() || null,
+        product_description: state.productDescription.trim() || null,
+        target_audience: state.targetAudience.trim() || null,
+        content_language: state.contentLanguage ?? 'fr',
+      };
+    },
+    extract: (data) => (Array.isArray(data.value_props) ? (data.value_props as string[]) : null),
+    apply: (value) => set('valueProps', value.slice(0, VALUE_PROPS_MAX)),
+    successMessage: "Propositions de valeur proposées par l'IA.",
+  });
+
+  const ctas = useAiSuggestion<string[]>({
+    endpoint: '/api/content/suggest-ctas',
+    buildBody: () => {
+      const name = requireName();
+      if (!name) return null;
+      return {
+        name,
+        product_url: state.productUrl.trim() || null,
+        product_description: state.productDescription.trim() || null,
+        target_audience: state.targetAudience.trim() || null,
+        value_props: state.valueProps,
+        content_language: state.contentLanguage ?? 'fr',
+      };
+    },
+    extract: (data) =>
+      Array.isArray(data.call_to_actions) ? (data.call_to_actions as string[]) : null,
+    apply: (value) => set('callToActions', value.slice(0, CTAS_MAX)),
+    successMessage: "Calls to action proposés par l'IA.",
+  });
 
   return (
     <div className="space-y-4 rounded-lg border p-4">
@@ -858,21 +947,7 @@ function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps)
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <Label htmlFor="product-target-audience">Audience cible</Label>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1.5 text-xs"
-            onClick={handleSuggestAudience}
-            disabled={suggestingAudience}
-          >
-            {suggestingAudience ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" aria-hidden />
-            )}
-            {suggestingAudience ? 'Génération...' : "Proposer avec l'IA"}
-          </Button>
+          <SuggestButton suggesting={audience.suggesting} onClick={audience.suggest} />
         </div>
         <Textarea
           id="product-target-audience"
@@ -900,7 +975,13 @@ function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps)
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="product-value-props">Propositions de valeur</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="product-value-props">Propositions de valeur</Label>
+          <SuggestButton
+            suggesting={valuePropsSuggestion.suggesting}
+            onClick={valuePropsSuggestion.suggest}
+          />
+        </div>
         <ChipInput
           ref={valuePropRef}
           id="product-value-props"
@@ -922,21 +1003,7 @@ function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps)
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <Label htmlFor="product-ctas">Calls to action</Label>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 gap-1.5 text-xs"
-            onClick={handleSuggestCtas}
-            disabled={suggestingCtas}
-          >
-            {suggestingCtas ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" aria-hidden />
-            )}
-            {suggestingCtas ? 'Génération...' : "Proposer avec l'IA"}
-          </Button>
+          <SuggestButton suggesting={ctas.suggesting} onClick={ctas.suggest} />
         </div>
         <ChipInput
           ref={ctaRef}

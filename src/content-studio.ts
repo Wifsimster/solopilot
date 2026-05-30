@@ -4,6 +4,7 @@ import { getDb, type ContentDraftRecord } from './db.js';
 import type { ProductView } from './product-service.js';
 import { logger } from './logger.js';
 import { loadConfig } from './config.js';
+import { fetchGithubRepoContext } from './github-import.js';
 
 export type ContentDraftKind = 'post';
 export type ContentDraftStatus = 'pending' | 'edited' | 'used' | 'discarded';
@@ -339,10 +340,12 @@ Reponds STRICTEMENT en JSON avec la structure suivante :
   "target_audience": "<description concise de l'audience cible>"
 }`;
 
+const SUGGEST_AI_MAX_TOKENS = 1024;
+
 /**
  * Load the AI config and build an OpenAI client for a content-studio
  * suggestion, throwing a French `ContentStudioError` when the config or token
- * is missing. Shared by the audience and CTA suggestion helpers.
+ * is missing. Shared by every suggestion helper.
  */
 function createSuggestionClient(): { client: OpenAI; config: ReturnType<typeof loadConfig> } {
   let config;
@@ -369,48 +372,65 @@ function createSuggestionClient(): { client: OpenAI; config: ReturnType<typeof l
   return { client, config };
 }
 
+/** Numbered list of value props, or a placeholder when none were provided. */
+function formatValueProps(valueProps: string[] | null | undefined): string {
+  return valueProps && valueProps.length > 0
+    ? valueProps.map((v, i) => `${i + 1}. ${v}`).join('\n')
+    : '(aucune proposition de valeur fournie)';
+}
+
 /**
- * Propose a concise target-audience description for a product using the AI
- * model. Works from raw form values (name, URL, description, value props) so it
- * can be called before the product is persisted.
+ * Best-effort GitHub repo context block appended to suggestion prompts so the AI
+ * is grounded on the product's actual repository (description + README). Returns
+ * an empty string when no URL is given or the repo cannot be fetched.
  */
-export async function suggestTargetAudience(input: SuggestAudienceInput): Promise<string> {
+async function buildRepoContextBlock(
+  productUrl: string | null | undefined,
+  githubToken?: string,
+): Promise<string> {
+  if (!productUrl) return '';
+  const ctx = await fetchGithubRepoContext(productUrl, githubToken);
+  if (!ctx) return '';
+  const parts: string[] = [];
+  if (ctx.description) parts.push(`Description du depot: ${ctx.description}`);
+  if (ctx.language) parts.push(`Langage principal: ${ctx.language}`);
+  if (ctx.topics.length > 0) parts.push(`Topics: ${ctx.topics.join(', ')}`);
+  if (ctx.readmeExcerpt) parts.push(`Extrait du README:\n${ctx.readmeExcerpt}`);
+  if (parts.length === 0) return '';
+  return `\n\nCONTEXTE DU DEPOT GITHUB (source de verite, a privilegier)\n${parts.join('\n')}`;
+}
+
+/**
+ * Shared executor for content-studio suggestions: builds the AI client, grounds
+ * the prompt on the product's GitHub repo when a URL is given, calls the model,
+ * then parses and validates the JSON response.
+ */
+async function runSuggestion<T>(opts: {
+  productUrl: string | null | undefined;
+  systemPrompt: string;
+  userPayload: string;
+  responseSchema: z.ZodType<T>;
+  logLabel: string;
+}): Promise<T> {
   const { client, config } = createSuggestionClient();
-
-  const language = input.content_language ?? 'fr';
-  const valueProps =
-    input.value_props && input.value_props.length > 0
-      ? input.value_props.map((v, i) => `${i + 1}. ${v}`).join('\n')
-      : '(aucune proposition de valeur fournie)';
-
-  const userPayload = `PRODUIT
-Nom: ${input.name}
-URL: ${input.product_url || '(aucune URL fournie)'}
-Description: ${input.product_description || '(aucune description fournie)'}
-
-PROPOSITIONS DE VALEUR
-${valueProps}
-
-PARAMETRES
-Langue: ${language}
-
-Propose une description concise de l'audience cible ideale pour ce produit.`;
+  const repoBlock = await buildRepoContextBlock(opts.productUrl, config.GITHUB_TOKEN);
 
   let raw: string;
   try {
     const response = await client.chat.completions.create({
       model: config.AI_MODEL,
-      max_tokens: 512,
+      max_tokens: SUGGEST_AI_MAX_TOKENS,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: SUGGEST_AUDIENCE_SYSTEM_PROMPT },
-        { role: 'user', content: userPayload },
+        { role: 'system', content: opts.systemPrompt },
+        { role: 'user', content: opts.userPayload + repoBlock },
       ],
     });
-    logger.info('Audience suggestion API usage', {
+    logger.info(`${opts.logLabel} API usage`, {
       inputTokens: response.usage?.prompt_tokens,
       outputTokens: response.usage?.completion_tokens,
       model: response.model,
+      grounded: repoBlock.length > 0,
     });
     raw = response.choices[0]?.message?.content ?? '';
   } catch (err) {
@@ -428,14 +448,45 @@ Propose une description concise de l'audience cible ideale pour ce produit.`;
     );
   }
 
-  const validated = suggestAudienceResponseSchema.safeParse(parsed);
+  const validated = opts.responseSchema.safeParse(parsed);
   if (!validated.success) {
     throw new ContentStudioError(
       `Echec de la suggestion : reponse AI invalide : ${validated.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
     );
   }
+  return validated.data;
+}
 
-  return validated.data.target_audience.trim().slice(0, TARGET_AUDIENCE_MAX_LENGTH);
+/**
+ * Propose a concise target-audience description for a product using the AI
+ * model. Works from raw form values (name, URL, description, value props) so it
+ * can be called before the product is persisted. Grounded on the GitHub repo
+ * when `product_url` points to one.
+ */
+export async function suggestTargetAudience(input: SuggestAudienceInput): Promise<string> {
+  const language = input.content_language ?? 'fr';
+  const userPayload = `PRODUIT
+Nom: ${input.name}
+URL: ${input.product_url || '(aucune URL fournie)'}
+Description: ${input.product_description || '(aucune description fournie)'}
+
+PROPOSITIONS DE VALEUR
+${formatValueProps(input.value_props)}
+
+PARAMETRES
+Langue: ${language}
+
+Propose une description concise de l'audience cible ideale pour ce produit.`;
+
+  const result = await runSuggestion({
+    productUrl: input.product_url,
+    systemPrompt: SUGGEST_AUDIENCE_SYSTEM_PROMPT,
+    userPayload,
+    responseSchema: suggestAudienceResponseSchema,
+    logLabel: 'Audience suggestion',
+  });
+
+  return result.target_audience.trim().slice(0, TARGET_AUDIENCE_MAX_LENGTH);
 }
 
 const CTA_MIN_LENGTH = 3;
@@ -501,14 +552,7 @@ Reponds STRICTEMENT en JSON avec la structure suivante :
  * capped at {@link CTAS_MAX_COUNT}.
  */
 export async function suggestCallToActions(input: SuggestCtasInput): Promise<string[]> {
-  const { client, config } = createSuggestionClient();
-
   const language = input.content_language ?? 'fr';
-  const valueProps =
-    input.value_props && input.value_props.length > 0
-      ? input.value_props.map((v, i) => `${i + 1}. ${v}`).join('\n')
-      : '(aucune proposition de valeur fournie)';
-
   const userPayload = `PRODUIT
 Nom: ${input.name}
 URL: ${input.product_url || '(aucune URL fournie)'}
@@ -516,71 +560,226 @@ Description: ${input.product_description || '(aucune description fournie)'}
 Audience cible: ${input.target_audience || '(non specifiee)'}
 
 PROPOSITIONS DE VALEUR
-${valueProps}
+${formatValueProps(input.value_props)}
 
 PARAMETRES
 Langue: ${language}
 
 Propose entre 3 et ${CTAS_MAX_COUNT} appels a l'action courts et varies pour ce produit.`;
 
-  let raw: string;
-  try {
-    const response = await client.chat.completions.create({
-      model: config.AI_MODEL,
-      max_tokens: 512,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: SUGGEST_CTAS_SYSTEM_PROMPT },
-        { role: 'user', content: userPayload },
-      ],
-    });
-    logger.info('CTA suggestion API usage', {
-      inputTokens: response.usage?.prompt_tokens,
-      outputTokens: response.usage?.completion_tokens,
-      model: response.model,
-    });
-    raw = response.choices[0]?.message?.content ?? '';
-  } catch (err) {
-    throw new ContentStudioError(
-      `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
+  const result = await runSuggestion({
+    productUrl: input.product_url,
+    systemPrompt: SUGGEST_CTAS_SYSTEM_PROMPT,
+    userPayload,
+    responseSchema: suggestCtasResponseSchema,
+    logLabel: 'CTA suggestion',
+  });
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    throw new ContentStudioError(
-      `Echec de la suggestion : reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  const validated = suggestCtasResponseSchema.safeParse(parsed);
-  if (!validated.success) {
-    throw new ContentStudioError(
-      `Echec de la suggestion : reponse AI invalide : ${validated.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
-    );
-  }
-
-  const seen = new Set<string>();
-  const ctas: string[] = [];
-  for (const candidate of validated.data.call_to_actions) {
-    const trimmed = candidate.trim().slice(0, CTA_MAX_LENGTH);
-    if (trimmed.length < CTA_MIN_LENGTH) continue;
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    ctas.push(trimmed);
-    if (ctas.length >= CTAS_MAX_COUNT) break;
-  }
-
+  const ctas = dedupeBoundedList(
+    result.call_to_actions,
+    CTA_MIN_LENGTH,
+    CTA_MAX_LENGTH,
+    CTAS_MAX_COUNT,
+  );
   if (ctas.length === 0) {
     throw new ContentStudioError(
       "Echec de la suggestion : aucun appel a l'action valide propose par l'IA.",
     );
   }
-
   return ctas;
+}
+
+/**
+ * Trim, length-clamp (dropping items below `min`), case-insensitively
+ * de-duplicate and cap a list of AI-proposed short strings. Shared by the CTA
+ * and value-prop suggestion helpers.
+ */
+function dedupeBoundedList(items: string[], min: number, max: number, cap: number): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const candidate of items) {
+    const trimmed = candidate.trim().slice(0, max);
+    if (trimmed.length < min) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
+const PRODUCT_DESCRIPTION_MAX_LENGTH = 2000;
+
+export const suggestDescriptionSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, { message: 'Le nom du produit est requis.' })
+    .max(120, { message: 'Nom du produit trop long (max 120 caracteres).' }),
+  product_url: z
+    .string()
+    .trim()
+    .max(2000, { message: 'URL du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  target_audience: z
+    .string()
+    .trim()
+    .max(500, { message: 'Audience cible trop longue (max 500 caracteres).' })
+    .optional()
+    .nullable(),
+  value_props: z
+    .array(z.string().trim().min(1).max(200))
+    .max(10, { message: 'Trop de propositions de valeur (max 10).' })
+    .optional()
+    .nullable(),
+  content_language: z.enum(['fr', 'en']).optional().nullable(),
+});
+
+export type SuggestDescriptionInput = z.infer<typeof suggestDescriptionSchema>;
+
+const suggestDescriptionResponseSchema = z.object({
+  product_description: z.string().min(1).max(PRODUCT_DESCRIPTION_MAX_LENGTH),
+});
+
+const SUGGEST_DESCRIPTION_SYSTEM_PROMPT = `Tu es un redacteur produit. On te donne les informations d'un produit (nom, URL, audience, propositions de valeur) et, si disponible, le contenu de son depot GitHub (description + README). Tu dois rediger une DESCRIPTION factuelle et concise du produit, destinee a une IA qui analysera des leads et redigera des reponses.
+
+Regles :
+- Reponds dans la langue demandee (fr ou en).
+- Explique CE QUE FAIT le produit, POUR QUI, et son modele si pertinent (gratuit, freemium, open-source...).
+- 2 a 5 phrases, factuel, sans superlatifs marketing.
+- Appuie-toi en priorite sur le contexte du depot GitHub quand il est fourni.
+- MAXIMUM ${PRODUCT_DESCRIPTION_MAX_LENGTH} caracteres.
+- Pas de phrase d'introduction ("Voici"), pas de mention d'IA ou de generation automatique.
+
+Reponds STRICTEMENT en JSON avec la structure suivante :
+{
+  "product_description": "<description factuelle du produit>"
+}`;
+
+/**
+ * Propose a factual product description (for lead analysis / reply drafting)
+ * using the AI model, grounded on the GitHub repo when `product_url` points to
+ * one. Works from raw form values so it can be called before the product is
+ * persisted.
+ */
+export async function suggestProductDescription(input: SuggestDescriptionInput): Promise<string> {
+  const language = input.content_language ?? 'fr';
+  const userPayload = `PRODUIT
+Nom: ${input.name}
+URL: ${input.product_url || '(aucune URL fournie)'}
+Audience cible: ${input.target_audience || '(non specifiee)'}
+
+PROPOSITIONS DE VALEUR
+${formatValueProps(input.value_props)}
+
+PARAMETRES
+Langue: ${language}
+
+Redige une description factuelle et concise de ce produit.`;
+
+  const result = await runSuggestion({
+    productUrl: input.product_url,
+    systemPrompt: SUGGEST_DESCRIPTION_SYSTEM_PROMPT,
+    userPayload,
+    responseSchema: suggestDescriptionResponseSchema,
+    logLabel: 'Description suggestion',
+  });
+
+  return result.product_description.trim().slice(0, PRODUCT_DESCRIPTION_MAX_LENGTH);
+}
+
+const VALUE_PROP_MIN_LENGTH = 3;
+const VALUE_PROP_MAX_LENGTH = 200;
+const VALUE_PROPS_MAX_COUNT = 10;
+
+export const suggestValuePropsSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, { message: 'Le nom du produit est requis.' })
+    .max(120, { message: 'Nom du produit trop long (max 120 caracteres).' }),
+  product_url: z
+    .string()
+    .trim()
+    .max(2000, { message: 'URL du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  product_description: z
+    .string()
+    .trim()
+    .max(2000, { message: 'Description du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  target_audience: z
+    .string()
+    .trim()
+    .max(500, { message: 'Audience cible trop longue (max 500 caracteres).' })
+    .optional()
+    .nullable(),
+  content_language: z.enum(['fr', 'en']).optional().nullable(),
+});
+
+export type SuggestValuePropsInput = z.infer<typeof suggestValuePropsSchema>;
+
+const suggestValuePropsResponseSchema = z.object({
+  value_props: z.array(z.string().min(1)).min(1),
+});
+
+const SUGGEST_VALUE_PROPS_SYSTEM_PROMPT = `Tu es un stratege marketing produit. On te donne les informations d'un produit (nom, URL, description, audience) et, si disponible, le contenu de son depot GitHub (description + README). Tu dois proposer des PROPOSITIONS DE VALEUR courtes : les benefices concrets pour l'utilisateur.
+
+Regles :
+- Reponds dans la langue demandee (fr ou en).
+- Propose entre 3 et 6 propositions, distinctes et concretes (benefice utilisateur, pas une simple fonctionnalite brute).
+- Chaque proposition fait entre ${VALUE_PROP_MIN_LENGTH} et ${VALUE_PROP_MAX_LENGTH} caracteres.
+- Appuie-toi en priorite sur le contexte du depot GitHub quand il est fourni.
+- Pas de numerotation, pas d'emojis, pas de mention d'IA ou de generation automatique.
+
+Reponds STRICTEMENT en JSON avec la structure suivante :
+{
+  "value_props": ["<proposition 1>", "<proposition 2>", "<proposition 3>"]
+}`;
+
+/**
+ * Propose a short list of value propositions for a product using the AI model,
+ * grounded on the GitHub repo when `product_url` points to one. The returned
+ * items are trimmed, length-clamped, de-duplicated and capped at
+ * {@link VALUE_PROPS_MAX_COUNT}.
+ */
+export async function suggestValueProps(input: SuggestValuePropsInput): Promise<string[]> {
+  const language = input.content_language ?? 'fr';
+  const userPayload = `PRODUIT
+Nom: ${input.name}
+URL: ${input.product_url || '(aucune URL fournie)'}
+Description: ${input.product_description || '(aucune description fournie)'}
+Audience cible: ${input.target_audience || '(non specifiee)'}
+
+PARAMETRES
+Langue: ${language}
+
+Propose entre 3 et 6 propositions de valeur courtes pour ce produit.`;
+
+  const result = await runSuggestion({
+    productUrl: input.product_url,
+    systemPrompt: SUGGEST_VALUE_PROPS_SYSTEM_PROMPT,
+    userPayload,
+    responseSchema: suggestValuePropsResponseSchema,
+    logLabel: 'Value props suggestion',
+  });
+
+  const valueProps = dedupeBoundedList(
+    result.value_props,
+    VALUE_PROP_MIN_LENGTH,
+    VALUE_PROP_MAX_LENGTH,
+    VALUE_PROPS_MAX_COUNT,
+  );
+  if (valueProps.length === 0) {
+    throw new ContentStudioError(
+      "Echec de la suggestion : aucune proposition de valeur valide proposee par l'IA.",
+    );
+  }
+  return valueProps;
 }
 
 function platformConstraints(targetSource: TargetSource): string {

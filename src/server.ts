@@ -100,6 +100,10 @@ import {
   suggestAudienceSchema,
   suggestCallToActions,
   suggestCtasSchema,
+  suggestProductDescription,
+  suggestDescriptionSchema,
+  suggestValueProps,
+  suggestValuePropsSchema,
 } from './content-studio.js';
 import {
   fetchGithubRepos,
@@ -710,6 +714,66 @@ export function startServer(
           ? err.message
           : `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`;
       logger.warn('CTA suggestion failed', { error: message });
+      return c.json({ success: false, message });
+    }
+  });
+
+  app.post('/api/content/suggest-description', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = suggestDescriptionSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees invalides pour la suggestion.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+
+    try {
+      const productDescription = await suggestProductDescription(parsed.data);
+      return c.json({ success: true, product_description: productDescription });
+    } catch (err) {
+      const message =
+        err instanceof ContentStudioError
+          ? err.message
+          : `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`;
+      logger.warn('Description suggestion failed', { error: message });
+      return c.json({ success: false, message });
+    }
+  });
+
+  app.post('/api/content/suggest-value-props', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = suggestValuePropsSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees invalides pour la suggestion.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+
+    try {
+      const valueProps = await suggestValueProps(parsed.data);
+      return c.json({ success: true, value_props: valueProps });
+    } catch (err) {
+      const message =
+        err instanceof ContentStudioError
+          ? err.message
+          : `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`;
+      logger.warn('Value props suggestion failed', { error: message });
       return c.json({ success: false, message });
     }
   });
