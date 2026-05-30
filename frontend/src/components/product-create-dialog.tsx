@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -108,23 +108,37 @@ function slugify(input: string): string {
     .slice(0, 60);
 }
 
-export function ProductCreateDialog({
-  open,
-  onOpenChange,
+interface ProductFormProps {
+  isEdit: boolean;
+  initialValues: ProductRecord | null;
+  onCreated?: (product: ProductRecord) => void;
+  onUpdated?: (product: ProductRecord) => void;
+  onOpenChange: (open: boolean) => void;
+}
+
+function ProductForm({
+  isEdit,
+  initialValues,
   onCreated,
   onUpdated,
-  mode = 'create',
-  initialValues = null,
-}: ProductCreateDialogProps) {
-  const isEdit = mode === 'edit';
-
-  const [name, setName] = useState('');
-  const [id, setId] = useState('');
-  const [idTouched, setIdTouched] = useState(false);
-  const [xEnabled, setXEnabled] = useState(true);
-  const [xQuery, setXQuery] = useState('');
-  const [redditEnabled, setRedditEnabled] = useState(false);
-  const [subreddits, setSubreddits] = useState<string[]>([]);
+  onOpenChange,
+}: ProductFormProps) {
+  // Form state is seeded once from initialValues. The parent remounts this
+  // component via a `key` whenever the dialog opens or the edited product
+  // changes, so there is no need to mirror props into state with an effect.
+  const [name, setName] = useState(() => initialValues?.name ?? '');
+  const [id, setId] = useState(() => initialValues?.id ?? '');
+  // idTouched is only consulted inside handlers (never during render), so a ref
+  // avoids a needless re-render when the user first edits the id field.
+  const idTouchedRef = useRef(Boolean(initialValues));
+  const [xEnabled, setXEnabled] = useState(() => initialValues?.x_enabled ?? true);
+  const [xQuery, setXQuery] = useState(() => initialValues?.x_query ?? '');
+  const [redditEnabled, setRedditEnabled] = useState(
+    () => initialValues?.reddit_enabled ?? false,
+  );
+  const [subreddits, setSubreddits] = useState<string[]>(
+    () => initialValues?.reddit_subreddits ?? [],
+  );
   const [subredditInput, setSubredditInput] = useState('');
   const [subredditError, setSubredditError] = useState<string | null>(null);
   const [subredditResults, setSubredditResults] = useState<SubredditSearchResult[]>([]);
@@ -132,134 +146,66 @@ export function ProductCreateDialog({
   const [subredditSearchOpen, setSubredditSearchOpen] = useState(false);
   const [subredditActiveIndex, setSubredditActiveIndex] = useState(-1);
   const subredditSearchAbortRef = useRef<AbortController | null>(null);
-  const [hnEnabled, setHnEnabled] = useState(false);
-  const [hnKeywords, setHnKeywords] = useState<string[]>([]);
+  const subredditSearchTimeoutRef = useRef<number | null>(null);
+  const [hnEnabled, setHnEnabled] = useState(() => initialValues?.hn_enabled ?? false);
+  const [hnKeywords, setHnKeywords] = useState<string[]>(
+    () => initialValues?.hn_keywords ?? [],
+  );
   const [hnKeywordInput, setHnKeywordInput] = useState('');
   const [hnKeywordError, setHnKeywordError] = useState<string | null>(null);
-  const [intentEnabled, setIntentEnabled] = useState(false);
-  const [intentKeywords, setIntentKeywords] = useState<string[]>([]);
+  const [intentEnabled, setIntentEnabled] = useState(
+    () => initialValues?.intent_enabled ?? false,
+  );
+  const [intentKeywords, setIntentKeywords] = useState<string[]>(
+    () => initialValues?.intent_keywords ?? [],
+  );
   const [intentKeywordInput, setIntentKeywordInput] = useState('');
   const [intentKeywordError, setIntentKeywordError] = useState<string | null>(null);
+  // discord_webhook is masked from backend — leave blank so user can re-enter
+  // only if changing.
   const [discordWebhook, setDiscordWebhook] = useState('');
-  const [aiPromptOverride, setAiPromptOverride] = useState('');
-  const [productDescription, setProductDescription] = useState('');
-  const [replyVoice, setReplyVoice] = useState<ReplyVoice | null>(null);
-  const [productUrl, setProductUrl] = useState('');
-  const [targetAudience, setTargetAudience] = useState('');
-  const [valueProps, setValueProps] = useState<string[]>([]);
+  const [aiPromptOverride, setAiPromptOverride] = useState(
+    () => initialValues?.ai_prompt_override ?? '',
+  );
+  const [productDescription, setProductDescription] = useState(
+    () => initialValues?.product_description ?? '',
+  );
+  const [replyVoice, setReplyVoice] = useState<ReplyVoice | null>(() =>
+    initialValues?.reply_voice && REPLY_VOICE_VALUES.includes(initialValues.reply_voice)
+      ? initialValues.reply_voice
+      : null,
+  );
+  const [productUrl, setProductUrl] = useState(() => initialValues?.product_url ?? '');
+  const [targetAudience, setTargetAudience] = useState(
+    () => initialValues?.target_audience ?? '',
+  );
+  const [valueProps, setValueProps] = useState<string[]>(
+    () => initialValues?.value_props ?? [],
+  );
   const [valuePropInput, setValuePropInput] = useState('');
   const [valuePropError, setValuePropError] = useState<string | null>(null);
-  const [callToActions, setCallToActions] = useState<string[]>([]);
+  const [callToActions, setCallToActions] = useState<string[]>(
+    () => initialValues?.call_to_actions ?? [],
+  );
   const [ctaInput, setCtaInput] = useState('');
   const [ctaError, setCtaError] = useState<string | null>(null);
-  const [contentVoice, setContentVoice] = useState<ContentVoice | null>(null);
-  const [contentLanguage, setContentLanguage] = useState<ContentLanguage | null>(null);
+  const [contentVoice, setContentVoice] = useState<ContentVoice | null>(() =>
+    initialValues?.content_voice &&
+    CONTENT_VOICE_VALUES.includes(initialValues.content_voice)
+      ? initialValues.content_voice
+      : null,
+  );
+  const [contentLanguage, setContentLanguage] = useState<ContentLanguage | null>(() =>
+    initialValues?.content_language &&
+    CONTENT_LANGUAGE_VALUES.includes(initialValues.content_language)
+      ? initialValues.content_language
+      : null,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize / reset state when dialog opens or initialValues change
-  useEffect(() => {
-    if (!open) {
-      // Reset everything when closing
-      setName('');
-      setId('');
-      setIdTouched(false);
-      setXEnabled(true);
-      setXQuery('');
-      setRedditEnabled(false);
-      setSubreddits([]);
-      setSubredditInput('');
-      setSubredditError(null);
-      setSubredditResults([]);
-      setSubredditSearchLoading(false);
-      setSubredditSearchOpen(false);
-      setSubredditActiveIndex(-1);
-      subredditSearchAbortRef.current?.abort();
-      subredditSearchAbortRef.current = null;
-      setHnEnabled(false);
-      setHnKeywords([]);
-      setHnKeywordInput('');
-      setHnKeywordError(null);
-      setIntentEnabled(false);
-      setIntentKeywords([]);
-      setIntentKeywordInput('');
-      setIntentKeywordError(null);
-      setDiscordWebhook('');
-      setAiPromptOverride('');
-      setProductDescription('');
-      setReplyVoice(null);
-      setProductUrl('');
-      setTargetAudience('');
-      setValueProps([]);
-      setValuePropInput('');
-      setValuePropError(null);
-      setCallToActions([]);
-      setCtaInput('');
-      setCtaError(null);
-      setContentVoice(null);
-      setContentLanguage(null);
-      setSubmitting(false);
-      setError(null);
-      return;
-    }
-    if (initialValues) {
-      setName(initialValues.name ?? '');
-      setId(initialValues.id ?? '');
-      setIdTouched(true);
-      setXEnabled(initialValues.x_enabled ?? true);
-      setXQuery(initialValues.x_query ?? '');
-      setRedditEnabled(initialValues.reddit_enabled ?? false);
-      setSubreddits(initialValues.reddit_subreddits ?? []);
-      setSubredditInput('');
-      setSubredditError(null);
-      setSubredditResults([]);
-      setSubredditSearchLoading(false);
-      setSubredditSearchOpen(false);
-      setSubredditActiveIndex(-1);
-      setHnEnabled(initialValues.hn_enabled ?? false);
-      setHnKeywords(initialValues.hn_keywords ?? []);
-      setHnKeywordInput('');
-      setHnKeywordError(null);
-      setIntentEnabled(initialValues.intent_enabled ?? false);
-      setIntentKeywords(initialValues.intent_keywords ?? []);
-      setIntentKeywordInput('');
-      setIntentKeywordError(null);
-      // discord_webhook is masked from backend — leave blank so user can re-enter only if changing
-      setDiscordWebhook('');
-      setAiPromptOverride(initialValues.ai_prompt_override ?? '');
-      setProductDescription(initialValues.product_description ?? '');
-      setReplyVoice(
-        initialValues.reply_voice &&
-          REPLY_VOICE_VALUES.includes(initialValues.reply_voice)
-          ? initialValues.reply_voice
-          : null,
-      );
-      setProductUrl(initialValues.product_url ?? '');
-      setTargetAudience(initialValues.target_audience ?? '');
-      setValueProps(initialValues.value_props ?? []);
-      setValuePropInput('');
-      setValuePropError(null);
-      setCallToActions(initialValues.call_to_actions ?? []);
-      setCtaInput('');
-      setCtaError(null);
-      setContentVoice(
-        initialValues.content_voice &&
-          CONTENT_VOICE_VALUES.includes(initialValues.content_voice)
-          ? initialValues.content_voice
-          : null,
-      );
-      setContentLanguage(
-        initialValues.content_language &&
-          CONTENT_LANGUAGE_VALUES.includes(initialValues.content_language)
-          ? initialValues.content_language
-          : null,
-      );
-      setError(null);
-    }
-  }, [open, initialValues]);
-
   const handleNameBlur = () => {
-    if (!isEdit && !idTouched && name.trim() && !id) {
+    if (!isEdit && !idTouchedRef.current && name.trim() && !id) {
       setId(slugify(name));
     }
   };
@@ -267,8 +213,10 @@ export function ProductCreateDialog({
   const tryAddSubreddits = (raw: string): boolean => {
     const tokens = raw
       .split(/[\s,]+/)
-      .map((t) => t.trim().replace(/^\/?r\//i, ''))
-      .filter(Boolean);
+      .flatMap((t) => {
+        const trimmed = t.trim().replace(/^\/?r\//i, '');
+        return trimmed ? [trimmed] : [];
+      });
     if (tokens.length === 0) return false;
 
     const invalid = tokens.filter((t) => !SUBREDDIT_REGEX.test(t));
@@ -290,6 +238,60 @@ export function ProductCreateDialog({
     });
     setSubredditError(null);
     return true;
+  };
+
+  // Debounced subreddit search, driven from the input's onChange handler so the
+  // network request is an explicit consequence of typing rather than a reaction
+  // to a state change in an effect.
+  const runSubredditSearch = (rawValue: string) => {
+    if (subredditSearchTimeoutRef.current !== null) {
+      window.clearTimeout(subredditSearchTimeoutRef.current);
+      subredditSearchTimeoutRef.current = null;
+    }
+    const query = rawValue.trim().replace(/^\/?r\//i, '');
+    if (query.length < 2) {
+      subredditSearchAbortRef.current?.abort();
+      subredditSearchAbortRef.current = null;
+      setSubredditResults([]);
+      setSubredditSearchLoading(false);
+      setSubredditActiveIndex(-1);
+      return;
+    }
+
+    subredditSearchTimeoutRef.current = window.setTimeout(() => {
+      subredditSearchAbortRef.current?.abort();
+      const controller = new AbortController();
+      subredditSearchAbortRef.current = controller;
+      setSubredditSearchLoading(true);
+      fetch(`/api/reddit/search-subreddits?q=${encodeURIComponent(query)}&limit=8`, {
+        signal: controller.signal,
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json() as Promise<{ results?: SubredditSearchResult[] }>;
+        })
+        .then((data) => {
+          if (controller.signal.aborted) return;
+          setSubredditResults(data.results ?? []);
+          setSubredditActiveIndex(-1);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === 'AbortError') return;
+          setSubredditResults([]);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSubredditSearchLoading(false);
+        });
+    }, 250);
+  };
+
+  const handleSubredditInputChange = (value: string) => {
+    setSubredditInput(value);
+    if (subredditError) setSubredditError(null);
+    setSubredditSearchOpen(value.trim().length >= 2);
+    if (redditEnabled) {
+      runSubredditSearch(value);
+    }
   };
 
   const handleSubredditKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -376,57 +378,13 @@ export function ProductCreateDialog({
     setSubredditActiveIndex(-1);
   };
 
-  useEffect(() => {
-    if (!open || !redditEnabled) {
-      return;
-    }
-    const query = subredditInput.trim().replace(/^\/?r\//i, '');
-    if (query.length < 2) {
-      subredditSearchAbortRef.current?.abort();
-      subredditSearchAbortRef.current = null;
-      setSubredditResults([]);
-      setSubredditSearchLoading(false);
-      setSubredditActiveIndex(-1);
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      subredditSearchAbortRef.current?.abort();
-      const controller = new AbortController();
-      subredditSearchAbortRef.current = controller;
-      setSubredditSearchLoading(true);
-      fetch(
-        `/api/reddit/search-subreddits?q=${encodeURIComponent(query)}&limit=8`,
-        { signal: controller.signal },
-      )
-        .then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json() as Promise<{ results?: SubredditSearchResult[] }>;
-        })
-        .then((data) => {
-          if (controller.signal.aborted) return;
-          setSubredditResults(data.results ?? []);
-          setSubredditActiveIndex(-1);
-        })
-        .catch((err: unknown) => {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-          setSubredditResults([]);
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setSubredditSearchLoading(false);
-        });
-    }, 250);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [subredditInput, redditEnabled, open]);
-
   const tryAddHnKeywords = (raw: string): boolean => {
     const tokens = raw
       .split(/[,\n]+/)
-      .map((t) => t.trim())
-      .filter(Boolean);
+      .flatMap((t) => {
+        const trimmed = t.trim();
+        return trimmed ? [trimmed] : [];
+      });
     if (tokens.length === 0) return false;
 
     const tooShort = tokens.filter((t) => t.length < HN_KEYWORD_MIN);
@@ -492,8 +450,10 @@ export function ProductCreateDialog({
   const tryAddIntentKeywords = (raw: string): boolean => {
     const tokens = raw
       .split(/[,\n]+/)
-      .map((t) => t.trim())
-      .filter(Boolean);
+      .flatMap((t) => {
+        const trimmed = t.trim();
+        return trimmed ? [trimmed] : [];
+      });
     if (tokens.length === 0) return false;
 
     const tooShort = tokens.filter((t) => t.length < INTENT_KEYWORD_MIN);
@@ -559,8 +519,10 @@ export function ProductCreateDialog({
   const tryAddValueProps = (raw: string): boolean => {
     const tokens = raw
       .split(/[,\n]+/)
-      .map((t) => t.trim())
-      .filter(Boolean);
+      .flatMap((t) => {
+        const trimmed = t.trim();
+        return trimmed ? [trimmed] : [];
+      });
     if (tokens.length === 0) return false;
 
     const tooShort = tokens.filter((t) => t.length < VALUE_PROP_MIN);
@@ -626,8 +588,10 @@ export function ProductCreateDialog({
   const tryAddCtas = (raw: string): boolean => {
     const tokens = raw
       .split(/[,\n]+/)
-      .map((t) => t.trim())
-      .filter(Boolean);
+      .flatMap((t) => {
+        const trimmed = t.trim();
+        return trimmed ? [trimmed] : [];
+      });
     if (tokens.length === 0) return false;
 
     const tooShort = tokens.filter((t) => t.length < CTA_MIN);
@@ -721,8 +685,10 @@ export function ProductCreateDialog({
       // Recompute the list based on the current input
       const tokens = subredditInput
         .split(/[\s,]+/)
-        .map((t) => t.trim().replace(/^\/?r\//i, ''))
-        .filter(Boolean);
+        .flatMap((t) => {
+          const trimmed = t.trim().replace(/^\/?r\//i, '');
+          return trimmed ? [trimmed] : [];
+        });
       const merged = [...pendingSubs];
       for (const t of tokens) {
         if (!merged.some((s) => s.toLowerCase() === t.toLowerCase())) {
@@ -747,8 +713,10 @@ export function ProductCreateDialog({
       }
       const tokens = hnKeywordInput
         .split(/[,\n]+/)
-        .map((t) => t.trim())
-        .filter(Boolean);
+        .flatMap((t) => {
+          const trimmed = t.trim();
+          return trimmed ? [trimmed] : [];
+        });
       const merged = [...pendingHnKeywords];
       for (const t of tokens) {
         if (merged.length >= HN_KEYWORDS_MAX) break;
@@ -779,8 +747,10 @@ export function ProductCreateDialog({
       }
       const tokens = intentKeywordInput
         .split(/[,\n]+/)
-        .map((t) => t.trim())
-        .filter(Boolean);
+        .flatMap((t) => {
+          const trimmed = t.trim();
+          return trimmed ? [trimmed] : [];
+        });
       const merged = [...pendingIntentKeywords];
       for (const t of tokens) {
         if (merged.length >= INTENT_KEYWORDS_MAX) break;
@@ -827,8 +797,10 @@ export function ProductCreateDialog({
       }
       const tokens = valuePropInput
         .split(/[,\n]+/)
-        .map((t) => t.trim())
-        .filter(Boolean);
+        .flatMap((t) => {
+          const trimmed = t.trim();
+          return trimmed ? [trimmed] : [];
+        });
       const merged = [...pendingValueProps];
       for (const t of tokens) {
         if (merged.length >= VALUE_PROPS_MAX) break;
@@ -853,8 +825,10 @@ export function ProductCreateDialog({
       }
       const tokens = ctaInput
         .split(/[,\n]+/)
-        .map((t) => t.trim())
-        .filter(Boolean);
+        .flatMap((t) => {
+          const trimmed = t.trim();
+          return trimmed ? [trimmed] : [];
+        });
       const merged = [...pendingCtas];
       for (const t of tokens) {
         if (merged.length >= CTAS_MAX) break;
@@ -1018,6 +992,713 @@ export function ProductCreateDialog({
   };
 
   return (
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-4 max-h-[70vh] overflow-y-auto pr-1"
+    >
+      <div className="space-y-2">
+        <Label htmlFor="product-name">Nom</Label>
+        <Input
+          id="product-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={handleNameBlur}
+          placeholder="Veille IA"
+          required
+          autoFocus
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="product-id">Identifiant</Label>
+        <Input
+          id="product-id"
+          value={id}
+          onChange={(e) => {
+            setId(e.target.value);
+            idTouchedRef.current = true;
+          }}
+          placeholder="veille-ia"
+          required
+          className="font-mono"
+          disabled={isEdit}
+        />
+        <p className="text-xs text-muted-foreground">
+          {isEdit
+            ? "L'identifiant ne peut pas être modifié."
+            : 'Slug unique (minuscules, chiffres et tirets). Auto-rempli depuis le nom.'}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="product-discord-webhook">Webhook Discord (optionnel)</Label>
+        <Input
+          id="product-discord-webhook"
+          type="password"
+          value={discordWebhook}
+          onChange={(e) => setDiscordWebhook(e.target.value)}
+          placeholder={
+            isEdit && initialValues?.discord_webhook
+              ? `Actuel : ${initialValues.discord_webhook} (laisser vide pour conserver)`
+              : 'https://discord.com/api/webhooks/...'
+          }
+          autoComplete="off"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="product-prompt">Prompt IA personnalisé (optionnel)</Label>
+        <Textarea
+          id="product-prompt"
+          value={aiPromptOverride}
+          onChange={(e) => setAiPromptOverride(e.target.value)}
+          placeholder="Surcharge facultative du prompt par défaut."
+          rows={4}
+        />
+      </div>
+
+      {/* Sources section */}
+      <div className="space-y-4 rounded-lg border p-4">
+        <div>
+          <h3 className="text-sm font-semibold">Sources</h3>
+          <p className="text-xs text-muted-foreground">
+            Active au moins une source pour ce produit.
+          </p>
+        </div>
+
+        {/* X (Twitter) row */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="source-x-enabled" className="flex flex-col gap-0.5">
+              <span>X (Twitter)</span>
+              <span className="text-xs font-normal text-muted-foreground">
+                Scraping de la timeline X.
+              </span>
+            </Label>
+            <Switch
+              id="source-x-enabled"
+              checked={xEnabled}
+              onCheckedChange={setXEnabled}
+              aria-label="Activer la source X"
+            />
+          </div>
+          <div className={cn(!xEnabled && 'opacity-50 pointer-events-none')}>
+            <Label htmlFor="product-x-query" className="text-xs">
+              Requête X (optionnel)
+            </Label>
+            <Input
+              id="product-x-query"
+              value={xQuery}
+              onChange={(e) => setXQuery(e.target.value)}
+              placeholder="from:OpenAI OR from:AnthropicAI"
+              disabled={!xEnabled}
+              className="mt-1"
+            />
+          </div>
+        </div>
+
+        <div className="border-t" />
+
+        {/* Reddit row */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="source-reddit-enabled" className="flex flex-col gap-0.5">
+              <span>Reddit</span>
+              <span className="text-xs font-normal text-muted-foreground">
+                Surveille un ou plusieurs subreddits.
+              </span>
+            </Label>
+            <Switch
+              id="source-reddit-enabled"
+              checked={redditEnabled}
+              onCheckedChange={setRedditEnabled}
+              aria-label="Activer la source Reddit"
+            />
+          </div>
+          <div className={cn(!redditEnabled && 'opacity-50 pointer-events-none')}>
+            <Label htmlFor="product-subreddits" className="text-xs">
+              Subreddits
+            </Label>
+            <div className="relative">
+              <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
+                {subreddits.map((sub) => (
+                  <Badge
+                    key={sub}
+                    variant="secondary"
+                    className="gap-1 pl-2 pr-1 font-mono"
+                  >
+                    r/{sub}
+                    <button
+                      type="button"
+                      onClick={() => removeSubreddit(sub)}
+                      disabled={!redditEnabled}
+                      className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
+                      aria-label={`Retirer r/${sub}`}
+                    >
+                      <XIcon className="size-3" />
+                    </button>
+                  </Badge>
+                ))}
+                <div className="relative flex flex-1 items-center min-w-[160px]">
+                  <Search className="pointer-events-none absolute left-0 size-3.5 text-muted-foreground" />
+                  <input
+                    id="product-subreddits"
+                    type="text"
+                    role="combobox"
+                    aria-label="Rechercher un subreddit"
+                    aria-autocomplete="list"
+                    aria-expanded={subredditSearchOpen}
+                    aria-controls="subreddit-search-listbox"
+                    aria-activedescendant={
+                      subredditActiveIndex >= 0
+                        ? `subreddit-result-${subredditActiveIndex}`
+                        : undefined
+                    }
+                    value={subredditInput}
+                    onChange={(e) => handleSubredditInputChange(e.target.value)}
+                    onKeyDown={handleSubredditKeyDown}
+                    onBlur={handleSubredditBlur}
+                    onFocus={handleSubredditFocus}
+                    placeholder={
+                      subreddits.length === 0 ? 'Recherche un subreddit…' : ''
+                    }
+                    disabled={!redditEnabled}
+                    className="flex-1 bg-transparent pl-5 pr-5 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+                  />
+                  {subredditSearchLoading && (
+                    <Loader2 className="pointer-events-none absolute right-0 size-3.5 animate-spin text-muted-foreground" />
+                  )}
+                </div>
+              </div>
+              {subredditSearchOpen && redditEnabled && (() => {
+                const visibleResults = subredditResults.filter(
+                  (r) =>
+                    !subreddits.some(
+                      (s) => s.toLowerCase() === r.name.toLowerCase(),
+                    ),
+                );
+                const showEmpty =
+                  !subredditSearchLoading &&
+                  subredditInput.trim().length >= 2 &&
+                  visibleResults.length === 0;
+                if (visibleResults.length === 0 && !showEmpty) return null;
+                return (
+                  <div
+                    id="subreddit-search-listbox"
+                    role="listbox"
+                    aria-label="Résultats de recherche de subreddits"
+                    className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-auto rounded-md border border-input bg-popover text-popover-foreground shadow-md"
+                  >
+                    {visibleResults.map((result, idx) => (
+                      <div key={result.name}>
+                        <button
+                          type="button"
+                          id={`subreddit-result-${idx}`}
+                          role="option"
+                          aria-selected={idx === subredditActiveIndex}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            addSubredditFromResult(result);
+                          }}
+                          onMouseEnter={() => setSubredditActiveIndex(idx)}
+                          className={cn(
+                            'flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left text-sm',
+                            idx === subredditActiveIndex
+                              ? 'bg-accent text-accent-foreground'
+                              : 'hover:bg-accent hover:text-accent-foreground',
+                          )}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-sm font-medium">
+                                r/{result.name}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {formatSubscribers(result.subscribers)}
+                              </span>
+                              {result.over18 && (
+                                <span className="rounded bg-destructive/15 px-1 text-[10px] font-semibold uppercase text-destructive">
+                                  NSFW
+                                </span>
+                              )}
+                            </div>
+                            {(result.title || result.description) && (
+                              <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                                {result.description || result.title}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      </div>
+                    ))}
+                    {showEmpty && (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">
+                        Aucun subreddit trouvé pour «&nbsp;{subredditInput.trim()}&nbsp;».
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Tape pour rechercher un subreddit, ou colle plusieurs noms séparés par une virgule.
+            </p>
+            {subredditError && (
+              <p className="mt-1 text-xs text-destructive" role="alert">
+                {subredditError}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t" />
+
+        {/* Hacker News row */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="source-hn-enabled" className="flex flex-col gap-0.5">
+              <span>Hacker News</span>
+              <span className="text-xs font-normal text-muted-foreground">
+                Recherche par mots-clés via Algolia.
+              </span>
+            </Label>
+            <Switch
+              id="source-hn-enabled"
+              checked={hnEnabled}
+              onCheckedChange={setHnEnabled}
+              aria-label="Activer la source Hacker News"
+            />
+          </div>
+          <div className={cn(!hnEnabled && 'opacity-50 pointer-events-none')}>
+            <Label htmlFor="product-hn-keywords" className="text-xs">
+              Mots-clés
+            </Label>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
+              {hnKeywords.map((kw) => (
+                <Badge
+                  key={kw}
+                  variant="secondary"
+                  className="gap-1 pl-2 pr-1"
+                >
+                  {kw}
+                  <button
+                    type="button"
+                    onClick={() => removeHnKeyword(kw)}
+                    disabled={!hnEnabled}
+                    className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
+                    aria-label={`Retirer ${kw}`}
+                  >
+                    <XIcon className="size-3" />
+                  </button>
+                </Badge>
+              ))}
+              <input
+                id="product-hn-keywords"
+                type="text"
+                aria-label="Ajouter un mot-clé Hacker News"
+                value={hnKeywordInput}
+                onChange={(e) => {
+                  setHnKeywordInput(e.target.value);
+                  if (hnKeywordError) setHnKeywordError(null);
+                }}
+                onKeyDown={handleHnKeywordKeyDown}
+                onBlur={handleHnKeywordBlur}
+                placeholder={
+                  hnKeywords.length === 0
+                    ? 'agents IA, LLM, retrieval, ...'
+                    : ''
+                }
+                disabled={!hnEnabled}
+                className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Tape un mot-clé puis Entrée ou virgule (2 à {HN_KEYWORD_MAX} caractères, {HN_KEYWORDS_MAX} max).
+            </p>
+            {hnKeywordError && (
+              <p className="mt-1 text-xs text-destructive" role="alert">
+                {hnKeywordError}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Intent matching section */}
+      <div className="space-y-4 rounded-lg border p-4">
+        <div>
+          <h3 className="text-sm font-semibold">Détection d'intention</h3>
+          <p className="text-xs text-muted-foreground">
+            Repère automatiquement les messages exprimant un besoin lié à ton produit.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="intent-enabled" className="flex flex-col gap-0.5">
+              <span>Intent matching</span>
+              <span className="text-xs font-normal text-muted-foreground">
+                Génère des opportunités à partir des sources activées.
+              </span>
+            </Label>
+            <Switch
+              id="intent-enabled"
+              checked={intentEnabled}
+              onCheckedChange={setIntentEnabled}
+              aria-label="Activer la détection d'intention"
+            />
+          </div>
+          <div className={cn(!intentEnabled && 'opacity-50 pointer-events-none')}>
+            <Label htmlFor="product-intent-keywords" className="text-xs">
+              Mots-clés d'intention
+            </Label>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
+              {intentKeywords.map((kw) => (
+                <Badge key={kw} variant="secondary" className="gap-1 pl-2 pr-1">
+                  {kw}
+                  <button
+                    type="button"
+                    onClick={() => removeIntentKeyword(kw)}
+                    disabled={!intentEnabled}
+                    className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
+                    aria-label={`Retirer ${kw}`}
+                  >
+                    <XIcon className="size-3" />
+                  </button>
+                </Badge>
+              ))}
+              <input
+                id="product-intent-keywords"
+                type="text"
+                aria-label="Ajouter un mot-clé d'intention"
+                value={intentKeywordInput}
+                onChange={(e) => {
+                  setIntentKeywordInput(e.target.value);
+                  if (intentKeywordError) setIntentKeywordError(null);
+                }}
+                onKeyDown={handleIntentKeywordKeyDown}
+                onBlur={handleIntentKeywordBlur}
+                placeholder={
+                  intentKeywords.length === 0
+                    ? 'alternative à figma, je cherche un outil pour, quelqu\'un utilise'
+                    : ''
+                }
+                disabled={!intentEnabled}
+                className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Tape une expression puis Entrée ou virgule ({INTENT_KEYWORD_MIN} à {INTENT_KEYWORD_MAX} caractères, {INTENT_KEYWORDS_MAX} max).
+            </p>
+            {intentKeywordError && (
+              <p className="mt-1 text-xs text-destructive" role="alert">
+                {intentKeywordError}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t" />
+
+        {/* AI analysis context — applies to lead analysis, independent of matching toggle */}
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="product-description">
+              Description du produit (pour l'IA)
+            </Label>
+            <Textarea
+              id="product-description"
+              value={productDescription}
+              onChange={(e) => setProductDescription(e.target.value)}
+              placeholder="Ex: un SaaS de planification Discord pour communautés gaming. Plan gratuit jusqu'à 100 membres."
+              rows={4}
+              maxLength={PRODUCT_DESCRIPTION_MAX}
+            />
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Utilisée pour analyser la pertinence des leads et rédiger des
+                réponses contextuelles.
+              </p>
+              <span
+                className={cn(
+                  'text-xs tabular-nums',
+                  productDescription.length > PRODUCT_DESCRIPTION_MAX
+                    ? 'text-destructive'
+                    : 'text-muted-foreground',
+                )}
+              >
+                {productDescription.length}/{PRODUCT_DESCRIPTION_MAX}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="product-reply-voice">Ton des réponses</Label>
+            <Select
+              value={replyVoice ?? REPLY_VOICE_NONE}
+              onValueChange={(value) =>
+                setReplyVoice(
+                  value === REPLY_VOICE_NONE ? null : (value as ReplyVoice),
+                )
+              }
+            >
+              <SelectTrigger id="product-reply-voice">
+                <SelectValue placeholder={REPLY_VOICE_DEFAULT_LABEL} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={REPLY_VOICE_NONE}>
+                  {REPLY_VOICE_DEFAULT_LABEL}
+                </SelectItem>
+                {REPLY_VOICE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Ton utilisé pour les brouillons de réponse générés par l'IA.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Studio section */}
+      <div className="space-y-4 rounded-lg border p-4">
+        <div>
+          <h3 className="text-sm font-semibold">Studio de contenu</h3>
+          <p className="text-xs text-muted-foreground">
+            Configuration utilisée pour générer des drafts de posts marketing.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="product-url">URL du produit</Label>
+          <Input
+            id="product-url"
+            type="url"
+            value={productUrl}
+            onChange={(e) => setProductUrl(e.target.value)}
+            placeholder="https://exemple.com"
+            autoComplete="off"
+          />
+          <p className="text-xs text-muted-foreground">
+            URL principale (doit commencer par http:// ou https://).
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="product-target-audience">Audience cible</Label>
+          <Textarea
+            id="product-target-audience"
+            value={targetAudience}
+            onChange={(e) => setTargetAudience(e.target.value)}
+            placeholder="Ex: makers SaaS B2B francophones, PMs scale-up."
+            rows={3}
+            maxLength={TARGET_AUDIENCE_MAX}
+          />
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              Décris brièvement à qui s'adresse le produit.
+            </p>
+            <span
+              className={cn(
+                'text-xs tabular-nums',
+                targetAudience.length > TARGET_AUDIENCE_MAX
+                  ? 'text-destructive'
+                  : 'text-muted-foreground',
+              )}
+            >
+              {targetAudience.length}/{TARGET_AUDIENCE_MAX}
+            </span>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="product-value-props">Propositions de valeur</Label>
+          <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
+            {valueProps.map((vp) => (
+              <Badge key={vp} variant="secondary" className="gap-1 pl-2 pr-1">
+                {vp}
+                <button
+                  type="button"
+                  onClick={() => removeValueProp(vp)}
+                  className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
+                  aria-label={`Retirer ${vp}`}
+                >
+                  <XIcon className="size-3" />
+                </button>
+              </Badge>
+            ))}
+            <input
+              id="product-value-props"
+              type="text"
+              aria-label="Ajouter une proposition de valeur"
+              value={valuePropInput}
+              onChange={(e) => {
+                setValuePropInput(e.target.value);
+                if (valuePropError) setValuePropError(null);
+              }}
+              onKeyDown={handleValuePropKeyDown}
+              onBlur={handleValuePropBlur}
+              placeholder={
+                valueProps.length === 0
+                  ? 'Ex: scrape sans API officielle, résumé IA français'
+                  : ''
+              }
+              title="Ex: scrape sans API officielle, résumé IA français"
+              className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Tape une proposition puis Entrée ou virgule ({VALUE_PROP_MIN} à {VALUE_PROP_MAX} caractères, {VALUE_PROPS_MAX} max).
+          </p>
+          {valuePropError && (
+            <p className="text-xs text-destructive" role="alert">
+              {valuePropError}
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="product-ctas">Calls to action</Label>
+          <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
+            {callToActions.map((cta) => (
+              <Badge key={cta} variant="secondary" className="gap-1 pl-2 pr-1">
+                {cta}
+                <button
+                  type="button"
+                  onClick={() => removeCta(cta)}
+                  className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
+                  aria-label={`Retirer ${cta}`}
+                >
+                  <XIcon className="size-3" />
+                </button>
+              </Badge>
+            ))}
+            <input
+              id="product-ctas"
+              type="text"
+              aria-label="Ajouter un call to action"
+              value={ctaInput}
+              onChange={(e) => {
+                setCtaInput(e.target.value);
+                if (ctaError) setCtaError(null);
+              }}
+              onKeyDown={handleCtaKeyDown}
+              onBlur={handleCtaBlur}
+              placeholder={
+                callToActions.length === 0
+                  ? 'Ex: Essaie gratuit sur ton subreddit, Demande une démo'
+                  : ''
+              }
+              title="Ex: Essaie gratuit sur ton subreddit, Demande une démo"
+              className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Tape un CTA puis Entrée ou virgule ({CTA_MIN} à {CTA_MAX} caractères, {CTAS_MAX} max).
+          </p>
+          {ctaError && (
+            <p className="text-xs text-destructive" role="alert">
+              {ctaError}
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="product-content-voice">Voix éditoriale pour les posts</Label>
+          <Select
+            value={contentVoice ?? CONTENT_VOICE_NONE}
+            onValueChange={(value) =>
+              setContentVoice(
+                value === CONTENT_VOICE_NONE ? null : (value as ContentVoice),
+              )
+            }
+          >
+            <SelectTrigger id="product-content-voice">
+              <SelectValue placeholder={CONTENT_VOICE_DEFAULT_LABEL} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={CONTENT_VOICE_NONE}>
+                {CONTENT_VOICE_DEFAULT_LABEL}
+              </SelectItem>
+              {CONTENT_VOICE_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Différente de la voix des réponses si tu veux.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="product-content-language">Langue des posts</Label>
+          <Select
+            value={contentLanguage ?? 'fr'}
+            onValueChange={(value) =>
+              setContentLanguage(value as ContentLanguage)
+            }
+          >
+            <SelectTrigger id="product-content-language">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CONTENT_LANGUAGE_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Français par défaut.
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      )}
+
+      <DialogFooter>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onOpenChange(false)}
+          disabled={submitting}
+        >
+          Annuler
+        </Button>
+        <Button type="submit" disabled={submitting}>
+          {submitting
+            ? isEdit
+              ? 'Mise à jour...'
+              : 'Création...'
+            : isEdit
+              ? 'Enregistrer'
+              : 'Créer le produit'}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+export function ProductCreateDialog({
+  open,
+  onOpenChange,
+  onCreated,
+  onUpdated,
+  mode = 'create',
+  initialValues = null,
+}: ProductCreateDialogProps) {
+  const isEdit = mode === 'edit';
+
+  return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
@@ -1028,695 +1709,18 @@ export function ProductCreateDialog({
               : 'Créez un produit pour isoler ses sources, son webhook Discord et son prompt IA.'}
           </DialogDescription>
         </DialogHeader>
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-4 max-h-[70vh] overflow-y-auto pr-1"
-        >
-          <div className="space-y-2">
-            <Label htmlFor="product-name">Nom</Label>
-            <Input
-              id="product-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onBlur={handleNameBlur}
-              placeholder="Veille IA"
-              required
-              autoFocus
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="product-id">Identifiant</Label>
-            <Input
-              id="product-id"
-              value={id}
-              onChange={(e) => {
-                setId(e.target.value);
-                setIdTouched(true);
-              }}
-              placeholder="veille-ia"
-              required
-              className="font-mono"
-              disabled={isEdit}
-            />
-            <p className="text-xs text-muted-foreground">
-              {isEdit
-                ? "L'identifiant ne peut pas être modifié."
-                : 'Slug unique (minuscules, chiffres et tirets). Auto-rempli depuis le nom.'}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="product-discord-webhook">Webhook Discord (optionnel)</Label>
-            <Input
-              id="product-discord-webhook"
-              type="password"
-              value={discordWebhook}
-              onChange={(e) => setDiscordWebhook(e.target.value)}
-              placeholder={
-                isEdit && initialValues?.discord_webhook
-                  ? `Actuel : ${initialValues.discord_webhook} (laisser vide pour conserver)`
-                  : 'https://discord.com/api/webhooks/...'
-              }
-              autoComplete="off"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="product-prompt">Prompt IA personnalisé (optionnel)</Label>
-            <Textarea
-              id="product-prompt"
-              value={aiPromptOverride}
-              onChange={(e) => setAiPromptOverride(e.target.value)}
-              placeholder="Surcharge facultative du prompt par défaut."
-              rows={4}
-            />
-          </div>
-
-          {/* Sources section */}
-          <div className="space-y-4 rounded-lg border p-4">
-            <div>
-              <h3 className="text-sm font-semibold">Sources</h3>
-              <p className="text-xs text-muted-foreground">
-                Active au moins une source pour ce produit.
-              </p>
-            </div>
-
-            {/* X (Twitter) row */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="source-x-enabled" className="flex flex-col gap-0.5">
-                  <span>X (Twitter)</span>
-                  <span className="text-xs font-normal text-muted-foreground">
-                    Scraping de la timeline X.
-                  </span>
-                </Label>
-                <Switch
-                  id="source-x-enabled"
-                  checked={xEnabled}
-                  onCheckedChange={setXEnabled}
-                  aria-label="Activer la source X"
-                />
-              </div>
-              <div className={cn(!xEnabled && 'opacity-50 pointer-events-none')}>
-                <Label htmlFor="product-x-query" className="text-xs">
-                  Requête X (optionnel)
-                </Label>
-                <Input
-                  id="product-x-query"
-                  value={xQuery}
-                  onChange={(e) => setXQuery(e.target.value)}
-                  placeholder="from:OpenAI OR from:AnthropicAI"
-                  disabled={!xEnabled}
-                  className="mt-1"
-                />
-              </div>
-            </div>
-
-            <div className="border-t" />
-
-            {/* Reddit row */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="source-reddit-enabled" className="flex flex-col gap-0.5">
-                  <span>Reddit</span>
-                  <span className="text-xs font-normal text-muted-foreground">
-                    Surveille un ou plusieurs subreddits.
-                  </span>
-                </Label>
-                <Switch
-                  id="source-reddit-enabled"
-                  checked={redditEnabled}
-                  onCheckedChange={setRedditEnabled}
-                  aria-label="Activer la source Reddit"
-                />
-              </div>
-              <div className={cn(!redditEnabled && 'opacity-50 pointer-events-none')}>
-                <Label htmlFor="product-subreddits" className="text-xs">
-                  Subreddits
-                </Label>
-                <div className="relative">
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
-                    {subreddits.map((sub) => (
-                      <Badge
-                        key={sub}
-                        variant="secondary"
-                        className="gap-1 pl-2 pr-1 font-mono"
-                      >
-                        r/{sub}
-                        <button
-                          type="button"
-                          onClick={() => removeSubreddit(sub)}
-                          disabled={!redditEnabled}
-                          className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
-                          aria-label={`Retirer r/${sub}`}
-                        >
-                          <XIcon className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                    <div className="relative flex flex-1 items-center min-w-[160px]">
-                      <Search className="pointer-events-none absolute left-0 h-3.5 w-3.5 text-muted-foreground" />
-                      <input
-                        id="product-subreddits"
-                        type="text"
-                        role="combobox"
-                        aria-autocomplete="list"
-                        aria-expanded={subredditSearchOpen}
-                        aria-controls="subreddit-search-listbox"
-                        aria-activedescendant={
-                          subredditActiveIndex >= 0
-                            ? `subreddit-result-${subredditActiveIndex}`
-                            : undefined
-                        }
-                        value={subredditInput}
-                        onChange={(e) => {
-                          setSubredditInput(e.target.value);
-                          if (subredditError) setSubredditError(null);
-                          setSubredditSearchOpen(e.target.value.trim().length >= 2);
-                        }}
-                        onKeyDown={handleSubredditKeyDown}
-                        onBlur={handleSubredditBlur}
-                        onFocus={handleSubredditFocus}
-                        placeholder={
-                          subreddits.length === 0 ? 'Recherche un subreddit…' : ''
-                        }
-                        disabled={!redditEnabled}
-                        className="flex-1 bg-transparent pl-5 pr-5 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
-                      />
-                      {subredditSearchLoading && (
-                        <Loader2 className="pointer-events-none absolute right-0 h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                      )}
-                    </div>
-                  </div>
-                  {subredditSearchOpen && redditEnabled && (() => {
-                    const visibleResults = subredditResults.filter(
-                      (r) =>
-                        !subreddits.some(
-                          (s) => s.toLowerCase() === r.name.toLowerCase(),
-                        ),
-                    );
-                    const showEmpty =
-                      !subredditSearchLoading &&
-                      subredditInput.trim().length >= 2 &&
-                      visibleResults.length === 0;
-                    if (visibleResults.length === 0 && !showEmpty) return null;
-                    return (
-                      <ul
-                        id="subreddit-search-listbox"
-                        role="listbox"
-                        className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-auto rounded-md border border-input bg-popover text-popover-foreground shadow-md"
-                      >
-                        {visibleResults.map((result, idx) => (
-                          <li
-                            key={result.name}
-                            id={`subreddit-result-${idx}`}
-                            role="option"
-                            aria-selected={idx === subredditActiveIndex}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              addSubredditFromResult(result);
-                            }}
-                            onMouseEnter={() => setSubredditActiveIndex(idx)}
-                            className={cn(
-                              'flex cursor-pointer items-start gap-2 px-3 py-2 text-sm',
-                              idx === subredditActiveIndex
-                                ? 'bg-accent text-accent-foreground'
-                                : 'hover:bg-accent hover:text-accent-foreground',
-                            )}
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-sm font-medium">
-                                  r/{result.name}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {formatSubscribers(result.subscribers)}
-                                </span>
-                                {result.over18 && (
-                                  <span className="rounded bg-destructive/15 px-1 text-[10px] font-semibold uppercase text-destructive">
-                                    NSFW
-                                  </span>
-                                )}
-                              </div>
-                              {(result.title || result.description) && (
-                                <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                                  {result.description || result.title}
-                                </p>
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                        {showEmpty && (
-                          <li className="px-3 py-2 text-xs text-muted-foreground">
-                            Aucun subreddit trouvé pour «&nbsp;{subredditInput.trim()}&nbsp;».
-                          </li>
-                        )}
-                      </ul>
-                    );
-                  })()}
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Tape pour rechercher un subreddit, ou colle plusieurs noms séparés par une virgule.
-                </p>
-                {subredditError && (
-                  <p className="mt-1 text-xs text-destructive" role="alert">
-                    {subredditError}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="border-t" />
-
-            {/* Hacker News row */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="source-hn-enabled" className="flex flex-col gap-0.5">
-                  <span>Hacker News</span>
-                  <span className="text-xs font-normal text-muted-foreground">
-                    Recherche par mots-clés via Algolia.
-                  </span>
-                </Label>
-                <Switch
-                  id="source-hn-enabled"
-                  checked={hnEnabled}
-                  onCheckedChange={setHnEnabled}
-                  aria-label="Activer la source Hacker News"
-                />
-              </div>
-              <div className={cn(!hnEnabled && 'opacity-50 pointer-events-none')}>
-                <Label htmlFor="product-hn-keywords" className="text-xs">
-                  Mots-clés
-                </Label>
-                <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
-                  {hnKeywords.map((kw) => (
-                    <Badge
-                      key={kw}
-                      variant="secondary"
-                      className="gap-1 pl-2 pr-1"
-                    >
-                      {kw}
-                      <button
-                        type="button"
-                        onClick={() => removeHnKeyword(kw)}
-                        disabled={!hnEnabled}
-                        className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
-                        aria-label={`Retirer ${kw}`}
-                      >
-                        <XIcon className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                  <input
-                    id="product-hn-keywords"
-                    type="text"
-                    value={hnKeywordInput}
-                    onChange={(e) => {
-                      setHnKeywordInput(e.target.value);
-                      if (hnKeywordError) setHnKeywordError(null);
-                    }}
-                    onKeyDown={handleHnKeywordKeyDown}
-                    onBlur={handleHnKeywordBlur}
-                    placeholder={
-                      hnKeywords.length === 0
-                        ? 'agents IA, LLM, retrieval, ...'
-                        : ''
-                    }
-                    disabled={!hnEnabled}
-                    className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
-                  />
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Tape un mot-clé puis Entrée ou virgule (2 à {HN_KEYWORD_MAX} caractères, {HN_KEYWORDS_MAX} max).
-                </p>
-                {hnKeywordError && (
-                  <p className="mt-1 text-xs text-destructive" role="alert">
-                    {hnKeywordError}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Intent matching section */}
-          <div className="space-y-4 rounded-lg border p-4">
-            <div>
-              <h3 className="text-sm font-semibold">Détection d'intention</h3>
-              <p className="text-xs text-muted-foreground">
-                Repère automatiquement les messages exprimant un besoin lié à ton produit.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="intent-enabled" className="flex flex-col gap-0.5">
-                  <span>Intent matching</span>
-                  <span className="text-xs font-normal text-muted-foreground">
-                    Génère des opportunités à partir des sources activées.
-                  </span>
-                </Label>
-                <Switch
-                  id="intent-enabled"
-                  checked={intentEnabled}
-                  onCheckedChange={setIntentEnabled}
-                  aria-label="Activer la détection d'intention"
-                />
-              </div>
-              <div className={cn(!intentEnabled && 'opacity-50 pointer-events-none')}>
-                <Label htmlFor="product-intent-keywords" className="text-xs">
-                  Mots-clés d'intention
-                </Label>
-                <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
-                  {intentKeywords.map((kw) => (
-                    <Badge key={kw} variant="secondary" className="gap-1 pl-2 pr-1">
-                      {kw}
-                      <button
-                        type="button"
-                        onClick={() => removeIntentKeyword(kw)}
-                        disabled={!intentEnabled}
-                        className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
-                        aria-label={`Retirer ${kw}`}
-                      >
-                        <XIcon className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                  <input
-                    id="product-intent-keywords"
-                    type="text"
-                    value={intentKeywordInput}
-                    onChange={(e) => {
-                      setIntentKeywordInput(e.target.value);
-                      if (intentKeywordError) setIntentKeywordError(null);
-                    }}
-                    onKeyDown={handleIntentKeywordKeyDown}
-                    onBlur={handleIntentKeywordBlur}
-                    placeholder={
-                      intentKeywords.length === 0
-                        ? 'alternative à figma, je cherche un outil pour, quelqu\'un utilise'
-                        : ''
-                    }
-                    disabled={!intentEnabled}
-                    className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
-                  />
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Tape une expression puis Entrée ou virgule ({INTENT_KEYWORD_MIN} à {INTENT_KEYWORD_MAX} caractères, {INTENT_KEYWORDS_MAX} max).
-                </p>
-                {intentKeywordError && (
-                  <p className="mt-1 text-xs text-destructive" role="alert">
-                    {intentKeywordError}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="border-t" />
-
-            {/* AI analysis context — applies to lead analysis, independent of matching toggle */}
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <Label htmlFor="product-description">
-                  Description du produit (pour l'IA)
-                </Label>
-                <Textarea
-                  id="product-description"
-                  value={productDescription}
-                  onChange={(e) => setProductDescription(e.target.value)}
-                  placeholder="Ex: un SaaS de planification Discord pour communautés gaming. Plan gratuit jusqu'à 100 membres."
-                  rows={4}
-                  maxLength={PRODUCT_DESCRIPTION_MAX}
-                />
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs text-muted-foreground">
-                    Utilisée pour analyser la pertinence des leads et rédiger des
-                    réponses contextuelles.
-                  </p>
-                  <span
-                    className={cn(
-                      'text-xs tabular-nums',
-                      productDescription.length > PRODUCT_DESCRIPTION_MAX
-                        ? 'text-destructive'
-                        : 'text-muted-foreground',
-                    )}
-                  >
-                    {productDescription.length}/{PRODUCT_DESCRIPTION_MAX}
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="product-reply-voice">Ton des réponses</Label>
-                <Select
-                  value={replyVoice ?? REPLY_VOICE_NONE}
-                  onValueChange={(value) =>
-                    setReplyVoice(
-                      value === REPLY_VOICE_NONE ? null : (value as ReplyVoice),
-                    )
-                  }
-                >
-                  <SelectTrigger id="product-reply-voice">
-                    <SelectValue placeholder={REPLY_VOICE_DEFAULT_LABEL} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={REPLY_VOICE_NONE}>
-                      {REPLY_VOICE_DEFAULT_LABEL}
-                    </SelectItem>
-                    {REPLY_VOICE_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Ton utilisé pour les brouillons de réponse générés par l'IA.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Studio section */}
-          <div className="space-y-4 rounded-lg border p-4">
-            <div>
-              <h3 className="text-sm font-semibold">Studio de contenu</h3>
-              <p className="text-xs text-muted-foreground">
-                Configuration utilisée pour générer des drafts de posts marketing.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="product-url">URL du produit</Label>
-              <Input
-                id="product-url"
-                type="url"
-                value={productUrl}
-                onChange={(e) => setProductUrl(e.target.value)}
-                placeholder="https://exemple.com"
-                autoComplete="off"
-              />
-              <p className="text-xs text-muted-foreground">
-                URL principale (doit commencer par http:// ou https://).
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="product-target-audience">Audience cible</Label>
-              <Textarea
-                id="product-target-audience"
-                value={targetAudience}
-                onChange={(e) => setTargetAudience(e.target.value)}
-                placeholder="Ex: makers SaaS B2B francophones, PMs scale-up."
-                rows={3}
-                maxLength={TARGET_AUDIENCE_MAX}
-              />
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  Décris brièvement à qui s'adresse le produit.
-                </p>
-                <span
-                  className={cn(
-                    'text-xs tabular-nums',
-                    targetAudience.length > TARGET_AUDIENCE_MAX
-                      ? 'text-destructive'
-                      : 'text-muted-foreground',
-                  )}
-                >
-                  {targetAudience.length}/{TARGET_AUDIENCE_MAX}
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="product-value-props">Propositions de valeur</Label>
-              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
-                {valueProps.map((vp) => (
-                  <Badge key={vp} variant="secondary" className="gap-1 pl-2 pr-1">
-                    {vp}
-                    <button
-                      type="button"
-                      onClick={() => removeValueProp(vp)}
-                      className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
-                      aria-label={`Retirer ${vp}`}
-                    >
-                      <XIcon className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-                <input
-                  id="product-value-props"
-                  type="text"
-                  value={valuePropInput}
-                  onChange={(e) => {
-                    setValuePropInput(e.target.value);
-                    if (valuePropError) setValuePropError(null);
-                  }}
-                  onKeyDown={handleValuePropKeyDown}
-                  onBlur={handleValuePropBlur}
-                  placeholder={
-                    valueProps.length === 0
-                      ? 'Ex: scrape sans API officielle, résumé IA français'
-                      : ''
-                  }
-                  title="Ex: scrape sans API officielle, résumé IA français"
-                  className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Tape une proposition puis Entrée ou virgule ({VALUE_PROP_MIN} à {VALUE_PROP_MAX} caractères, {VALUE_PROPS_MAX} max).
-              </p>
-              {valuePropError && (
-                <p className="text-xs text-destructive" role="alert">
-                  {valuePropError}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="product-ctas">Calls to action</Label>
-              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
-                {callToActions.map((cta) => (
-                  <Badge key={cta} variant="secondary" className="gap-1 pl-2 pr-1">
-                    {cta}
-                    <button
-                      type="button"
-                      onClick={() => removeCta(cta)}
-                      className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
-                      aria-label={`Retirer ${cta}`}
-                    >
-                      <XIcon className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-                <input
-                  id="product-ctas"
-                  type="text"
-                  value={ctaInput}
-                  onChange={(e) => {
-                    setCtaInput(e.target.value);
-                    if (ctaError) setCtaError(null);
-                  }}
-                  onKeyDown={handleCtaKeyDown}
-                  onBlur={handleCtaBlur}
-                  placeholder={
-                    callToActions.length === 0
-                      ? 'Ex: Essaie gratuit sur ton subreddit, Demande une démo'
-                      : ''
-                  }
-                  title="Ex: Essaie gratuit sur ton subreddit, Demande une démo"
-                  className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Tape un CTA puis Entrée ou virgule ({CTA_MIN} à {CTA_MAX} caractères, {CTAS_MAX} max).
-              </p>
-              {ctaError && (
-                <p className="text-xs text-destructive" role="alert">
-                  {ctaError}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="product-content-voice">Voix éditoriale pour les posts</Label>
-              <Select
-                value={contentVoice ?? CONTENT_VOICE_NONE}
-                onValueChange={(value) =>
-                  setContentVoice(
-                    value === CONTENT_VOICE_NONE ? null : (value as ContentVoice),
-                  )
-                }
-              >
-                <SelectTrigger id="product-content-voice">
-                  <SelectValue placeholder={CONTENT_VOICE_DEFAULT_LABEL} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={CONTENT_VOICE_NONE}>
-                    {CONTENT_VOICE_DEFAULT_LABEL}
-                  </SelectItem>
-                  {CONTENT_VOICE_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Différente de la voix des réponses si tu veux.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="product-content-language">Langue des posts</Label>
-              <Select
-                value={contentLanguage ?? 'fr'}
-                onValueChange={(value) =>
-                  setContentLanguage(value as ContentLanguage)
-                }
-              >
-                <SelectTrigger id="product-content-language">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CONTENT_LANGUAGE_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Français par défaut.
-              </p>
-            </div>
-          </div>
-
-          {error && (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          )}
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={submitting}
-            >
-              Annuler
-            </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting
-                ? isEdit
-                  ? 'Mise à jour...'
-                  : 'Création...'
-                : isEdit
-                  ? 'Enregistrer'
-                  : 'Créer le produit'}
-            </Button>
-          </DialogFooter>
-        </form>
+        {/* Remounting the form whenever the dialog opens or the edited product
+            changes resets all field state without a prop-sync effect. */}
+        {open && (
+          <ProductForm
+            key={isEdit ? (initialValues?.id ?? 'edit') : 'create'}
+            isEdit={isEdit}
+            initialValues={initialValues}
+            onCreated={onCreated}
+            onUpdated={onUpdated}
+            onOpenChange={onOpenChange}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

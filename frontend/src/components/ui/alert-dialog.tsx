@@ -1,15 +1,15 @@
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
 import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 
 export const AlertDialog = AlertDialogPrimitive.Root;
 export const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
 
-export function AlertDialogPortal({ ...props }: AlertDialogPrimitive.AlertDialogPortalProps) {
+function AlertDialogPortal({ ...props }: AlertDialogPrimitive.AlertDialogPortalProps) {
   return <AlertDialogPrimitive.Portal {...props} />;
 }
 
-export function AlertDialogOverlay({
+function AlertDialogOverlay({
   className,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Overlay>) {

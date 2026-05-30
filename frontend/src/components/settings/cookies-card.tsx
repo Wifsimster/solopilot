@@ -50,7 +50,7 @@ export function CookiesCard({ credentialInfo, onSaved }: CookiesCardProps) {
           <div>
             <div className="font-semibold">Session Cookies X</div>
             <p className="text-sm text-muted-foreground">
-              Cookies de session pour le scraping — extraits depuis votre navigateur (DevTools &gt;
+              Cookies de session pour le scraping (extraits depuis votre navigateur : DevTools &gt;
               Application &gt; Cookies &gt; x.com)
             </p>
           </div>

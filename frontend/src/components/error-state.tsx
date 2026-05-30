@@ -24,7 +24,7 @@ function humanizeError(message: string): string {
 export function ErrorState({ message, context, onRetry }: ErrorStateProps) {
   return (
     <Alert variant="destructive" role="alert">
-      <AlertCircle className="h-4 w-4" />
+      <AlertCircle className="size-4" />
       <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <span>
           {context ? `${context} — ` : ''}
@@ -38,7 +38,7 @@ export function ErrorState({ message, context, onRetry }: ErrorStateProps) {
             className="shrink-0"
             aria-label="Réessayer le chargement"
           >
-            <RotateCcw className="h-3.5 w-3.5" />
+            <RotateCcw className="size-3.5" />
             Réessayer
           </Button>
         )}

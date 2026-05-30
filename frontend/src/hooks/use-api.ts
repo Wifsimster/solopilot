@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { withProductId } from "@/lib/product-context";
+import { withProductId } from "@/lib/product-context-hooks";
 
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1500;

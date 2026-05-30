@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useReducer } from "react";
 import { useApi } from "@/hooks/use-api";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Calendar, TrendingUp, Loader2, Send, Check, X, Search, RotateCcw, Trash2, RefreshCw, MessageSquare, MoreVertical } from "lucide-react";
 import { toast } from "sonner";
-import { useSelectedProduct, withProductId } from "@/lib/product-context";
+import { useSelectedProduct, withProductId } from "@/lib/product-context-hooks";
 import type { RunRecord, MonthlySummaryRecord, AvailableMonth, ConfigResponse } from "@/types";
 
 const MONTH_NAMES = [
@@ -128,7 +128,7 @@ function DailyView() {
       <div className="sticky top-14 z-20 -mx-3 sm:mx-0 px-3 sm:px-0 py-2 sm:py-0 bg-background/95 backdrop-blur sm:bg-transparent sm:backdrop-blur-none border-b sm:border-0">
         <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-center">
           <div className="relative flex-1 sm:max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" aria-hidden="true" />
             <Input
               placeholder="Rechercher…"
               value={searchInput}
@@ -149,8 +149,8 @@ function DailyView() {
               </SelectContent>
             </Select>
             {hasFilters && (
-              <Button variant="ghost" size="icon" onClick={handleResetFilters} aria-label="Réinitialiser les filtres" className="h-10 w-10 shrink-0">
-                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              <Button variant="ghost" size="icon" onClick={handleResetFilters} aria-label="Réinitialiser les filtres" className="size-10 shrink-0">
+                <RotateCcw className="size-4" aria-hidden="true" />
               </Button>
             )}
           </div>
@@ -230,10 +230,10 @@ function SummaryActionsMenu({
           variant="outline"
           size="icon"
           disabled={busy}
-          className="h-9 w-9"
+          className="size-9"
           aria-label="Actions sur le résumé"
         >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreVertical className="h-4 w-4" />}
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <MoreVertical className="size-4" />}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
@@ -271,19 +271,72 @@ function SummaryActionsMenu({
   );
 }
 
+interface SummaryActionState {
+  sending: boolean;
+  deleting: boolean;
+  rerunning: boolean;
+  rerunResult: "success" | "error" | null;
+  sentOverride: boolean;
+}
+
+type SummaryAction =
+  | { type: "send/start" }
+  | { type: "send/success" }
+  | { type: "send/done" }
+  | { type: "delete/start" }
+  | { type: "delete/done" }
+  | { type: "rerun/start" }
+  | { type: "rerun/result"; result: "success" | "error" }
+  | { type: "rerun/done" }
+  | { type: "rerun/clearResult" };
+
+const initialSummaryActionState: SummaryActionState = {
+  sending: false,
+  deleting: false,
+  rerunning: false,
+  rerunResult: null,
+  sentOverride: false,
+};
+
+function summaryActionReducer(
+  state: SummaryActionState,
+  action: SummaryAction,
+): SummaryActionState {
+  switch (action.type) {
+    case "send/start":
+      return { ...state, sending: true };
+    case "send/success":
+      return { ...state, sentOverride: true };
+    case "send/done":
+      return { ...state, sending: false };
+    case "delete/start":
+      return { ...state, deleting: true };
+    case "delete/done":
+      return { ...state, deleting: false };
+    case "rerun/start":
+      return { ...state, rerunning: true, rerunResult: null };
+    case "rerun/result":
+      return { ...state, rerunResult: action.result };
+    case "rerun/done":
+      return { ...state, rerunning: false };
+    case "rerun/clearResult":
+      return { ...state, rerunResult: null };
+    default:
+      return state;
+  }
+}
+
 function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; discordConfigured: boolean; onMutate: () => void }) {
   const { selectedProductId } = useSelectedProduct();
   const [expanded, setExpanded] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [notifStatus, setNotifStatus] = useState(run.notification_status);
-  const [deleting, setDeleting] = useState(false);
-  const [rerunning, setRerunning] = useState(false);
-  const [rerunResult, setRerunResult] = useState<"success" | "error" | null>(null);
+  const [action, dispatch] = useReducer(summaryActionReducer, initialSummaryActionState);
+  const { sending, deleting, rerunning, rerunResult, sentOverride } = action;
 
+  const notifStatus = sentOverride ? "sent" : run.notification_status;
   const busy = sending || deleting || rerunning;
 
   const handleSendDiscord = async () => {
-    setSending(true);
+    dispatch({ type: "send/start" });
     try {
       const res = await fetch(withProductId(`/api/runs/${run.id}/send-discord`, selectedProductId), {
         method: "POST",
@@ -291,19 +344,19 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
       const data = await res.json();
       if (data.success) {
         toast.success("Résumé envoyé sur Discord");
-        setNotifStatus("sent");
+        dispatch({ type: "send/success" });
       } else {
         toast.error("Échec de l'envoi sur Discord");
       }
     } catch {
       toast.error("Erreur réseau lors de l'envoi");
     } finally {
-      setSending(false);
+      dispatch({ type: "send/done" });
     }
   };
 
   const handleDelete = async () => {
-    setDeleting(true);
+    dispatch({ type: "delete/start" });
     try {
       const res = await fetch(withProductId(`/api/summaries/${run.id}`, selectedProductId), {
         method: "DELETE",
@@ -318,32 +371,31 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
     } catch {
       toast.error("Erreur réseau lors de la suppression");
     } finally {
-      setDeleting(false);
+      dispatch({ type: "delete/done" });
     }
   };
 
   const handleRerun = async () => {
-    setRerunning(true);
-    setRerunResult(null);
+    dispatch({ type: "rerun/start" });
     try {
       const res = await fetch(withProductId(`/api/summaries/${run.id}/rerun`, selectedProductId), {
         method: "POST",
       });
       const data = await res.json();
       if (data.success) {
-        setRerunResult("success");
+        dispatch({ type: "rerun/result", result: "success" });
         toast.success("Résumé régénéré avec succès");
         onMutate();
       } else {
-        setRerunResult("error");
+        dispatch({ type: "rerun/result", result: "error" });
         toast.error(data.message || "Échec de la régénération");
       }
     } catch {
-      setRerunResult("error");
+      dispatch({ type: "rerun/result", result: "error" });
       toast.error("Erreur réseau lors de la régénération");
     } finally {
-      setRerunning(false);
-      setTimeout(() => setRerunResult(null), 3000);
+      dispatch({ type: "rerun/done" });
+      setTimeout(() => dispatch({ type: "rerun/clearResult" }), 3000);
     }
   };
 
@@ -352,7 +404,7 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            <Calendar className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+            <Calendar className="size-4 text-primary shrink-0" aria-hidden="true" />
             <span className="font-medium text-sm sm:text-base truncate">{formatDate(run.started_at)}</span>
             <Badge variant="outline" className="ml-1 shrink-0">#{run.id}</Badge>
             {notifStatus === "sent" && <Badge variant="success">Discord</Badge>}
@@ -362,13 +414,13 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
               <Sheet>
                 <SheetTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-9 px-2 text-xs" aria-label={`Voir les ${run.tweets_fetched} tweets de ce run`}>
-                    <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                    <MessageSquare className="size-3.5" aria-hidden="true" />
                     {run.tweets_fetched}
                   </Button>
                 </SheetTrigger>
                 <SheetContent>
                   <SheetHeader>
-                    <SheetTitle>{run.tweets_fetched} tweets — Run #{run.id}</SheetTitle>
+                    <SheetTitle>{run.tweets_fetched} tweets (Run #{run.id})</SheetTitle>
                     <SheetDescription>{formatDate(run.started_at)}</SheetDescription>
                   </SheetHeader>
                   <TweetListPanel runId={run.id} tweetCount={run.tweets_fetched} />
@@ -465,16 +517,16 @@ function MonthlyView() {
       <Card>
         <CardHeader>
           <div className="font-semibold flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-primary" />
+            <TrendingUp className="size-4 text-primary" />
             Générer un résumé mensuel
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
-              <label className="text-sm text-muted-foreground">Année</label>
+              <label htmlFor="monthly-year-select" className="text-sm text-muted-foreground">Année</label>
               <Select value={selectedYear} onValueChange={(v) => { setSelectedYear(v); setSelectedMonth(""); }}>
-                <SelectTrigger className="w-[120px]">
+                <SelectTrigger id="monthly-year-select" className="w-[120px]">
                   <SelectValue placeholder="Année" />
                 </SelectTrigger>
                 <SelectContent>
@@ -485,9 +537,9 @@ function MonthlyView() {
               </Select>
             </div>
             <div className="space-y-1">
-              <label className="text-sm text-muted-foreground">Mois</label>
+              <label htmlFor="monthly-month-select" className="text-sm text-muted-foreground">Mois</label>
               <Select value={selectedMonth} onValueChange={setSelectedMonth} disabled={!selectedYear}>
-                <SelectTrigger className="w-[160px]">
+                <SelectTrigger id="monthly-month-select" className="w-[160px]">
                   <SelectValue placeholder="Mois" />
                 </SelectTrigger>
                 <SelectContent>
@@ -503,8 +555,8 @@ function MonthlyView() {
               onClick={handleGenerate}
               disabled={!selectedYear || !selectedMonth || generating}
             >
-              {generating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {generating ? "Génération..." : "Générer"}
+              {generating && <Loader2 className="mr-2 size-4 animate-spin" />}
+              {generating ? "Génération…" : "Générer"}
             </Button>
           </div>
         </CardContent>
@@ -543,11 +595,11 @@ function MonthlySummaryCard({ summary }: { summary: MonthlySummaryRecord }) {
   const runIds = parseRunIds(summary.source_run_ids);
 
   return (
-    <Card className="border-l-4 border-l-primary/30">
+    <Card className="border-l-2 border-l-primary/40 bg-primary/[0.02]">
       <CardHeader className="pb-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
-            <TrendingUp className="h-4 w-4 text-primary" />
+            <TrendingUp className="size-4 text-primary" />
             <span className="font-semibold text-base sm:text-lg">
               {MONTH_NAMES[summary.month - 1]} {summary.year}
             </span>

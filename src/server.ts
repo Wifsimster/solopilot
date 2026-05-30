@@ -48,8 +48,13 @@ import { getTodayDateParis } from './date-utils.js';
 import { validateXCookies, detectGqlIds, DEFAULT_GQL_IDS } from './adapters/scraper-reader.js';
 import { searchSubreddits } from './adapters/reddit-reader.js';
 import { testDiscordWebhook, sendDiscordNotification } from './adapters/discord-notifier.js';
-import { reschedule, rescheduleCollect, getCurrentSchedule, getCollectSchedule } from './cron-manager.js';
-import { buildMergedConfig } from './scheduler.js';
+import {
+  reschedule,
+  rescheduleCollect,
+  getCurrentSchedule,
+  getCollectSchedule,
+} from './cron-manager.js';
+import { buildMergedConfig } from './config-merge.js';
 import {
   listProducts,
   getProduct,
@@ -120,7 +125,8 @@ function buildCredentialInfo(config: Config) {
 
 function buildEnvDefaults(config: Config, cronSchedule: string) {
   const activeCron = getCurrentSchedule() || getSetting('CRON_SCHEDULE') || cronSchedule;
-  const activeCollectCron = getCollectSchedule() || getSetting('COLLECT_CRON_SCHEDULE') || config.COLLECT_CRON_SCHEDULE;
+  const activeCollectCron =
+    getCollectSchedule() || getSetting('COLLECT_CRON_SCHEDULE') || config.COLLECT_CRON_SCHEDULE;
   return {
     AI_MODEL: config.AI_MODEL,
     TWEETS_LOOKBACK_DAYS: String(config.TWEETS_LOOKBACK_DAYS),
@@ -140,8 +146,8 @@ function resolveProductId(queryValue: string | undefined): string {
 
 function sameKeywordSet(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
-  const sortedA = [...a].sort();
-  const sortedB = [...b].sort();
+  const sortedA = a.toSorted();
+  const sortedB = b.toSorted();
   for (let i = 0; i < sortedA.length; i++) {
     if (sortedA[i] !== sortedB[i]) return false;
   }
@@ -269,7 +275,10 @@ export function startServer(
       );
     }
     if (getProduct(parsed.data.id)) {
-      return c.json({ success: false, message: 'Un produit avec cet identifiant existe deja.' }, 409);
+      return c.json(
+        { success: false, message: 'Un produit avec cet identifiant existe deja.' },
+        409,
+      );
     }
     const product = createProduct(parsed.data);
     return c.json({ success: true, product: maskProduct(product) });
@@ -309,23 +318,18 @@ export function startServer(
         ? parsed.data.reddit_enabled
         : existing.reddit_enabled === 1;
     const effectiveHnEnabled =
-      parsed.data.hn_enabled !== undefined
-        ? parsed.data.hn_enabled
-        : existing.hn_enabled === 1;
+      parsed.data.hn_enabled !== undefined ? parsed.data.hn_enabled : existing.hn_enabled === 1;
     if (!effectiveXEnabled && !effectiveRedditEnabled && !effectiveHnEnabled) {
       return c.json(
         { success: false, message: 'Active au moins une source (X, Reddit ou Hacker News).' },
         400,
       );
     }
-    if (
-      parsed.data.reddit_enabled === true ||
-      parsed.data.reddit_subreddits !== undefined
-    ) {
+    if (parsed.data.reddit_enabled === true || parsed.data.reddit_subreddits !== undefined) {
       const existingSubs = toProductView(existing).reddit_subreddits;
       const effectiveSubs =
         parsed.data.reddit_subreddits !== undefined
-          ? parsed.data.reddit_subreddits ?? []
+          ? (parsed.data.reddit_subreddits ?? [])
           : existingSubs;
       if (effectiveRedditEnabled && effectiveSubs.length === 0) {
         return c.json(
@@ -340,9 +344,7 @@ export function startServer(
     if (parsed.data.hn_enabled === true || parsed.data.hn_keywords !== undefined) {
       const existingKeywords = toProductView(existing).hn_keywords;
       const effectiveKeywords =
-        parsed.data.hn_keywords !== undefined
-          ? parsed.data.hn_keywords ?? []
-          : existingKeywords;
+        parsed.data.hn_keywords !== undefined ? (parsed.data.hn_keywords ?? []) : existingKeywords;
       if (effectiveHnEnabled && effectiveKeywords.length === 0) {
         return c.json(
           {
@@ -364,7 +366,9 @@ export function startServer(
       const updatedView = toProductView(updated);
       const keywordsChanged = !sameKeywordSet(previousIntentKeywords, updatedView.intent_keywords);
       const enabledFlippedOn =
-        !previousIntentEnabled && updatedView.intent_enabled && updatedView.intent_keywords.length > 0;
+        !previousIntentEnabled &&
+        updatedView.intent_enabled &&
+        updatedView.intent_keywords.length > 0;
 
       if (
         updatedView.intent_enabled &&
@@ -539,9 +543,7 @@ export function startServer(
       return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
     }
     const body = await c.req.json().catch(() => ({}));
-    const parsed = generateRepliesSchema.safeParse(
-      body && typeof body === 'object' ? body : {},
-    );
+    const parsed = generateRepliesSchema.safeParse(body && typeof body === 'object' ? body : {});
     if (!parsed.success) {
       return c.json(
         {
@@ -563,10 +565,7 @@ export function startServer(
         signalId: id,
         error: err instanceof Error ? err.message : String(err),
       });
-      return c.json(
-        { success: false, message: 'Erreur interne lors de l\'analyse.' },
-        500,
-      );
+      return c.json({ success: false, message: "Erreur interne lors de l'analyse." }, 500);
     }
   });
 
@@ -592,9 +591,7 @@ export function startServer(
       return c.json({ success: false, message: 'Signal introuvable.' }, 404);
     }
     const body = await c.req.json().catch(() => ({}));
-    const parsed = generateRepliesSchema.safeParse(
-      body && typeof body === 'object' ? body : {},
-    );
+    const parsed = generateRepliesSchema.safeParse(body && typeof body === 'object' ? body : {});
     if (!parsed.success) {
       return c.json(
         {
@@ -681,7 +678,7 @@ export function startServer(
         {
           success: false,
           message:
-            'Produit non configure pour le Studio. Renseigne l\'audience cible et au moins une proposition de valeur dans la fiche produit avant de generer des posts.',
+            "Produit non configure pour le Studio. Renseigne l'audience cible et au moins une proposition de valeur dans la fiche produit avant de generer des posts.",
         },
         400,
       );
@@ -775,10 +772,7 @@ export function startServer(
   // --- GitHub Import API (available in both setup and operational mode) ---
 
   const githubImportQuerySchema = z.object({
-    username: z
-      .string()
-      .trim()
-      .min(1, { message: 'Nom d\'utilisateur GitHub requis.' }),
+    username: z.string().trim().min(1, { message: "Nom d'utilisateur GitHub requis." }),
     includeForks: z
       .enum(['true', 'false'])
       .optional()
@@ -843,7 +837,7 @@ export function startServer(
       return c.json(
         {
           success: false,
-          message: 'Donnees d\'import invalides.',
+          message: "Donnees d'import invalides.",
           issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
         },
         400,
@@ -1168,7 +1162,10 @@ export function startServer(
       const schedule = typeof body.schedule === 'string' ? body.schedule.trim() : '';
 
       if (!schedule) {
-        return c.json({ success: false, message: 'La planification cron de collecte est requise.' });
+        return c.json({
+          success: false,
+          message: 'La planification cron de collecte est requise.',
+        });
       }
 
       if (!cron.validate(schedule)) {
@@ -1292,10 +1289,13 @@ export function startServer(
       }
 
       if (!targetRun.summary) {
-        return c.json({
-          success: false,
-          message: 'Ce run ne contient pas de resume a envoyer.',
-        }, 400);
+        return c.json(
+          {
+            success: false,
+            message: 'Ce run ne contient pas de resume a envoyer.',
+          },
+          400,
+        );
       }
 
       const productId = targetRun.product_id ?? DEFAULT_PRODUCT_ID;
@@ -1303,10 +1303,13 @@ export function startServer(
       const webhookUrl =
         product?.discord_webhook ?? getSetting('DISCORD_WEBHOOK_URL') ?? config.DISCORD_WEBHOOK_URL;
       if (!webhookUrl) {
-        return c.json({
-          success: false,
-          message: "Aucun webhook Discord configure. Ajoutez l'URL dans les parametres.",
-        }, 400);
+        return c.json(
+          {
+            success: false,
+            message: "Aucun webhook Discord configure. Ajoutez l'URL dans les parametres.",
+          },
+          400,
+        );
       }
 
       const result = await sendDiscordNotification(webhookUrl, targetRun.summary, runId);

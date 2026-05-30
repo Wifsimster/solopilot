@@ -18,17 +18,17 @@ export const CONTENT_DRAFT_STATUSES = [
 ] as const;
 export const TARGET_SOURCES = ['x', 'reddit', 'generic'] as const;
 
-export const contentDraftKindSchema = z.enum(CONTENT_DRAFT_KINDS, {
+const contentDraftKindSchema = z.enum(CONTENT_DRAFT_KINDS, {
   errorMap: () => ({ message: 'Type de brouillon invalide (post).' }),
 });
 
-export const contentDraftStatusSchema = z.enum(CONTENT_DRAFT_STATUSES, {
+const contentDraftStatusSchema = z.enum(CONTENT_DRAFT_STATUSES, {
   errorMap: () => ({
     message: 'Statut invalide (pending, edited, used ou discarded).',
   }),
 });
 
-export const targetSourceSchema = z.enum(TARGET_SOURCES, {
+const targetSourceSchema = z.enum(TARGET_SOURCES, {
   errorMap: () => ({
     message: 'Plateforme cible invalide (x, reddit ou generic).',
   }),

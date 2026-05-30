@@ -19,7 +19,7 @@ import { Pagination } from '@/components/pagination';
 import { MarkdownContent } from '@/components/markdown-content';
 import { usePagination } from '@/hooks/use-pagination';
 import { formatDateFr } from '@/lib/utils';
-import { useSelectedProduct } from '@/lib/product-context';
+import { useSelectedProduct } from '@/lib/product-context-hooks';
 import type { RunRecord } from '@/types';
 
 function SummaryToggle({ summary }: { summary: string }) {

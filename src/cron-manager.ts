@@ -8,7 +8,7 @@ import type { Config } from './config.js';
 const tasks = new Map<string, ScheduledTask>();
 const schedules = new Map<string, string>();
 
-export function getSchedule(name: string): string {
+function getSchedule(name: string): string {
   return schedules.get(name) || '';
 }
 
@@ -99,15 +99,6 @@ function scheduleNamedCron(
 
   logger.info('Cron task scheduled', { name, schedule });
   return true;
-}
-
-// Backward-compatible: scheduleCron still schedules the publish task
-export function scheduleCron(
-  schedule: string,
-  baseConfig: Config,
-  buildMergedConfig: (base: Config, overrides: Record<string, string>) => Config,
-): boolean {
-  return schedulePublishCron(schedule, baseConfig, buildMergedConfig);
 }
 
 export function reschedule(

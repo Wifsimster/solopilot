@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { NavLink, Link, Outlet, useLocation } from 'react-router-dom';
+import { useState, useCallback } from 'react';
+import { NavLink, Link, Outlet } from 'react-router-dom';
 import { useTheme } from '@/components/theme-provider';
 import { useApi } from '@/hooks/use-api';
 import {
@@ -29,7 +29,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useSelectedProduct, DEFAULT_PRODUCT_ID } from '@/lib/product-context';
+import { useSelectedProduct, DEFAULT_PRODUCT_ID } from '@/lib/product-context-hooks';
 import type { ProductRecord } from '@/types';
 
 type NavItem = {
@@ -147,11 +147,7 @@ export function Layout() {
     '/api/version',
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const location = useLocation();
-
-  useEffect(() => {
-    setDrawerOpen(false);
-  }, [location.pathname]);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -172,7 +168,7 @@ export function Layout() {
             to="/"
             className="font-bold text-base sm:text-lg flex items-center gap-2 hover:text-primary transition-colors shrink-0"
           >
-            <BrainCircuit className="h-5 w-5 text-primary" />
+            <BrainCircuit className="size-5 text-primary" />
             <span className="hidden sm:inline">X AI Weekly Bot</span>
             <span className="sm:hidden">XAI Bot</span>
           </Link>
@@ -194,7 +190,7 @@ export function Layout() {
                     end={item.end}
                     className={navLinkClass}
                   >
-                    <item.icon className="h-3.5 w-3.5" aria-hidden="true" />
+                    <item.icon className="size-3.5" aria-hidden="true" />
                     {item.label}
                   </NavLink>
                 ))}
@@ -241,12 +237,13 @@ export function Layout() {
             {versionInfo?.buildDate && (
               <>
                 {' '}
-                — Build{' '}
+                (Build{' '}
                 {new Date(versionInfo.buildDate).toLocaleDateString('fr-FR', {
                   day: 'numeric',
                   month: 'long',
                   year: 'numeric',
                 })}
+                )
               </>
             )}
           </p>
@@ -260,7 +257,7 @@ export function Layout() {
         <DrawerContent className="max-h-[85dvh]">
           <DrawerHeader>
             <DrawerTitle className="flex items-center gap-2">
-              <BrainCircuit className="h-5 w-5 text-primary" />
+              <BrainCircuit className="size-5 text-primary" />
               Navigation
             </DrawerTitle>
           </DrawerHeader>
@@ -277,8 +274,9 @@ export function Layout() {
                       to={item.to}
                       end={item.end}
                       className={drawerNavLinkClass}
+                      onClick={closeDrawer}
                     >
-                      <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <item.icon className="size-4 shrink-0" aria-hidden="true" />
                       {item.label}
                     </NavLink>
                   ))}

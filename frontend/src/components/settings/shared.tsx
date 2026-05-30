@@ -5,9 +5,9 @@ export type Flash = { type: 'success' | 'error'; message: string } | null;
 
 export function StatusDot({ configured }: { configured: boolean }) {
   return configured ? (
-    <CheckCircle2 className="h-4 w-4 text-success" aria-label="Configuré" />
+    <CheckCircle2 className="size-4 text-success" aria-label="Configuré" />
   ) : (
-    <XCircle className="h-4 w-4 text-destructive" aria-label="Non configuré" />
+    <XCircle className="size-4 text-destructive" aria-label="Non configuré" />
   );
 }
 

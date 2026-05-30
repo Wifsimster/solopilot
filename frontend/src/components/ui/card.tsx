@@ -16,26 +16,4 @@ export function CardHeader({
   return <div data-slot="card-header" ref={ref} className={cn("flex flex-col space-y-1.5 p-6", className)} {...props} />;
 }
 
-export function CardTitle({
-  className,
-  ref,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement> & { ref?: React.Ref<HTMLDivElement> }) {
-  return <div data-slot="card-title" ref={ref} className={cn("font-semibold leading-none tracking-tight", className)} {...props} />;
-}
-
-export function CardContent({
-  className,
-  ref,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement> & { ref?: React.Ref<HTMLDivElement> }) {
-  return <div data-slot="card-content" ref={ref} className={cn("p-6 pt-0", className)} {...props} />;
-}
-
-export function CardDescription({
-  className,
-  ref,
-  ...props
-}: React.HTMLAttributes<HTMLParagraphElement> & { ref?: React.Ref<HTMLParagraphElement> }) {
-  return <p data-slot="card-description" ref={ref} className={cn("text-sm text-muted-foreground", className)} {...props} />;
-}
+export { CardContent } from "@/components/ui/card-content";

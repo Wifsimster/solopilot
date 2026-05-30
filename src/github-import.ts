@@ -71,17 +71,15 @@ export const bulkImportRequestSchema = z.object({
   repos: z
     .array(
       z.object({
-        id: z
-          .string()
-          .regex(GITHUB_SLUG_REGEX, {
-            message: 'Identifiant de depot invalide.',
-          }),
+        id: z.string().regex(GITHUB_SLUG_REGEX, {
+          message: 'Identifiant de depot invalide.',
+        }),
         name: z.string().min(1).max(120),
         product_url: z
           .string()
           .url({ message: 'URL invalide.' })
           .refine((u) => u.startsWith('https://github.com/'), {
-            message: 'L\'URL doit commencer par https://github.com/.',
+            message: "L'URL doit commencer par https://github.com/.",
           }),
         product_description: z
           .string()
@@ -97,7 +95,7 @@ export const bulkImportRequestSchema = z.object({
 // Slug helper
 // ---------------------------------------------------------------------------
 
-export function slugifyRepoName(name: string): string {
+function slugifyRepoName(name: string): string {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, '-')
@@ -124,14 +122,12 @@ interface GithubApiRepo {
 // fetchGithubRepos
 // ---------------------------------------------------------------------------
 
-export async function fetchGithubRepos(
-  opts: GithubFetchOpts,
-): Promise<GithubRepoCandidate[]> {
+export async function fetchGithubRepos(opts: GithubFetchOpts): Promise<GithubRepoCandidate[]> {
   const { username, includeForks = false, includeArchived = false, githubToken } = opts;
 
   if (!username || !GITHUB_USERNAME_REGEX.test(username)) {
     throw new GithubImportError(
-      'Nom d\'utilisateur GitHub invalide (lettres, chiffres et tirets uniquement, 1-39 caracteres, sans tiret initial).',
+      "Nom d'utilisateur GitHub invalide (lettres, chiffres et tirets uniquement, 1-39 caracteres, sans tiret initial).",
     );
   }
 
@@ -156,7 +152,7 @@ export async function fetchGithubRepos(
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new GithubImportError(
-        'Delai d\'attente depasse en contactant GitHub. Reessaie plus tard.',
+        "Delai d'attente depasse en contactant GitHub. Reessaie plus tard.",
       );
     }
     throw new GithubImportError(
@@ -171,9 +167,7 @@ export async function fetchGithubRepos(
   }
 
   if (response.status === 401) {
-    throw new GithubImportError(
-      'Token GitHub invalide ou expire. Verifie la valeur configuree.',
-    );
+    throw new GithubImportError('Token GitHub invalide ou expire. Verifie la valeur configuree.');
   }
 
   if (response.status === 403) {
@@ -184,16 +178,12 @@ export async function fetchGithubRepos(
       if (Number.isFinite(resetEpoch)) {
         const nowSec = Math.floor(Date.now() / 1000);
         const minutes = Math.max(1, Math.ceil((resetEpoch - nowSec) / 60));
-        throw new GithubImportError(
-          `Limite GitHub atteinte, reessaie dans ${minutes} minutes.`,
-        );
+        throw new GithubImportError(`Limite GitHub atteinte, reessaie dans ${minutes} minutes.`);
       }
       throw new GithubImportError('Limite GitHub atteinte, reessaie plus tard.');
     }
     if (githubToken) {
-      throw new GithubImportError(
-        'Token GitHub invalide ou sans les droits suffisants.',
-      );
+      throw new GithubImportError('Token GitHub invalide ou sans les droits suffisants.');
     }
     throw new GithubImportError(
       'Acces GitHub refuse (403). Reessaie plus tard ou configure un token.',
@@ -205,9 +195,7 @@ export async function fetchGithubRepos(
   }
 
   if (!response.ok) {
-    throw new GithubImportError(
-      `Erreur GitHub (${response.status}). Reessaie plus tard.`,
-    );
+    throw new GithubImportError(`Erreur GitHub (${response.status}). Reessaie plus tard.`);
   }
 
   let parsed: unknown;
@@ -224,12 +212,12 @@ export async function fetchGithubRepos(
 
   const importedIds = new Set(listProducts(true).map((p) => p.id));
 
-  const mapped: GithubRepoCandidate[] = repos
-    .filter((r) => (includeForks ? true : !r.fork))
-    .filter((r) => (includeArchived ? true : !r.archived))
-    .map((r) => {
-      const id = slugifyRepoName(r.name);
-      return {
+  const mapped: GithubRepoCandidate[] = repos.flatMap((r) => {
+    if (!includeForks && r.fork) return [];
+    if (!includeArchived && r.archived) return [];
+    const id = slugifyRepoName(r.name);
+    return [
+      {
         id,
         name: r.name,
         description: r.description ?? null,
@@ -240,8 +228,9 @@ export async function fetchGithubRepos(
         fork: !!r.fork,
         archived: !!r.archived,
         alreadyImported: importedIds.has(id),
-      };
-    });
+      },
+    ];
+  });
 
   logger.info('GitHub repos fetched', {
     username,

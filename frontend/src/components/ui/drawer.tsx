@@ -9,10 +9,10 @@ export const Drawer = ({
 );
 
 export const DrawerTrigger = DrawerPrimitive.Trigger;
-export const DrawerPortal = DrawerPrimitive.Portal;
+const DrawerPortal = DrawerPrimitive.Portal;
 export const DrawerClose = DrawerPrimitive.Close;
 
-export function DrawerOverlay({
+function DrawerOverlay({
   className,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Overlay>) {

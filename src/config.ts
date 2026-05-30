@@ -91,16 +91,19 @@ function parseConfig(source: Record<string, string | undefined>): ConfigResult |
   }
 
   const failedKeys = new Set(result.error.issues.map((i: ZodIssue) => i.path[0] as string));
-  const missing = REQUIRED_CREDENTIALS.filter((c) => failedKeys.has(c.key)).map((c) => ({
-    ...c,
-    message: result.error.issues.find((i: ZodIssue) => i.path[0] === c.key)?.message || 'Required',
-  }));
+  const missing = REQUIRED_CREDENTIALS.flatMap((c) =>
+    failedKeys.has(c.key)
+      ? [
+          {
+            ...c,
+            message:
+              result.error.issues.find((i: ZodIssue) => i.path[0] === c.key)?.message || 'Required',
+          },
+        ]
+      : [],
+  );
 
   return { success: false, missing };
-}
-
-export function tryLoadConfig(): ConfigResult | ConfigError {
-  return parseConfig(process.env);
 }
 
 export function tryLoadConfigWithOverrides(

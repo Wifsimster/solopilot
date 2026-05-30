@@ -22,7 +22,7 @@ export function Pagination({ page, totalPages, onPrev, onNext }: PaginationProps
         onClick={onPrev}
         aria-label="Page précédente"
       >
-        <ChevronLeft className="h-4 w-4" />
+        <ChevronLeft className="size-4" />
         <span className="hidden sm:inline">Précédent</span>
       </Button>
       <span className="text-sm text-muted-foreground tabular-nums" aria-live="polite">
@@ -36,7 +36,7 @@ export function Pagination({ page, totalPages, onPrev, onNext }: PaginationProps
         aria-label="Page suivante"
       >
         <span className="hidden sm:inline">Suivant</span>
-        <ChevronRight className="h-4 w-4" />
+        <ChevronRight className="size-4" />
       </Button>
     </nav>
   );

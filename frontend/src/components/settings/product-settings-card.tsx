@@ -7,7 +7,7 @@ import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useApi } from '@/hooks/use-api';
-import { useSelectedProduct } from '@/lib/product-context';
+import { useSelectedProduct } from '@/lib/product-context-hooks';
 import { CardFlash, type Flash } from './shared';
 import type { ProductRecord } from '@/types';
 

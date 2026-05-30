@@ -90,14 +90,19 @@ export function nextCronDate(cron: string): Date | null {
 
   // Weekly on specific day(s)
   if (dayOfMonthStr === '*' && dayOfWeekStr !== '*') {
-    const days = dayOfWeekStr.split(',').map((d) => parseInt(d, 10)).filter((d) => !isNaN(d));
-    if (days.length === 0) return null;
+    const days = new Set(
+      dayOfWeekStr
+        .split(',')
+        .map((d) => parseInt(d, 10))
+        .filter((d) => !isNaN(d)),
+    );
+    if (days.size === 0) return null;
 
     for (let offset = 0; offset <= 7; offset++) {
       const candidate = new Date(now);
       candidate.setDate(candidate.getDate() + offset);
       candidate.setHours(hour, minute, 0, 0);
-      if (candidate > now && days.includes(candidate.getDay())) {
+      if (candidate > now && days.has(candidate.getDay())) {
         return candidate;
       }
     }

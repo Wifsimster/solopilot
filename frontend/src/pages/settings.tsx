@@ -54,9 +54,9 @@ export function SettingsPage() {
 
       {!credentialInfo.hasAuth && (
         <Alert variant="warning" role="alert">
-          <ShieldAlert className="h-4 w-4" />
+          <ShieldAlert className="size-4" />
           <AlertDescription>
-            <strong>Dashboard non protégé</strong> — Configurez la variable d'environnement{' '}
+            <strong>Dashboard non protégé :</strong> configurez la variable d'environnement{' '}
             <code className="font-mono text-xs">ADMIN_PASSWORD</code> pour sécuriser l'accès aux
             cookies de session et aux paramètres sensibles.
           </AlertDescription>
