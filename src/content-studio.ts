@@ -5,6 +5,7 @@ import type { ProductView } from './product-service.js';
 import { logger } from './logger.js';
 import { loadConfig } from './config.js';
 import { fetchGithubRepoContext } from './github-import.js';
+import { verifySubredditsExist } from './adapters/reddit-reader.js';
 
 export type ContentDraftKind = 'post';
 export type ContentDraftStatus = 'pending' | 'edited' | 'used' | 'discarded';
@@ -871,20 +872,28 @@ Propose entre 3 et ${SUBREDDITS_MAX_COUNT} subreddits reels et pertinents pour c
   });
 
   const seen = new Set<string>();
-  const subreddits: string[] = [];
+  const candidates: string[] = [];
   for (const candidate of result.subreddits) {
     const name = sanitizeSubreddit(candidate);
     if (!name) continue;
     const key = name.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    subreddits.push(name);
-    if (subreddits.length >= SUBREDDITS_MAX_COUNT) break;
+    candidates.push(name);
+    if (candidates.length >= SUBREDDITS_MAX_COUNT) break;
   }
 
-  if (subreddits.length === 0) {
+  if (candidates.length === 0) {
     throw new ContentStudioError(
       "Echec de la suggestion : aucun subreddit valide propose par l'IA.",
+    );
+  }
+
+  // Drop anything the model hallucinated by checking each name against Reddit.
+  const subreddits = await verifySubredditsExist(candidates);
+  if (subreddits.length === 0) {
+    throw new ContentStudioError(
+      'Echec de la suggestion : aucun subreddit reel trouve parmi les propositions.',
     );
   }
   return subreddits;
