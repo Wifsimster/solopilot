@@ -782,6 +782,205 @@ Propose entre 3 et 6 propositions de valeur courtes pour ce produit.`;
   return valueProps;
 }
 
+const SUBREDDIT_NAME_REGEX = /^[A-Za-z0-9_]{2,21}$/;
+const SUBREDDITS_MAX_COUNT = 8;
+
+export const suggestSubredditsSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, { message: 'Le nom du produit est requis.' })
+    .max(120, { message: 'Nom du produit trop long (max 120 caracteres).' }),
+  product_url: z
+    .string()
+    .trim()
+    .max(2000, { message: 'URL du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  product_description: z
+    .string()
+    .trim()
+    .max(2000, { message: 'Description du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  target_audience: z
+    .string()
+    .trim()
+    .max(500, { message: 'Audience cible trop longue (max 500 caracteres).' })
+    .optional()
+    .nullable(),
+  content_language: z.enum(['fr', 'en']).optional().nullable(),
+});
+
+export type SuggestSubredditsInput = z.infer<typeof suggestSubredditsSchema>;
+
+const suggestSubredditsResponseSchema = z.object({
+  subreddits: z.array(z.string().min(1)).min(1),
+});
+
+const SUGGEST_SUBREDDITS_SYSTEM_PROMPT = `Tu es un expert de Reddit. On te donne les informations d'un produit (nom, URL, description, audience) et, si disponible, le contenu de son depot GitHub. Tu dois proposer des subreddits REELS et ACTIFS ou l'audience cible discute et ou le produit serait pertinent.
+
+Regles :
+- Propose uniquement des subreddits qui EXISTENT reellement et sont actifs (ne pas inventer).
+- Donne le nom EXACT du subreddit, SANS le prefixe "r/" (ex: "SaaS", "webdev", "selfhosted").
+- Entre 3 et ${SUBREDDITS_MAX_COUNT} subreddits, du plus pertinent au moins pertinent.
+- Privilegie des communautes de niche pertinentes plutot que des subreddits geants generalistes.
+- Appuie-toi en priorite sur le contexte du depot GitHub quand il est fourni.
+- Pas de mention d'IA ou de generation automatique.
+
+Reponds STRICTEMENT en JSON avec la structure suivante :
+{
+  "subreddits": ["<nom1>", "<nom2>", "<nom3>"]
+}`;
+
+/** Strip an optional `r/` or `/r/` prefix and validate a subreddit name. */
+function sanitizeSubreddit(raw: string): string | null {
+  const name = raw
+    .trim()
+    .replace(/^\/?r\//i, '')
+    .replace(/\/+$/, '')
+    .trim();
+  return SUBREDDIT_NAME_REGEX.test(name) ? name : null;
+}
+
+/**
+ * Propose real, active subreddits where the product's audience hangs out, using
+ * the AI model and grounding on the GitHub repo when `product_url` points to
+ * one. Names are stripped of any `r/` prefix, validated, de-duplicated and
+ * capped at {@link SUBREDDITS_MAX_COUNT}.
+ */
+export async function suggestSubreddits(input: SuggestSubredditsInput): Promise<string[]> {
+  const language = input.content_language ?? 'fr';
+  const userPayload = `PRODUIT
+Nom: ${input.name}
+URL: ${input.product_url || '(aucune URL fournie)'}
+Description: ${input.product_description || '(aucune description fournie)'}
+Audience cible: ${input.target_audience || '(non specifiee)'}
+
+PARAMETRES
+Langue: ${language}
+
+Propose entre 3 et ${SUBREDDITS_MAX_COUNT} subreddits reels et pertinents pour ce produit.`;
+
+  const result = await runSuggestion({
+    productUrl: input.product_url,
+    systemPrompt: SUGGEST_SUBREDDITS_SYSTEM_PROMPT,
+    userPayload,
+    responseSchema: suggestSubredditsResponseSchema,
+    logLabel: 'Subreddits suggestion',
+  });
+
+  const seen = new Set<string>();
+  const subreddits: string[] = [];
+  for (const candidate of result.subreddits) {
+    const name = sanitizeSubreddit(candidate);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    subreddits.push(name);
+    if (subreddits.length >= SUBREDDITS_MAX_COUNT) break;
+  }
+
+  if (subreddits.length === 0) {
+    throw new ContentStudioError(
+      "Echec de la suggestion : aucun subreddit valide propose par l'IA.",
+    );
+  }
+  return subreddits;
+}
+
+const HN_KEYWORD_MIN_LENGTH = 2;
+const HN_KEYWORD_MAX_LENGTH = 64;
+const HN_KEYWORDS_MAX_COUNT = 10;
+
+export const suggestHnKeywordsSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, { message: 'Le nom du produit est requis.' })
+    .max(120, { message: 'Nom du produit trop long (max 120 caracteres).' }),
+  product_url: z
+    .string()
+    .trim()
+    .max(2000, { message: 'URL du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  product_description: z
+    .string()
+    .trim()
+    .max(2000, { message: 'Description du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  target_audience: z
+    .string()
+    .trim()
+    .max(500, { message: 'Audience cible trop longue (max 500 caracteres).' })
+    .optional()
+    .nullable(),
+  content_language: z.enum(['fr', 'en']).optional().nullable(),
+});
+
+export type SuggestHnKeywordsInput = z.infer<typeof suggestHnKeywordsSchema>;
+
+const suggestHnKeywordsResponseSchema = z.object({
+  keywords: z.array(z.string().min(1)).min(1),
+});
+
+const SUGGEST_HN_KEYWORDS_SYSTEM_PROMPT = `Tu es un expert de Hacker News. On te donne les informations d'un produit (nom, URL, description, audience) et, si disponible, le contenu de son depot GitHub. Tu dois proposer des MOTS-CLES de recherche pour trouver, via l'API Algolia de Hacker News, des discussions pertinentes pour ce produit.
+
+Regles :
+- Propose des termes techniques precis : technologies, categories de produits, problemes resolus, concurrents connus (ex: "self-hosted", "rss reader", "vector database").
+- Entre 4 et ${HN_KEYWORDS_MAX_COUNT} mots-cles, chacun entre ${HN_KEYWORD_MIN_LENGTH} et ${HN_KEYWORD_MAX_LENGTH} caracteres.
+- Des termes courts (1 a 3 mots), pas des phrases.
+- Majoritairement en anglais (HN est anglophone), meme si la langue demandee est le francais.
+- Appuie-toi en priorite sur le contexte du depot GitHub quand il est fourni.
+- Pas de mention d'IA ou de generation automatique.
+
+Reponds STRICTEMENT en JSON avec la structure suivante :
+{
+  "keywords": ["<mot-cle 1>", "<mot-cle 2>", "<mot-cle 3>"]
+}`;
+
+/**
+ * Propose Hacker News search keywords for the product using the AI model,
+ * grounded on the GitHub repo when `product_url` points to one. Keywords are
+ * trimmed, length-clamped, de-duplicated and capped at
+ * {@link HN_KEYWORDS_MAX_COUNT}.
+ */
+export async function suggestHnKeywords(input: SuggestHnKeywordsInput): Promise<string[]> {
+  const language = input.content_language ?? 'fr';
+  const userPayload = `PRODUIT
+Nom: ${input.name}
+URL: ${input.product_url || '(aucune URL fournie)'}
+Description: ${input.product_description || '(aucune description fournie)'}
+Audience cible: ${input.target_audience || '(non specifiee)'}
+
+PARAMETRES
+Langue: ${language}
+
+Propose entre 4 et ${HN_KEYWORDS_MAX_COUNT} mots-cles de recherche Hacker News pour ce produit.`;
+
+  const result = await runSuggestion({
+    productUrl: input.product_url,
+    systemPrompt: SUGGEST_HN_KEYWORDS_SYSTEM_PROMPT,
+    userPayload,
+    responseSchema: suggestHnKeywordsResponseSchema,
+    logLabel: 'HN keywords suggestion',
+  });
+
+  const keywords = dedupeBoundedList(
+    result.keywords,
+    HN_KEYWORD_MIN_LENGTH,
+    HN_KEYWORD_MAX_LENGTH,
+    HN_KEYWORDS_MAX_COUNT,
+  );
+  if (keywords.length === 0) {
+    throw new ContentStudioError("Echec de la suggestion : aucun mot-cle valide propose par l'IA.");
+  }
+  return keywords;
+}
+
 function platformConstraints(targetSource: TargetSource): string {
   switch (targetSource) {
     case 'x':
