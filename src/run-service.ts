@@ -8,7 +8,7 @@ import { getSetting, getProductSetting } from './settings-service.js';
 import { releaseTweetsForRun, getCollectionDateForRun } from './tweet-store.js';
 import { deleteMonthlySummariesReferencingRun } from './monthly-summary-service.js';
 import { getProduct } from './product-service.js';
-import { publishRunning, collectRunning, getCurrentRunId, updateRunStats } from './run-state.js';
+import { publishRunning, collectRunning } from './run-state.js';
 
 export {
   isRunning,
