@@ -1,10 +1,9 @@
-import { useRef, useState } from 'react';
+import { useReducer, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -21,14 +20,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Loader2, Search, X as XIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ChipInput, type ChipInputHandle, type ChipParseResult } from './chip-input';
+import { SubredditPicker, type SubredditPickerHandle } from './subreddit-picker';
 import type {
   ContentLanguage,
   ContentVoice,
   ProductRecord,
   ReplyVoice,
-  SubredditSearchResult,
 } from '@/types';
 
 const PRODUCT_DESCRIPTION_MAX = 2000;
@@ -77,26 +76,12 @@ interface ProductCreateDialogProps {
   initialValues?: ProductRecord | null;
 }
 
-const SUBREDDIT_REGEX = /^[A-Za-z0-9_]{2,21}$/;
 const HN_KEYWORD_MIN = 2;
 const HN_KEYWORD_MAX = 64;
 const HN_KEYWORDS_MAX = 20;
 const INTENT_KEYWORD_MIN = 2;
 const INTENT_KEYWORD_MAX = 128;
 const INTENT_KEYWORDS_MAX = 30;
-
-function formatSubscribers(count: number): string {
-  if (!count || count < 0) return '0 membre';
-  if (count >= 1_000_000) {
-    const m = count / 1_000_000;
-    return `${m >= 10 ? m.toFixed(0) : m.toFixed(1)}M membres`;
-  }
-  if (count >= 1_000) {
-    const k = count / 1_000;
-    return `${k >= 10 ? k.toFixed(0) : k.toFixed(1)}k membres`;
-  }
-  return `${count} membre${count > 1 ? 's' : ''}`;
-}
 
 function slugify(input: string): string {
   return input
@@ -106,6 +91,134 @@ function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60);
+}
+
+/**
+ * Parse + validate factory for a length-bounded keyword/phrase chip field. The
+ * returned function splits on commas/newlines, trims, and enforces the
+ * min/max-length bounds, producing a French error message on violation.
+ */
+function makeLengthParser(
+  min: number,
+  max: number,
+  labelShort: (joined: string) => string,
+  labelLong: (joined: string) => string,
+): (raw: string) => ChipParseResult {
+  return (raw: string) => {
+    const tokens = raw
+      .split(/[,\n]+/)
+      .flatMap((t) => {
+        const trimmed = t.trim();
+        return trimmed ? [trimmed] : [];
+      });
+    if (tokens.length === 0) return { ok: true, tokens: [] };
+    const tooShort = tokens.filter((t) => t.length < min);
+    if (tooShort.length > 0) return { ok: false, error: labelShort(tooShort.join(', ')) };
+    const tooLong = tokens.filter((t) => t.length > max);
+    if (tooLong.length > 0) return { ok: false, error: labelLong(tooLong.join(', ')) };
+    return { ok: true, tokens };
+  };
+}
+
+const parseHnKeywords = makeLengthParser(
+  HN_KEYWORD_MIN,
+  HN_KEYWORD_MAX,
+  (j) => `Mot-clé trop court : ${j} (min ${HN_KEYWORD_MIN} caractères).`,
+  (j) => `Mot-clé trop long : ${j} (max ${HN_KEYWORD_MAX} caractères).`,
+);
+const parseIntentKeywords = makeLengthParser(
+  INTENT_KEYWORD_MIN,
+  INTENT_KEYWORD_MAX,
+  (j) => `Mot-clé trop court : ${j} (min ${INTENT_KEYWORD_MIN} caractères).`,
+  (j) => `Mot-clé trop long : ${j} (max ${INTENT_KEYWORD_MAX} caractères).`,
+);
+const parseValueProps = makeLengthParser(
+  VALUE_PROP_MIN,
+  VALUE_PROP_MAX,
+  (j) => `Proposition trop courte : ${j} (min ${VALUE_PROP_MIN} caractères).`,
+  (j) => `Proposition trop longue : ${j} (max ${VALUE_PROP_MAX} caractères).`,
+);
+const parseCtas = makeLengthParser(
+  CTA_MIN,
+  CTA_MAX,
+  (j) => `CTA trop court : ${j} (min ${CTA_MIN} caractères).`,
+  (j) => `CTA trop long : ${j} (max ${CTA_MAX} caractères).`,
+);
+
+interface FormState {
+  name: string;
+  id: string;
+  xEnabled: boolean;
+  xQuery: string;
+  redditEnabled: boolean;
+  subreddits: string[];
+  hnEnabled: boolean;
+  hnKeywords: string[];
+  intentEnabled: boolean;
+  intentKeywords: string[];
+  discordWebhook: string;
+  aiPromptOverride: string;
+  productDescription: string;
+  replyVoice: ReplyVoice | null;
+  productUrl: string;
+  targetAudience: string;
+  valueProps: string[];
+  callToActions: string[];
+  contentVoice: ContentVoice | null;
+  contentLanguage: ContentLanguage | null;
+  submitting: boolean;
+  error: string | null;
+}
+
+type FormAction = {
+  [K in keyof FormState]: { type: 'set'; field: K; value: FormState[K] };
+}[keyof FormState];
+
+function formReducer(state: FormState, action: FormAction): FormState {
+  return { ...state, [action.field]: action.value };
+}
+
+function buildInitialFormState(
+  initialValues: ProductRecord | null,
+): FormState {
+  return {
+    name: initialValues?.name ?? '',
+    id: initialValues?.id ?? '',
+    xEnabled: initialValues?.x_enabled ?? true,
+    xQuery: initialValues?.x_query ?? '',
+    redditEnabled: initialValues?.reddit_enabled ?? false,
+    subreddits: initialValues?.reddit_subreddits ?? [],
+    hnEnabled: initialValues?.hn_enabled ?? false,
+    hnKeywords: initialValues?.hn_keywords ?? [],
+    intentEnabled: initialValues?.intent_enabled ?? false,
+    intentKeywords: initialValues?.intent_keywords ?? [],
+    // discord_webhook is masked from backend — leave blank so user can re-enter
+    // only if changing.
+    discordWebhook: '',
+    aiPromptOverride: initialValues?.ai_prompt_override ?? '',
+    productDescription: initialValues?.product_description ?? '',
+    replyVoice:
+      initialValues?.reply_voice &&
+      REPLY_VOICE_VALUES.includes(initialValues.reply_voice)
+        ? initialValues.reply_voice
+        : null,
+    productUrl: initialValues?.product_url ?? '',
+    targetAudience: initialValues?.target_audience ?? '',
+    valueProps: initialValues?.value_props ?? [],
+    callToActions: initialValues?.call_to_actions ?? [],
+    contentVoice:
+      initialValues?.content_voice &&
+      CONTENT_VOICE_VALUES.includes(initialValues.content_voice)
+        ? initialValues.content_voice
+        : null,
+    contentLanguage:
+      initialValues?.content_language &&
+      CONTENT_LANGUAGE_VALUES.includes(initialValues.content_language)
+        ? initialValues.content_language
+        : null,
+    submitting: false,
+    error: null,
+  };
 }
 
 interface ProductFormProps {
@@ -126,732 +239,157 @@ function ProductForm({
   // Form state is seeded once from initialValues. The parent remounts this
   // component via a `key` whenever the dialog opens or the edited product
   // changes, so there is no need to mirror props into state with an effect.
-  const [name, setName] = useState(() => initialValues?.name ?? '');
-  const [id, setId] = useState(() => initialValues?.id ?? '');
+  const [state, dispatch] = useReducer(formReducer, null, () =>
+    buildInitialFormState(initialValues),
+  );
+  const set = <K extends keyof FormState>(field: K, value: FormState[K]) =>
+    dispatch({ type: 'set', field, value } as FormAction);
+
   // idTouched is only consulted inside handlers (never during render), so a ref
   // avoids a needless re-render when the user first edits the id field.
   const idTouchedRef = useRef(Boolean(initialValues));
-  const [xEnabled, setXEnabled] = useState(() => initialValues?.x_enabled ?? true);
-  const [xQuery, setXQuery] = useState(() => initialValues?.x_query ?? '');
-  const [redditEnabled, setRedditEnabled] = useState(
-    () => initialValues?.reddit_enabled ?? false,
-  );
-  const [subreddits, setSubreddits] = useState<string[]>(
-    () => initialValues?.reddit_subreddits ?? [],
-  );
-  const [subredditInput, setSubredditInput] = useState('');
-  const [subredditError, setSubredditError] = useState<string | null>(null);
-  const [subredditResults, setSubredditResults] = useState<SubredditSearchResult[]>([]);
-  const [subredditSearchLoading, setSubredditSearchLoading] = useState(false);
-  const [subredditSearchOpen, setSubredditSearchOpen] = useState(false);
-  const [subredditActiveIndex, setSubredditActiveIndex] = useState(-1);
-  const subredditSearchAbortRef = useRef<AbortController | null>(null);
-  const subredditSearchTimeoutRef = useRef<number | null>(null);
-  const [hnEnabled, setHnEnabled] = useState(() => initialValues?.hn_enabled ?? false);
-  const [hnKeywords, setHnKeywords] = useState<string[]>(
-    () => initialValues?.hn_keywords ?? [],
-  );
-  const [hnKeywordInput, setHnKeywordInput] = useState('');
-  const [hnKeywordError, setHnKeywordError] = useState<string | null>(null);
-  const [intentEnabled, setIntentEnabled] = useState(
-    () => initialValues?.intent_enabled ?? false,
-  );
-  const [intentKeywords, setIntentKeywords] = useState<string[]>(
-    () => initialValues?.intent_keywords ?? [],
-  );
-  const [intentKeywordInput, setIntentKeywordInput] = useState('');
-  const [intentKeywordError, setIntentKeywordError] = useState<string | null>(null);
-  // discord_webhook is masked from backend — leave blank so user can re-enter
-  // only if changing.
-  const [discordWebhook, setDiscordWebhook] = useState('');
-  const [aiPromptOverride, setAiPromptOverride] = useState(
-    () => initialValues?.ai_prompt_override ?? '',
-  );
-  const [productDescription, setProductDescription] = useState(
-    () => initialValues?.product_description ?? '',
-  );
-  const [replyVoice, setReplyVoice] = useState<ReplyVoice | null>(() =>
-    initialValues?.reply_voice && REPLY_VOICE_VALUES.includes(initialValues.reply_voice)
-      ? initialValues.reply_voice
-      : null,
-  );
-  const [productUrl, setProductUrl] = useState(() => initialValues?.product_url ?? '');
-  const [targetAudience, setTargetAudience] = useState(
-    () => initialValues?.target_audience ?? '',
-  );
-  const [valueProps, setValueProps] = useState<string[]>(
-    () => initialValues?.value_props ?? [],
-  );
-  const [valuePropInput, setValuePropInput] = useState('');
-  const [valuePropError, setValuePropError] = useState<string | null>(null);
-  const [callToActions, setCallToActions] = useState<string[]>(
-    () => initialValues?.call_to_actions ?? [],
-  );
-  const [ctaInput, setCtaInput] = useState('');
-  const [ctaError, setCtaError] = useState<string | null>(null);
-  const [contentVoice, setContentVoice] = useState<ContentVoice | null>(() =>
-    initialValues?.content_voice &&
-    CONTENT_VOICE_VALUES.includes(initialValues.content_voice)
-      ? initialValues.content_voice
-      : null,
-  );
-  const [contentLanguage, setContentLanguage] = useState<ContentLanguage | null>(() =>
-    initialValues?.content_language &&
-    CONTENT_LANGUAGE_VALUES.includes(initialValues.content_language)
-      ? initialValues.content_language
-      : null,
-  );
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Imperative flush handles let handleSubmit force-commit pending chip input.
+  const subredditRef = useRef<SubredditPickerHandle>(null);
+  const hnRef = useRef<ChipInputHandle>(null);
+  const intentRef = useRef<ChipInputHandle>(null);
+  const valuePropRef = useRef<ChipInputHandle>(null);
+  const ctaRef = useRef<ChipInputHandle>(null);
 
   const handleNameBlur = () => {
-    if (!isEdit && !idTouchedRef.current && name.trim() && !id) {
-      setId(slugify(name));
+    if (!isEdit && !idTouchedRef.current && state.name.trim() && !state.id) {
+      set('id', slugify(state.name));
     }
-  };
-
-  const tryAddSubreddits = (raw: string): boolean => {
-    const tokens = raw
-      .split(/[\s,]+/)
-      .flatMap((t) => {
-        const trimmed = t.trim().replace(/^\/?r\//i, '');
-        return trimmed ? [trimmed] : [];
-      });
-    if (tokens.length === 0) return false;
-
-    const invalid = tokens.filter((t) => !SUBREDDIT_REGEX.test(t));
-    if (invalid.length > 0) {
-      setSubredditError(
-        `Subreddit invalide : ${invalid.join(', ')} (2-21 caractères, lettres, chiffres ou _).`,
-      );
-      return false;
-    }
-
-    setSubreddits((prev) => {
-      const next = [...prev];
-      for (const t of tokens) {
-        if (!next.some((s) => s.toLowerCase() === t.toLowerCase())) {
-          next.push(t);
-        }
-      }
-      return next;
-    });
-    setSubredditError(null);
-    return true;
-  };
-
-  // Debounced subreddit search, driven from the input's onChange handler so the
-  // network request is an explicit consequence of typing rather than a reaction
-  // to a state change in an effect.
-  const runSubredditSearch = (rawValue: string) => {
-    if (subredditSearchTimeoutRef.current !== null) {
-      window.clearTimeout(subredditSearchTimeoutRef.current);
-      subredditSearchTimeoutRef.current = null;
-    }
-    const query = rawValue.trim().replace(/^\/?r\//i, '');
-    if (query.length < 2) {
-      subredditSearchAbortRef.current?.abort();
-      subredditSearchAbortRef.current = null;
-      setSubredditResults([]);
-      setSubredditSearchLoading(false);
-      setSubredditActiveIndex(-1);
-      return;
-    }
-
-    subredditSearchTimeoutRef.current = window.setTimeout(() => {
-      subredditSearchAbortRef.current?.abort();
-      const controller = new AbortController();
-      subredditSearchAbortRef.current = controller;
-      setSubredditSearchLoading(true);
-      fetch(`/api/reddit/search-subreddits?q=${encodeURIComponent(query)}&limit=8`, {
-        signal: controller.signal,
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json() as Promise<{ results?: SubredditSearchResult[] }>;
-        })
-        .then((data) => {
-          if (controller.signal.aborted) return;
-          setSubredditResults(data.results ?? []);
-          setSubredditActiveIndex(-1);
-        })
-        .catch((err: unknown) => {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-          setSubredditResults([]);
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setSubredditSearchLoading(false);
-        });
-    }, 250);
-  };
-
-  const handleSubredditInputChange = (value: string) => {
-    setSubredditInput(value);
-    if (subredditError) setSubredditError(null);
-    setSubredditSearchOpen(value.trim().length >= 2);
-    if (redditEnabled) {
-      runSubredditSearch(value);
-    }
-  };
-
-  const handleSubredditKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    const visibleResults = subredditResults.filter(
-      (r) => !subreddits.some((s) => s.toLowerCase() === r.name.toLowerCase()),
-    );
-    const dropdownOpen = subredditSearchOpen && visibleResults.length > 0;
-
-    if (e.key === 'ArrowDown' && dropdownOpen) {
-      e.preventDefault();
-      setSubredditActiveIndex((prev) =>
-        prev < visibleResults.length - 1 ? prev + 1 : 0,
-      );
-      return;
-    }
-    if (e.key === 'ArrowUp' && dropdownOpen) {
-      e.preventDefault();
-      setSubredditActiveIndex((prev) =>
-        prev > 0 ? prev - 1 : visibleResults.length - 1,
-      );
-      return;
-    }
-    if (e.key === 'Escape' && subredditSearchOpen) {
-      e.preventDefault();
-      setSubredditSearchOpen(false);
-      setSubredditActiveIndex(-1);
-      return;
-    }
-
-    if (e.key === 'Enter' || e.key === ',' || e.key === ' ') {
-      if (
-        e.key === 'Enter' &&
-        dropdownOpen &&
-        subredditActiveIndex >= 0 &&
-        subredditActiveIndex < visibleResults.length
-      ) {
-        e.preventDefault();
-        addSubredditFromResult(visibleResults[subredditActiveIndex]);
-        return;
-      }
-      if (subredditInput.trim()) {
-        e.preventDefault();
-        if (tryAddSubreddits(subredditInput)) {
-          setSubredditInput('');
-          setSubredditResults([]);
-          setSubredditSearchOpen(false);
-          setSubredditActiveIndex(-1);
-        }
-      }
-    } else if (e.key === 'Backspace' && !subredditInput && subreddits.length > 0) {
-      setSubreddits((prev) => prev.slice(0, -1));
-    }
-  };
-
-  const handleSubredditBlur = () => {
-    setSubredditSearchOpen(false);
-    if (subredditInput.trim()) {
-      if (tryAddSubreddits(subredditInput)) {
-        setSubredditInput('');
-      }
-    }
-  };
-
-  const handleSubredditFocus = () => {
-    if (subredditInput.trim().length >= 2) {
-      setSubredditSearchOpen(true);
-    }
-  };
-
-  const removeSubreddit = (sub: string) => {
-    setSubreddits((prev) => prev.filter((s) => s !== sub));
-    setSubredditError(null);
-  };
-
-  const addSubredditFromResult = (result: SubredditSearchResult) => {
-    setSubreddits((prev) => {
-      if (prev.some((s) => s.toLowerCase() === result.name.toLowerCase())) return prev;
-      return [...prev, result.name];
-    });
-    setSubredditInput('');
-    setSubredditError(null);
-    setSubredditResults([]);
-    setSubredditSearchOpen(false);
-    setSubredditActiveIndex(-1);
-  };
-
-  const tryAddHnKeywords = (raw: string): boolean => {
-    const tokens = raw
-      .split(/[,\n]+/)
-      .flatMap((t) => {
-        const trimmed = t.trim();
-        return trimmed ? [trimmed] : [];
-      });
-    if (tokens.length === 0) return false;
-
-    const tooShort = tokens.filter((t) => t.length < HN_KEYWORD_MIN);
-    if (tooShort.length > 0) {
-      setHnKeywordError(
-        `Mot-clé trop court : ${tooShort.join(', ')} (min ${HN_KEYWORD_MIN} caractères).`,
-      );
-      return false;
-    }
-    const tooLong = tokens.filter((t) => t.length > HN_KEYWORD_MAX);
-    if (tooLong.length > 0) {
-      setHnKeywordError(
-        `Mot-clé trop long : ${tooLong.join(', ')} (max ${HN_KEYWORD_MAX} caractères).`,
-      );
-      return false;
-    }
-
-    setHnKeywords((prev) => {
-      const next = [...prev];
-      for (const t of tokens) {
-        if (next.length >= HN_KEYWORDS_MAX) {
-          setHnKeywordError(`Maximum ${HN_KEYWORDS_MAX} mots-clés par produit.`);
-          break;
-        }
-        if (!next.some((k) => k.toLowerCase() === t.toLowerCase())) {
-          next.push(t);
-        }
-      }
-      return next;
-    });
-    if (hnKeywords.length + tokens.length <= HN_KEYWORDS_MAX) {
-      setHnKeywordError(null);
-    }
-    return true;
-  };
-
-  const handleHnKeywordKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      if (hnKeywordInput.trim()) {
-        e.preventDefault();
-        if (tryAddHnKeywords(hnKeywordInput)) {
-          setHnKeywordInput('');
-        }
-      }
-    } else if (e.key === 'Backspace' && !hnKeywordInput && hnKeywords.length > 0) {
-      setHnKeywords((prev) => prev.slice(0, -1));
-    }
-  };
-
-  const handleHnKeywordBlur = () => {
-    if (hnKeywordInput.trim()) {
-      if (tryAddHnKeywords(hnKeywordInput)) {
-        setHnKeywordInput('');
-      }
-    }
-  };
-
-  const removeHnKeyword = (kw: string) => {
-    setHnKeywords((prev) => prev.filter((k) => k !== kw));
-    setHnKeywordError(null);
-  };
-
-  const tryAddIntentKeywords = (raw: string): boolean => {
-    const tokens = raw
-      .split(/[,\n]+/)
-      .flatMap((t) => {
-        const trimmed = t.trim();
-        return trimmed ? [trimmed] : [];
-      });
-    if (tokens.length === 0) return false;
-
-    const tooShort = tokens.filter((t) => t.length < INTENT_KEYWORD_MIN);
-    if (tooShort.length > 0) {
-      setIntentKeywordError(
-        `Mot-clé trop court : ${tooShort.join(', ')} (min ${INTENT_KEYWORD_MIN} caractères).`,
-      );
-      return false;
-    }
-    const tooLong = tokens.filter((t) => t.length > INTENT_KEYWORD_MAX);
-    if (tooLong.length > 0) {
-      setIntentKeywordError(
-        `Mot-clé trop long : ${tooLong.join(', ')} (max ${INTENT_KEYWORD_MAX} caractères).`,
-      );
-      return false;
-    }
-
-    setIntentKeywords((prev) => {
-      const next = [...prev];
-      for (const t of tokens) {
-        if (next.length >= INTENT_KEYWORDS_MAX) {
-          setIntentKeywordError(`Maximum ${INTENT_KEYWORDS_MAX} mots-clés d'intention.`);
-          break;
-        }
-        if (!next.some((k) => k.toLowerCase() === t.toLowerCase())) {
-          next.push(t);
-        }
-      }
-      return next;
-    });
-    if (intentKeywords.length + tokens.length <= INTENT_KEYWORDS_MAX) {
-      setIntentKeywordError(null);
-    }
-    return true;
-  };
-
-  const handleIntentKeywordKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      if (intentKeywordInput.trim()) {
-        e.preventDefault();
-        if (tryAddIntentKeywords(intentKeywordInput)) {
-          setIntentKeywordInput('');
-        }
-      }
-    } else if (e.key === 'Backspace' && !intentKeywordInput && intentKeywords.length > 0) {
-      setIntentKeywords((prev) => prev.slice(0, -1));
-    }
-  };
-
-  const handleIntentKeywordBlur = () => {
-    if (intentKeywordInput.trim()) {
-      if (tryAddIntentKeywords(intentKeywordInput)) {
-        setIntentKeywordInput('');
-      }
-    }
-  };
-
-  const removeIntentKeyword = (kw: string) => {
-    setIntentKeywords((prev) => prev.filter((k) => k !== kw));
-    setIntentKeywordError(null);
-  };
-
-  const tryAddValueProps = (raw: string): boolean => {
-    const tokens = raw
-      .split(/[,\n]+/)
-      .flatMap((t) => {
-        const trimmed = t.trim();
-        return trimmed ? [trimmed] : [];
-      });
-    if (tokens.length === 0) return false;
-
-    const tooShort = tokens.filter((t) => t.length < VALUE_PROP_MIN);
-    if (tooShort.length > 0) {
-      setValuePropError(
-        `Proposition trop courte : ${tooShort.join(', ')} (min ${VALUE_PROP_MIN} caractères).`,
-      );
-      return false;
-    }
-    const tooLong = tokens.filter((t) => t.length > VALUE_PROP_MAX);
-    if (tooLong.length > 0) {
-      setValuePropError(
-        `Proposition trop longue : ${tooLong.join(', ')} (max ${VALUE_PROP_MAX} caractères).`,
-      );
-      return false;
-    }
-
-    setValueProps((prev) => {
-      const next = [...prev];
-      for (const t of tokens) {
-        if (next.length >= VALUE_PROPS_MAX) {
-          setValuePropError(`Maximum ${VALUE_PROPS_MAX} propositions de valeur.`);
-          break;
-        }
-        if (!next.some((k) => k.toLowerCase() === t.toLowerCase())) {
-          next.push(t);
-        }
-      }
-      return next;
-    });
-    if (valueProps.length + tokens.length <= VALUE_PROPS_MAX) {
-      setValuePropError(null);
-    }
-    return true;
-  };
-
-  const handleValuePropKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      if (valuePropInput.trim()) {
-        e.preventDefault();
-        if (tryAddValueProps(valuePropInput)) {
-          setValuePropInput('');
-        }
-      }
-    } else if (e.key === 'Backspace' && !valuePropInput && valueProps.length > 0) {
-      setValueProps((prev) => prev.slice(0, -1));
-    }
-  };
-
-  const handleValuePropBlur = () => {
-    if (valuePropInput.trim()) {
-      if (tryAddValueProps(valuePropInput)) {
-        setValuePropInput('');
-      }
-    }
-  };
-
-  const removeValueProp = (vp: string) => {
-    setValueProps((prev) => prev.filter((k) => k !== vp));
-    setValuePropError(null);
-  };
-
-  const tryAddCtas = (raw: string): boolean => {
-    const tokens = raw
-      .split(/[,\n]+/)
-      .flatMap((t) => {
-        const trimmed = t.trim();
-        return trimmed ? [trimmed] : [];
-      });
-    if (tokens.length === 0) return false;
-
-    const tooShort = tokens.filter((t) => t.length < CTA_MIN);
-    if (tooShort.length > 0) {
-      setCtaError(`CTA trop court : ${tooShort.join(', ')} (min ${CTA_MIN} caractères).`);
-      return false;
-    }
-    const tooLong = tokens.filter((t) => t.length > CTA_MAX);
-    if (tooLong.length > 0) {
-      setCtaError(`CTA trop long : ${tooLong.join(', ')} (max ${CTA_MAX} caractères).`);
-      return false;
-    }
-
-    setCallToActions((prev) => {
-      const next = [...prev];
-      for (const t of tokens) {
-        if (next.length >= CTAS_MAX) {
-          setCtaError(`Maximum ${CTAS_MAX} calls to action.`);
-          break;
-        }
-        if (!next.some((k) => k.toLowerCase() === t.toLowerCase())) {
-          next.push(t);
-        }
-      }
-      return next;
-    });
-    if (callToActions.length + tokens.length <= CTAS_MAX) {
-      setCtaError(null);
-    }
-    return true;
-  };
-
-  const handleCtaKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      if (ctaInput.trim()) {
-        e.preventDefault();
-        if (tryAddCtas(ctaInput)) {
-          setCtaInput('');
-        }
-      }
-    } else if (e.key === 'Backspace' && !ctaInput && callToActions.length > 0) {
-      setCallToActions((prev) => prev.slice(0, -1));
-    }
-  };
-
-  const handleCtaBlur = () => {
-    if (ctaInput.trim()) {
-      if (tryAddCtas(ctaInput)) {
-        setCtaInput('');
-      }
-    }
-  };
-
-  const removeCta = (cta: string) => {
-    setCallToActions((prev) => prev.filter((k) => k !== cta));
-    setCtaError(null);
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setError(null);
+    set('error', null);
 
-    const trimmedId = id.trim();
-    const trimmedName = name.trim();
+    const trimmedId = state.id.trim();
+    const trimmedName = state.name.trim();
     if (!trimmedId) {
-      setError('Identifiant requis.');
+      set('error', 'Identifiant requis.');
       return;
     }
     if (!/^[a-z0-9-]+$/.test(trimmedId)) {
-      setError('Identifiant invalide : minuscules, chiffres et tirets uniquement.');
+      set('error', 'Identifiant invalide : minuscules, chiffres et tirets uniquement.');
       return;
     }
     if (!trimmedName) {
-      setError('Nom requis.');
+      set('error', 'Nom requis.');
       return;
     }
 
     // At least one source must be enabled
-    if (!xEnabled && !redditEnabled && !hnEnabled) {
-      setError('Active au moins une source.');
+    if (!state.xEnabled && !state.redditEnabled && !state.hnEnabled) {
+      set('error', 'Active au moins une source.');
       return;
     }
 
     // Flush pending subreddit input
-    let pendingSubs = subreddits;
-    if (redditEnabled && subredditInput.trim()) {
-      if (!tryAddSubreddits(subredditInput)) {
-        setError('Corrige les subreddits invalides avant de continuer.');
+    let pendingSubs = state.subreddits;
+    if (state.redditEnabled) {
+      const flushed = subredditRef.current?.flush();
+      if (flushed === null || flushed === undefined) {
+        set('error', 'Corrige les subreddits invalides avant de continuer.');
         return;
       }
-      // Recompute the list based on the current input
-      const tokens = subredditInput
-        .split(/[\s,]+/)
-        .flatMap((t) => {
-          const trimmed = t.trim().replace(/^\/?r\//i, '');
-          return trimmed ? [trimmed] : [];
-        });
-      const merged = [...pendingSubs];
-      for (const t of tokens) {
-        if (!merged.some((s) => s.toLowerCase() === t.toLowerCase())) {
-          merged.push(t);
-        }
-      }
-      pendingSubs = merged;
-      setSubredditInput('');
+      pendingSubs = flushed;
     }
 
-    if (redditEnabled && pendingSubs.length === 0) {
-      setError('Renseigne au moins un subreddit lorsque Reddit est activé.');
+    if (state.redditEnabled && pendingSubs.length === 0) {
+      set('error', 'Renseigne au moins un subreddit lorsque Reddit est activé.');
       return;
     }
 
     // Flush pending HN keyword input
-    let pendingHnKeywords = hnKeywords;
-    if (hnEnabled && hnKeywordInput.trim()) {
-      if (!tryAddHnKeywords(hnKeywordInput)) {
-        setError('Corrige les mots-clés Hacker News invalides avant de continuer.');
+    let pendingHnKeywords = state.hnKeywords;
+    if (state.hnEnabled) {
+      const flushed = hnRef.current?.flush();
+      if (flushed === null || flushed === undefined) {
+        set('error', 'Corrige les mots-clés Hacker News invalides avant de continuer.');
         return;
       }
-      const tokens = hnKeywordInput
-        .split(/[,\n]+/)
-        .flatMap((t) => {
-          const trimmed = t.trim();
-          return trimmed ? [trimmed] : [];
-        });
-      const merged = [...pendingHnKeywords];
-      for (const t of tokens) {
-        if (merged.length >= HN_KEYWORDS_MAX) break;
-        if (!merged.some((k) => k.toLowerCase() === t.toLowerCase())) {
-          merged.push(t);
-        }
-      }
-      pendingHnKeywords = merged;
-      setHnKeywordInput('');
+      pendingHnKeywords = flushed;
     }
 
-    if (hnEnabled && pendingHnKeywords.length === 0) {
-      setError('Renseigne au moins un mot-clé lorsque Hacker News est activé.');
+    if (state.hnEnabled && pendingHnKeywords.length === 0) {
+      set('error', 'Renseigne au moins un mot-clé lorsque Hacker News est activé.');
       return;
     }
 
-    if (hnEnabled && pendingHnKeywords.length > HN_KEYWORDS_MAX) {
-      setError(`Maximum ${HN_KEYWORDS_MAX} mots-clés Hacker News par produit.`);
+    if (state.hnEnabled && pendingHnKeywords.length > HN_KEYWORDS_MAX) {
+      set('error', `Maximum ${HN_KEYWORDS_MAX} mots-clés Hacker News par produit.`);
       return;
     }
 
     // Flush pending intent keyword input
-    let pendingIntentKeywords = intentKeywords;
-    if (intentEnabled && intentKeywordInput.trim()) {
-      if (!tryAddIntentKeywords(intentKeywordInput)) {
-        setError("Corrige les mots-cles d'intention invalides avant de continuer.");
+    let pendingIntentKeywords = state.intentKeywords;
+    if (state.intentEnabled) {
+      const flushed = intentRef.current?.flush();
+      if (flushed === null || flushed === undefined) {
+        set('error', "Corrige les mots-cles d'intention invalides avant de continuer.");
         return;
       }
-      const tokens = intentKeywordInput
-        .split(/[,\n]+/)
-        .flatMap((t) => {
-          const trimmed = t.trim();
-          return trimmed ? [trimmed] : [];
-        });
-      const merged = [...pendingIntentKeywords];
-      for (const t of tokens) {
-        if (merged.length >= INTENT_KEYWORDS_MAX) break;
-        if (!merged.some((k) => k.toLowerCase() === t.toLowerCase())) {
-          merged.push(t);
-        }
-      }
-      pendingIntentKeywords = merged;
-      setIntentKeywordInput('');
+      pendingIntentKeywords = flushed;
     }
 
-    if (intentEnabled && pendingIntentKeywords.length === 0) {
-      setError("Ajoute au moins un mot-cle d'intention.");
+    if (state.intentEnabled && pendingIntentKeywords.length === 0) {
+      set('error', "Ajoute au moins un mot-cle d'intention.");
       return;
     }
 
-    if (intentEnabled && pendingIntentKeywords.length > INTENT_KEYWORDS_MAX) {
-      setError(`Maximum ${INTENT_KEYWORDS_MAX} mots-cles d'intention par produit.`);
+    if (state.intentEnabled && pendingIntentKeywords.length > INTENT_KEYWORDS_MAX) {
+      set('error', `Maximum ${INTENT_KEYWORDS_MAX} mots-cles d'intention par produit.`);
       return;
     }
 
-    if (productDescription.length > PRODUCT_DESCRIPTION_MAX) {
-      setError(`Description trop longue (max ${PRODUCT_DESCRIPTION_MAX} caractères).`);
+    if (state.productDescription.length > PRODUCT_DESCRIPTION_MAX) {
+      set('error', `Description trop longue (max ${PRODUCT_DESCRIPTION_MAX} caractères).`);
       return;
     }
 
-    const trimmedProductUrl = productUrl.trim();
+    const trimmedProductUrl = state.productUrl.trim();
     if (trimmedProductUrl && !/^https?:\/\//i.test(trimmedProductUrl)) {
-      setError("L'URL du produit doit commencer par http:// ou https://.");
+      set('error', "L'URL du produit doit commencer par http:// ou https://.");
       return;
     }
 
-    if (targetAudience.length > TARGET_AUDIENCE_MAX) {
-      setError(`Audience cible trop longue (max ${TARGET_AUDIENCE_MAX} caractères).`);
+    if (state.targetAudience.length > TARGET_AUDIENCE_MAX) {
+      set('error', `Audience cible trop longue (max ${TARGET_AUDIENCE_MAX} caractères).`);
       return;
     }
 
     // Flush pending value-prop input
-    let pendingValueProps = valueProps;
-    if (valuePropInput.trim()) {
-      if (!tryAddValueProps(valuePropInput)) {
-        setError('Corrige les propositions de valeur invalides avant de continuer.');
-        return;
-      }
-      const tokens = valuePropInput
-        .split(/[,\n]+/)
-        .flatMap((t) => {
-          const trimmed = t.trim();
-          return trimmed ? [trimmed] : [];
-        });
-      const merged = [...pendingValueProps];
-      for (const t of tokens) {
-        if (merged.length >= VALUE_PROPS_MAX) break;
-        if (!merged.some((k) => k.toLowerCase() === t.toLowerCase())) {
-          merged.push(t);
-        }
-      }
-      pendingValueProps = merged;
-      setValuePropInput('');
+    const pendingValueProps = valuePropRef.current?.flush();
+    if (pendingValueProps === null || pendingValueProps === undefined) {
+      set('error', 'Corrige les propositions de valeur invalides avant de continuer.');
+      return;
     }
     if (pendingValueProps.length > VALUE_PROPS_MAX) {
-      setError(`Maximum ${VALUE_PROPS_MAX} propositions de valeur.`);
+      set('error', `Maximum ${VALUE_PROPS_MAX} propositions de valeur.`);
       return;
     }
 
     // Flush pending CTA input
-    let pendingCtas = callToActions;
-    if (ctaInput.trim()) {
-      if (!tryAddCtas(ctaInput)) {
-        setError('Corrige les CTA invalides avant de continuer.');
-        return;
-      }
-      const tokens = ctaInput
-        .split(/[,\n]+/)
-        .flatMap((t) => {
-          const trimmed = t.trim();
-          return trimmed ? [trimmed] : [];
-        });
-      const merged = [...pendingCtas];
-      for (const t of tokens) {
-        if (merged.length >= CTAS_MAX) break;
-        if (!merged.some((k) => k.toLowerCase() === t.toLowerCase())) {
-          merged.push(t);
-        }
-      }
-      pendingCtas = merged;
-      setCtaInput('');
+    const pendingCtas = ctaRef.current?.flush();
+    if (pendingCtas === null || pendingCtas === undefined) {
+      set('error', 'Corrige les CTA invalides avant de continuer.');
+      return;
     }
     if (pendingCtas.length > CTAS_MAX) {
-      setError(`Maximum ${CTAS_MAX} calls to action.`);
+      set('error', `Maximum ${CTAS_MAX} calls to action.`);
       return;
     }
 
-    setSubmitting(true);
+    set('submitting', true);
     try {
       const body: Record<string, unknown> = {
         name: trimmedName,
-        x_enabled: xEnabled,
-        reddit_enabled: redditEnabled,
-        hn_enabled: hnEnabled,
-        intent_enabled: intentEnabled,
+        x_enabled: state.xEnabled,
+        reddit_enabled: state.redditEnabled,
+        hn_enabled: state.hnEnabled,
+        intent_enabled: state.intentEnabled,
       };
       if (!isEdit) {
         body.id = trimmedId;
@@ -862,8 +400,8 @@ function ProductForm({
       // default to omit-when-blank to avoid wiping stored values).
       // The X query is only persisted when the X source is enabled; disabling X
       // is an explicit user action that nulls the column.
-      if (xEnabled) {
-        const trimmedXQuery = xQuery.trim();
+      if (state.xEnabled) {
+        const trimmedXQuery = state.xQuery.trim();
         if (trimmedXQuery) {
           body.x_query = trimmedXQuery;
         } else if (!isEdit) {
@@ -876,18 +414,19 @@ function ProductForm({
 
       // Subreddits are tied to the Reddit toggle: required when enabled
       // (validated above), explicitly cleared when disabled.
-      body.reddit_subreddits = redditEnabled && pendingSubs.length > 0 ? pendingSubs : null;
+      body.reddit_subreddits =
+        state.redditEnabled && pendingSubs.length > 0 ? pendingSubs : null;
 
       // HN keywords mirror the Reddit subreddit rule: when HN is enabled, send
       // the current array (never null — validated above); when disabled,
       // explicitly clear with null.
-      body.hn_keywords = hnEnabled ? pendingHnKeywords : null;
+      body.hn_keywords = state.hnEnabled ? pendingHnKeywords : null;
 
       // Intent keywords: when enabled, send the current array (validated above);
       // when disabled, explicitly clear with null.
-      body.intent_keywords = intentEnabled ? pendingIntentKeywords : null;
+      body.intent_keywords = state.intentEnabled ? pendingIntentKeywords : null;
 
-      const trimmedWebhook = discordWebhook.trim();
+      const trimmedWebhook = state.discordWebhook.trim();
       if (trimmedWebhook) {
         body.discord_webhook = trimmedWebhook;
       } else if (!isEdit) {
@@ -897,7 +436,7 @@ function ProductForm({
       // explicitly says "laisser vide pour conserver"). There is no
       // explicit "clear webhook" action today.
 
-      const trimmedPrompt = aiPromptOverride.trim();
+      const trimmedPrompt = state.aiPromptOverride.trim();
       if (trimmedPrompt) {
         body.ai_prompt_override = trimmedPrompt;
       } else if (!isEdit) {
@@ -905,7 +444,7 @@ function ProductForm({
       }
       // edit mode + blank: omit to preserve existing prompt override
 
-      const trimmedDescription = productDescription.trim();
+      const trimmedDescription = state.productDescription.trim();
       if (trimmedDescription) {
         body.product_description = trimmedDescription;
       } else if (!isEdit) {
@@ -913,8 +452,8 @@ function ProductForm({
       }
       // edit mode + blank: omit to preserve existing description
 
-      if (replyVoice !== null) {
-        body.reply_voice = replyVoice;
+      if (state.replyVoice !== null) {
+        body.reply_voice = state.replyVoice;
       } else if (!isEdit) {
         body.reply_voice = null;
       }
@@ -927,7 +466,7 @@ function ProductForm({
         body.product_url = null;
       }
 
-      const trimmedAudience = targetAudience.trim();
+      const trimmedAudience = state.targetAudience.trim();
       if (trimmedAudience) {
         body.target_audience = trimmedAudience;
       } else if (!isEdit) {
@@ -944,14 +483,14 @@ function ProductForm({
         body.call_to_actions = pendingCtas;
       }
 
-      if (contentVoice !== null) {
-        body.content_voice = contentVoice;
+      if (state.contentVoice !== null) {
+        body.content_voice = state.contentVoice;
       } else if (!isEdit) {
         body.content_voice = null;
       }
 
-      if (contentLanguage !== null) {
-        body.content_language = contentLanguage;
+      if (state.contentLanguage !== null) {
+        body.content_language = state.contentLanguage;
       } else if (!isEdit) {
         body.content_language = null;
       }
@@ -967,7 +506,7 @@ function ProductForm({
       });
       const data = await res.json();
       if (!res.ok || data.success === false) {
-        setError(data.message || `Erreur HTTP ${res.status}`);
+        set('error', data.message || `Erreur HTTP ${res.status}`);
         return;
       }
       // Backend may return the product directly or under `product`
@@ -981,13 +520,14 @@ function ProductForm({
       }
       onOpenChange(false);
     } catch {
-      setError(
+      set(
+        'error',
         isEdit
           ? 'Erreur réseau lors de la mise à jour.'
           : 'Erreur réseau lors de la création.',
       );
     } finally {
-      setSubmitting(false);
+      set('submitting', false);
     }
   };
 
@@ -1000,8 +540,8 @@ function ProductForm({
         <Label htmlFor="product-name">Nom</Label>
         <Input
           id="product-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={state.name}
+          onChange={(e) => set('name', e.target.value)}
           onBlur={handleNameBlur}
           placeholder="Veille IA"
           required
@@ -1012,9 +552,9 @@ function ProductForm({
         <Label htmlFor="product-id">Identifiant</Label>
         <Input
           id="product-id"
-          value={id}
+          value={state.id}
           onChange={(e) => {
-            setId(e.target.value);
+            set('id', e.target.value);
             idTouchedRef.current = true;
           }}
           placeholder="veille-ia"
@@ -1034,8 +574,8 @@ function ProductForm({
         <Input
           id="product-discord-webhook"
           type="password"
-          value={discordWebhook}
-          onChange={(e) => setDiscordWebhook(e.target.value)}
+          value={state.discordWebhook}
+          onChange={(e) => set('discordWebhook', e.target.value)}
           placeholder={
             isEdit && initialValues?.discord_webhook
               ? `Actuel : ${initialValues.discord_webhook} (laisser vide pour conserver)`
@@ -1049,8 +589,8 @@ function ProductForm({
         <Label htmlFor="product-prompt">Prompt IA personnalisé (optionnel)</Label>
         <Textarea
           id="product-prompt"
-          value={aiPromptOverride}
-          onChange={(e) => setAiPromptOverride(e.target.value)}
+          value={state.aiPromptOverride}
+          onChange={(e) => set('aiPromptOverride', e.target.value)}
           placeholder="Surcharge facultative du prompt par défaut."
           rows={4}
         />
@@ -1076,21 +616,21 @@ function ProductForm({
             </Label>
             <Switch
               id="source-x-enabled"
-              checked={xEnabled}
-              onCheckedChange={setXEnabled}
+              checked={state.xEnabled}
+              onCheckedChange={(v) => set('xEnabled', v)}
               aria-label="Activer la source X"
             />
           </div>
-          <div className={cn(!xEnabled && 'opacity-50 pointer-events-none')}>
+          <div className={cn(!state.xEnabled && 'opacity-50 pointer-events-none')}>
             <Label htmlFor="product-x-query" className="text-xs">
               Requête X (optionnel)
             </Label>
             <Input
               id="product-x-query"
-              value={xQuery}
-              onChange={(e) => setXQuery(e.target.value)}
+              value={state.xQuery}
+              onChange={(e) => set('xQuery', e.target.value)}
               placeholder="from:OpenAI OR from:AnthropicAI"
-              disabled={!xEnabled}
+              disabled={!state.xEnabled}
               className="mt-1"
             />
           </div>
@@ -1109,144 +649,21 @@ function ProductForm({
             </Label>
             <Switch
               id="source-reddit-enabled"
-              checked={redditEnabled}
-              onCheckedChange={setRedditEnabled}
+              checked={state.redditEnabled}
+              onCheckedChange={(v) => set('redditEnabled', v)}
               aria-label="Activer la source Reddit"
             />
           </div>
-          <div className={cn(!redditEnabled && 'opacity-50 pointer-events-none')}>
+          <div className={cn(!state.redditEnabled && 'opacity-50 pointer-events-none')}>
             <Label htmlFor="product-subreddits" className="text-xs">
               Subreddits
             </Label>
-            <div className="relative">
-              <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
-                {subreddits.map((sub) => (
-                  <Badge
-                    key={sub}
-                    variant="secondary"
-                    className="gap-1 pl-2 pr-1 font-mono"
-                  >
-                    r/{sub}
-                    <button
-                      type="button"
-                      onClick={() => removeSubreddit(sub)}
-                      disabled={!redditEnabled}
-                      className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
-                      aria-label={`Retirer r/${sub}`}
-                    >
-                      <XIcon className="size-3" />
-                    </button>
-                  </Badge>
-                ))}
-                <div className="relative flex flex-1 items-center min-w-[160px]">
-                  <Search className="pointer-events-none absolute left-0 size-3.5 text-muted-foreground" />
-                  <input
-                    id="product-subreddits"
-                    type="text"
-                    role="combobox"
-                    aria-label="Rechercher un subreddit"
-                    aria-autocomplete="list"
-                    aria-expanded={subredditSearchOpen}
-                    aria-controls="subreddit-search-listbox"
-                    aria-activedescendant={
-                      subredditActiveIndex >= 0
-                        ? `subreddit-result-${subredditActiveIndex}`
-                        : undefined
-                    }
-                    value={subredditInput}
-                    onChange={(e) => handleSubredditInputChange(e.target.value)}
-                    onKeyDown={handleSubredditKeyDown}
-                    onBlur={handleSubredditBlur}
-                    onFocus={handleSubredditFocus}
-                    placeholder={
-                      subreddits.length === 0 ? 'Recherche un subreddit…' : ''
-                    }
-                    disabled={!redditEnabled}
-                    className="flex-1 bg-transparent pl-5 pr-5 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
-                  />
-                  {subredditSearchLoading && (
-                    <Loader2 className="pointer-events-none absolute right-0 size-3.5 animate-spin text-muted-foreground" />
-                  )}
-                </div>
-              </div>
-              {subredditSearchOpen && redditEnabled && (() => {
-                const visibleResults = subredditResults.filter(
-                  (r) =>
-                    !subreddits.some(
-                      (s) => s.toLowerCase() === r.name.toLowerCase(),
-                    ),
-                );
-                const showEmpty =
-                  !subredditSearchLoading &&
-                  subredditInput.trim().length >= 2 &&
-                  visibleResults.length === 0;
-                if (visibleResults.length === 0 && !showEmpty) return null;
-                return (
-                  <div
-                    id="subreddit-search-listbox"
-                    role="listbox"
-                    aria-label="Résultats de recherche de subreddits"
-                    className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-auto rounded-md border border-input bg-popover text-popover-foreground shadow-md"
-                  >
-                    {visibleResults.map((result, idx) => (
-                      <div key={result.name}>
-                        <button
-                          type="button"
-                          id={`subreddit-result-${idx}`}
-                          role="option"
-                          aria-selected={idx === subredditActiveIndex}
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            addSubredditFromResult(result);
-                          }}
-                          onMouseEnter={() => setSubredditActiveIndex(idx)}
-                          className={cn(
-                            'flex w-full cursor-pointer items-start gap-2 px-3 py-2 text-left text-sm',
-                            idx === subredditActiveIndex
-                              ? 'bg-accent text-accent-foreground'
-                              : 'hover:bg-accent hover:text-accent-foreground',
-                          )}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-sm font-medium">
-                                r/{result.name}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                {formatSubscribers(result.subscribers)}
-                              </span>
-                              {result.over18 && (
-                                <span className="rounded bg-destructive/15 px-1 text-[10px] font-semibold uppercase text-destructive">
-                                  NSFW
-                                </span>
-                              )}
-                            </div>
-                            {(result.title || result.description) && (
-                              <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                                {result.description || result.title}
-                              </p>
-                            )}
-                          </div>
-                        </button>
-                      </div>
-                    ))}
-                    {showEmpty && (
-                      <div className="px-3 py-2 text-xs text-muted-foreground">
-                        Aucun subreddit trouvé pour «&nbsp;{subredditInput.trim()}&nbsp;».
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Tape pour rechercher un subreddit, ou colle plusieurs noms séparés par une virgule.
-            </p>
-            {subredditError && (
-              <p className="mt-1 text-xs text-destructive" role="alert">
-                {subredditError}
-              </p>
-            )}
+            <SubredditPicker
+              ref={subredditRef}
+              value={state.subreddits}
+              onChange={(next) => set('subreddits', next)}
+              disabled={!state.redditEnabled}
+            />
           </div>
         </div>
 
@@ -1263,62 +680,33 @@ function ProductForm({
             </Label>
             <Switch
               id="source-hn-enabled"
-              checked={hnEnabled}
-              onCheckedChange={setHnEnabled}
+              checked={state.hnEnabled}
+              onCheckedChange={(v) => set('hnEnabled', v)}
               aria-label="Activer la source Hacker News"
             />
           </div>
-          <div className={cn(!hnEnabled && 'opacity-50 pointer-events-none')}>
+          <div className={cn(!state.hnEnabled && 'opacity-50 pointer-events-none')}>
             <Label htmlFor="product-hn-keywords" className="text-xs">
               Mots-clés
             </Label>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
-              {hnKeywords.map((kw) => (
-                <Badge
-                  key={kw}
-                  variant="secondary"
-                  className="gap-1 pl-2 pr-1"
-                >
-                  {kw}
-                  <button
-                    type="button"
-                    onClick={() => removeHnKeyword(kw)}
-                    disabled={!hnEnabled}
-                    className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
-                    aria-label={`Retirer ${kw}`}
-                  >
-                    <XIcon className="size-3" />
-                  </button>
-                </Badge>
-              ))}
-              <input
+            <div className="mt-1">
+              <ChipInput
+                ref={hnRef}
                 id="product-hn-keywords"
-                type="text"
-                aria-label="Ajouter un mot-clé Hacker News"
-                value={hnKeywordInput}
-                onChange={(e) => {
-                  setHnKeywordInput(e.target.value);
-                  if (hnKeywordError) setHnKeywordError(null);
-                }}
-                onKeyDown={handleHnKeywordKeyDown}
-                onBlur={handleHnKeywordBlur}
-                placeholder={
-                  hnKeywords.length === 0
-                    ? 'agents IA, LLM, retrieval, ...'
-                    : ''
-                }
-                disabled={!hnEnabled}
-                className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+                ariaLabel="Ajouter un mot-clé Hacker News"
+                value={state.hnKeywords}
+                onChange={(next) => set('hnKeywords', next)}
+                parse={parseHnKeywords}
+                max={HN_KEYWORDS_MAX}
+                maxError={`Maximum ${HN_KEYWORDS_MAX} mots-clés par produit.`}
+                removeLabel={(kw) => `Retirer ${kw}`}
+                placeholder="agents IA, LLM, retrieval, ..."
+                disabled={!state.hnEnabled}
               />
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               Tape un mot-clé puis Entrée ou virgule (2 à {HN_KEYWORD_MAX} caractères, {HN_KEYWORDS_MAX} max).
             </p>
-            {hnKeywordError && (
-              <p className="mt-1 text-xs text-destructive" role="alert">
-                {hnKeywordError}
-              </p>
-            )}
           </div>
         </div>
       </div>
@@ -1342,58 +730,33 @@ function ProductForm({
             </Label>
             <Switch
               id="intent-enabled"
-              checked={intentEnabled}
-              onCheckedChange={setIntentEnabled}
+              checked={state.intentEnabled}
+              onCheckedChange={(v) => set('intentEnabled', v)}
               aria-label="Activer la détection d'intention"
             />
           </div>
-          <div className={cn(!intentEnabled && 'opacity-50 pointer-events-none')}>
+          <div className={cn(!state.intentEnabled && 'opacity-50 pointer-events-none')}>
             <Label htmlFor="product-intent-keywords" className="text-xs">
               Mots-clés d'intention
             </Label>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
-              {intentKeywords.map((kw) => (
-                <Badge key={kw} variant="secondary" className="gap-1 pl-2 pr-1">
-                  {kw}
-                  <button
-                    type="button"
-                    onClick={() => removeIntentKeyword(kw)}
-                    disabled={!intentEnabled}
-                    className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
-                    aria-label={`Retirer ${kw}`}
-                  >
-                    <XIcon className="size-3" />
-                  </button>
-                </Badge>
-              ))}
-              <input
+            <div className="mt-1">
+              <ChipInput
+                ref={intentRef}
                 id="product-intent-keywords"
-                type="text"
-                aria-label="Ajouter un mot-clé d'intention"
-                value={intentKeywordInput}
-                onChange={(e) => {
-                  setIntentKeywordInput(e.target.value);
-                  if (intentKeywordError) setIntentKeywordError(null);
-                }}
-                onKeyDown={handleIntentKeywordKeyDown}
-                onBlur={handleIntentKeywordBlur}
-                placeholder={
-                  intentKeywords.length === 0
-                    ? 'alternative à figma, je cherche un outil pour, quelqu\'un utilise'
-                    : ''
-                }
-                disabled={!intentEnabled}
-                className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+                ariaLabel="Ajouter un mot-clé d'intention"
+                value={state.intentKeywords}
+                onChange={(next) => set('intentKeywords', next)}
+                parse={parseIntentKeywords}
+                max={INTENT_KEYWORDS_MAX}
+                maxError={`Maximum ${INTENT_KEYWORDS_MAX} mots-clés d'intention.`}
+                removeLabel={(kw) => `Retirer ${kw}`}
+                placeholder="alternative à figma, je cherche un outil pour, quelqu'un utilise"
+                disabled={!state.intentEnabled}
               />
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               Tape une expression puis Entrée ou virgule ({INTENT_KEYWORD_MIN} à {INTENT_KEYWORD_MAX} caractères, {INTENT_KEYWORDS_MAX} max).
             </p>
-            {intentKeywordError && (
-              <p className="mt-1 text-xs text-destructive" role="alert">
-                {intentKeywordError}
-              </p>
-            )}
           </div>
         </div>
 
@@ -1407,8 +770,8 @@ function ProductForm({
             </Label>
             <Textarea
               id="product-description"
-              value={productDescription}
-              onChange={(e) => setProductDescription(e.target.value)}
+              value={state.productDescription}
+              onChange={(e) => set('productDescription', e.target.value)}
               placeholder="Ex: un SaaS de planification Discord pour communautés gaming. Plan gratuit jusqu'à 100 membres."
               rows={4}
               maxLength={PRODUCT_DESCRIPTION_MAX}
@@ -1421,12 +784,12 @@ function ProductForm({
               <span
                 className={cn(
                   'text-xs tabular-nums',
-                  productDescription.length > PRODUCT_DESCRIPTION_MAX
+                  state.productDescription.length > PRODUCT_DESCRIPTION_MAX
                     ? 'text-destructive'
                     : 'text-muted-foreground',
                 )}
               >
-                {productDescription.length}/{PRODUCT_DESCRIPTION_MAX}
+                {state.productDescription.length}/{PRODUCT_DESCRIPTION_MAX}
               </span>
             </div>
           </div>
@@ -1434,9 +797,10 @@ function ProductForm({
           <div className="space-y-2">
             <Label htmlFor="product-reply-voice">Ton des réponses</Label>
             <Select
-              value={replyVoice ?? REPLY_VOICE_NONE}
+              value={state.replyVoice ?? REPLY_VOICE_NONE}
               onValueChange={(value) =>
-                setReplyVoice(
+                set(
+                  'replyVoice',
                   value === REPLY_VOICE_NONE ? null : (value as ReplyVoice),
                 )
               }
@@ -1476,8 +840,8 @@ function ProductForm({
           <Input
             id="product-url"
             type="url"
-            value={productUrl}
-            onChange={(e) => setProductUrl(e.target.value)}
+            value={state.productUrl}
+            onChange={(e) => set('productUrl', e.target.value)}
             placeholder="https://exemple.com"
             autoComplete="off"
           />
@@ -1490,8 +854,8 @@ function ProductForm({
           <Label htmlFor="product-target-audience">Audience cible</Label>
           <Textarea
             id="product-target-audience"
-            value={targetAudience}
-            onChange={(e) => setTargetAudience(e.target.value)}
+            value={state.targetAudience}
+            onChange={(e) => set('targetAudience', e.target.value)}
             placeholder="Ex: makers SaaS B2B francophones, PMs scale-up."
             rows={3}
             maxLength={TARGET_AUDIENCE_MAX}
@@ -1503,114 +867,61 @@ function ProductForm({
             <span
               className={cn(
                 'text-xs tabular-nums',
-                targetAudience.length > TARGET_AUDIENCE_MAX
+                state.targetAudience.length > TARGET_AUDIENCE_MAX
                   ? 'text-destructive'
                   : 'text-muted-foreground',
               )}
             >
-              {targetAudience.length}/{TARGET_AUDIENCE_MAX}
+              {state.targetAudience.length}/{TARGET_AUDIENCE_MAX}
             </span>
           </div>
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="product-value-props">Propositions de valeur</Label>
-          <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
-            {valueProps.map((vp) => (
-              <Badge key={vp} variant="secondary" className="gap-1 pl-2 pr-1">
-                {vp}
-                <button
-                  type="button"
-                  onClick={() => removeValueProp(vp)}
-                  className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
-                  aria-label={`Retirer ${vp}`}
-                >
-                  <XIcon className="size-3" />
-                </button>
-              </Badge>
-            ))}
-            <input
-              id="product-value-props"
-              type="text"
-              aria-label="Ajouter une proposition de valeur"
-              value={valuePropInput}
-              onChange={(e) => {
-                setValuePropInput(e.target.value);
-                if (valuePropError) setValuePropError(null);
-              }}
-              onKeyDown={handleValuePropKeyDown}
-              onBlur={handleValuePropBlur}
-              placeholder={
-                valueProps.length === 0
-                  ? 'Ex: scrape sans API officielle, résumé IA français'
-                  : ''
-              }
-              title="Ex: scrape sans API officielle, résumé IA français"
-              className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-          </div>
+          <ChipInput
+            ref={valuePropRef}
+            id="product-value-props"
+            ariaLabel="Ajouter une proposition de valeur"
+            value={state.valueProps}
+            onChange={(next) => set('valueProps', next)}
+            parse={parseValueProps}
+            max={VALUE_PROPS_MAX}
+            maxError={`Maximum ${VALUE_PROPS_MAX} propositions de valeur.`}
+            removeLabel={(vp) => `Retirer ${vp}`}
+            placeholder="Ex: scrape sans API officielle, résumé IA français"
+          />
           <p className="text-xs text-muted-foreground">
             Tape une proposition puis Entrée ou virgule ({VALUE_PROP_MIN} à {VALUE_PROP_MAX} caractères, {VALUE_PROPS_MAX} max).
           </p>
-          {valuePropError && (
-            <p className="text-xs text-destructive" role="alert">
-              {valuePropError}
-            </p>
-          )}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="product-ctas">Calls to action</Label>
-          <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1.5 min-h-9 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
-            {callToActions.map((cta) => (
-              <Badge key={cta} variant="secondary" className="gap-1 pl-2 pr-1">
-                {cta}
-                <button
-                  type="button"
-                  onClick={() => removeCta(cta)}
-                  className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20"
-                  aria-label={`Retirer ${cta}`}
-                >
-                  <XIcon className="size-3" />
-                </button>
-              </Badge>
-            ))}
-            <input
-              id="product-ctas"
-              type="text"
-              aria-label="Ajouter un call to action"
-              value={ctaInput}
-              onChange={(e) => {
-                setCtaInput(e.target.value);
-                if (ctaError) setCtaError(null);
-              }}
-              onKeyDown={handleCtaKeyDown}
-              onBlur={handleCtaBlur}
-              placeholder={
-                callToActions.length === 0
-                  ? 'Ex: Essaie gratuit sur ton subreddit, Demande une démo'
-                  : ''
-              }
-              title="Ex: Essaie gratuit sur ton subreddit, Demande une démo"
-              className="flex-1 min-w-[120px] bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-          </div>
+          <ChipInput
+            ref={ctaRef}
+            id="product-ctas"
+            ariaLabel="Ajouter un call to action"
+            value={state.callToActions}
+            onChange={(next) => set('callToActions', next)}
+            parse={parseCtas}
+            max={CTAS_MAX}
+            maxError={`Maximum ${CTAS_MAX} calls to action.`}
+            removeLabel={(cta) => `Retirer ${cta}`}
+            placeholder="Ex: Essaie gratuit sur ton subreddit, Demande une démo"
+          />
           <p className="text-xs text-muted-foreground">
             Tape un CTA puis Entrée ou virgule ({CTA_MIN} à {CTA_MAX} caractères, {CTAS_MAX} max).
           </p>
-          {ctaError && (
-            <p className="text-xs text-destructive" role="alert">
-              {ctaError}
-            </p>
-          )}
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="product-content-voice">Voix éditoriale pour les posts</Label>
           <Select
-            value={contentVoice ?? CONTENT_VOICE_NONE}
+            value={state.contentVoice ?? CONTENT_VOICE_NONE}
             onValueChange={(value) =>
-              setContentVoice(
+              set(
+                'contentVoice',
                 value === CONTENT_VOICE_NONE ? null : (value as ContentVoice),
               )
             }
@@ -1637,10 +948,8 @@ function ProductForm({
         <div className="space-y-2">
           <Label htmlFor="product-content-language">Langue des posts</Label>
           <Select
-            value={contentLanguage ?? 'fr'}
-            onValueChange={(value) =>
-              setContentLanguage(value as ContentLanguage)
-            }
+            value={state.contentLanguage ?? 'fr'}
+            onValueChange={(value) => set('contentLanguage', value as ContentLanguage)}
           >
             <SelectTrigger id="product-content-language">
               <SelectValue />
@@ -1659,9 +968,9 @@ function ProductForm({
         </div>
       </div>
 
-      {error && (
+      {state.error && (
         <p className="text-sm text-destructive" role="alert">
-          {error}
+          {state.error}
         </p>
       )}
 
@@ -1670,12 +979,12 @@ function ProductForm({
           type="button"
           variant="outline"
           onClick={() => onOpenChange(false)}
-          disabled={submitting}
+          disabled={state.submitting}
         >
           Annuler
         </Button>
-        <Button type="submit" disabled={submitting}>
-          {submitting
+        <Button type="submit" disabled={state.submitting}>
+          {state.submitting
             ? isEdit
               ? 'Mise à jour...'
               : 'Création...'

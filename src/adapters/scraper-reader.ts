@@ -534,6 +534,7 @@ export async function detectGqlIds(): Promise<{
     i += 5
   ) {
     const batch = scriptUrls.slice(i, i + 5);
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop -- batches are processed sequentially on purpose to stop early once both GraphQL op IDs are found
     const scripts = await Promise.all(
       batch.map((url) =>
         fetch(url)

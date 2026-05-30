@@ -43,6 +43,7 @@ export function schedulePublishCron(
     for (const product of products) {
       try {
         const mergedConfig = mergeProductConfig(baseConfig, buildMergedConfig, product.id);
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: per-product publish runs must not hammer the shared X session concurrently
         await triggerRun(mergedConfig, 'cron', product.id);
       } catch (err) {
         logger.error('Daily summary failed', {
@@ -66,6 +67,7 @@ export function scheduleCollectCron(
     for (const product of products) {
       try {
         const mergedConfig = mergeProductConfig(baseConfig, buildMergedConfig, product.id);
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: per-product collect runs must not hammer the shared X session concurrently
         await triggerCollect(mergedConfig, product.id);
       } catch (err) {
         logger.error('Tweet collection failed', {
