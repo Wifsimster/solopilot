@@ -586,6 +586,52 @@ interface SourcesSectionProps {
 
 /** "Sources" card: X (Twitter), Reddit (subreddit picker) and Hacker News. */
 function SourcesSection({ state, set, subredditRef, hnRef }: SourcesSectionProps) {
+  // Both source suggestions share the same product context; applying them also
+  // turns the source on so the freshly-filled field isn't left greyed out.
+  const sourceBody = (name: string) => ({
+    name,
+    product_url: state.productUrl.trim() || null,
+    product_description: state.productDescription.trim() || null,
+    target_audience: state.targetAudience.trim() || null,
+    content_language: state.contentLanguage ?? 'fr',
+  });
+
+  const subreddits = useAiSuggestion<string[]>({
+    endpoint: '/api/content/suggest-subreddits',
+    buildBody: () => {
+      const name = state.name.trim();
+      if (!name) {
+        toast.error('Renseigne le nom du produit avant de générer des subreddits.');
+        return null;
+      }
+      return sourceBody(name);
+    },
+    extract: (data) => (Array.isArray(data.subreddits) ? (data.subreddits as string[]) : null),
+    apply: (value) => {
+      set('subreddits', value);
+      set('redditEnabled', true);
+    },
+    successMessage: "Subreddits proposés par l'IA.",
+  });
+
+  const hnKeywords = useAiSuggestion<string[]>({
+    endpoint: '/api/content/suggest-hn-keywords',
+    buildBody: () => {
+      const name = state.name.trim();
+      if (!name) {
+        toast.error('Renseigne le nom du produit avant de générer des mots-clés.');
+        return null;
+      }
+      return sourceBody(name);
+    },
+    extract: (data) => (Array.isArray(data.keywords) ? (data.keywords as string[]) : null),
+    apply: (value) => {
+      set('hnKeywords', value.slice(0, HN_KEYWORDS_MAX));
+      set('hnEnabled', true);
+    },
+    successMessage: "Mots-clés Hacker News proposés par l'IA.",
+  });
+
   return (
     <div className="space-y-4 rounded-lg border p-4">
       <div>
@@ -642,10 +688,13 @@ function SourcesSection({ state, set, subredditRef, hnRef }: SourcesSectionProps
             aria-label="Activer la source Reddit"
           />
         </div>
-        <div className={cn(!state.redditEnabled && 'opacity-50 pointer-events-none')}>
+        <div className="flex items-center justify-between gap-2">
           <Label htmlFor="product-subreddits" className="text-xs">
             Subreddits
           </Label>
+          <SuggestButton suggesting={subreddits.suggesting} onClick={subreddits.suggest} />
+        </div>
+        <div className={cn('mt-1', !state.redditEnabled && 'opacity-50 pointer-events-none')}>
           <SubredditPicker
             ref={subredditRef}
             value={state.subreddits}
@@ -673,10 +722,13 @@ function SourcesSection({ state, set, subredditRef, hnRef }: SourcesSectionProps
             aria-label="Activer la source Hacker News"
           />
         </div>
-        <div className={cn(!state.hnEnabled && 'opacity-50 pointer-events-none')}>
+        <div className="flex items-center justify-between gap-2">
           <Label htmlFor="product-hn-keywords" className="text-xs">
             Mots-clés
           </Label>
+          <SuggestButton suggesting={hnKeywords.suggesting} onClick={hnKeywords.suggest} />
+        </div>
+        <div className={cn(!state.hnEnabled && 'opacity-50 pointer-events-none')}>
           <div className="mt-1">
             <ChipInput
               ref={hnRef}

@@ -105,7 +105,11 @@ export async function searchSubreddits(
   for (const child of parsed.data.data.children) {
     const sub = child.data;
     if (!SUBREDDIT_PATTERN.test(sub.display_name)) continue;
-    if (sub.subreddit_type && sub.subreddit_type !== 'public' && sub.subreddit_type !== 'restricted') {
+    if (
+      sub.subreddit_type &&
+      sub.subreddit_type !== 'public' &&
+      sub.subreddit_type !== 'restricted'
+    ) {
       continue;
     }
     const key = sub.display_name.toLowerCase();
@@ -125,6 +129,79 @@ export async function searchSubreddits(
     });
   }
   return results;
+}
+
+const subredditAboutSchema = z.object({
+  data: z.object({
+    display_name: z.string(),
+    subreddit_type: z.string().optional(),
+    over18: z.boolean().optional().default(false),
+  }),
+});
+
+/**
+ * Verify which of the given subreddit names actually exist as public or
+ * restricted communities, returning their canonical display names (correct
+ * casing). Names are checked sequentially against `/r/<name>/about.json` to
+ * avoid Reddit's HTTP 429 under concurrent load. A 404/403 (unknown, private or
+ * banned) drops the name; transient failures (429, network/parse errors) keep it
+ * (fail-open) so an outage doesn't silently empty the suggestion.
+ */
+export async function verifySubredditsExist(
+  names: string[],
+  options: { userAgent?: string; includeNsfw?: boolean } = {},
+): Promise<string[]> {
+  const userAgent = options.userAgent ?? USER_AGENT;
+  const includeNsfw = options.includeNsfw ?? false;
+  const verified: string[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of names) {
+    const name = raw.trim();
+    if (!SUBREDDIT_PATTERN.test(name)) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const url = `https://www.reddit.com/r/${encodeURIComponent(name)}/about.json`;
+    try {
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: paced per-subreddit calls; Reddit returns HTTP 429 under concurrent load
+      const response = await fetch(url, {
+        headers: { 'User-Agent': userAgent, accept: 'application/json' },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (response.status === 429) {
+        logger.warn('Reddit: about lookup rate limited (HTTP 429)', { subreddit: name });
+        verified.push(name); // fail-open on rate limit
+        continue;
+      }
+      if (response.status === 404 || response.status === 403) {
+        continue; // unknown, private or banned — drop
+      }
+      if (!response.ok) continue;
+
+      const json = (await response.json()) as unknown;
+      const parsed = subredditAboutSchema.safeParse(json);
+      if (!parsed.success) continue;
+      const sub = parsed.data.data;
+      if (
+        sub.subreddit_type &&
+        sub.subreddit_type !== 'public' &&
+        sub.subreddit_type !== 'restricted'
+      ) {
+        continue;
+      }
+      if (sub.over18 && !includeNsfw) continue;
+      verified.push(sub.display_name);
+    } catch (err) {
+      logger.warn('Reddit: about lookup failed', {
+        subreddit: name,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      verified.push(name); // fail-open on network/parse error
+    }
+  }
+  return verified;
 }
 
 export interface RedditReaderOptions {

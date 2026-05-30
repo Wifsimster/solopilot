@@ -104,6 +104,10 @@ import {
   suggestDescriptionSchema,
   suggestValueProps,
   suggestValuePropsSchema,
+  suggestSubreddits,
+  suggestSubredditsSchema,
+  suggestHnKeywords,
+  suggestHnKeywordsSchema,
 } from './content-studio.js';
 import {
   fetchGithubRepos,
@@ -774,6 +778,66 @@ export function startServer(
           ? err.message
           : `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`;
       logger.warn('Value props suggestion failed', { error: message });
+      return c.json({ success: false, message });
+    }
+  });
+
+  app.post('/api/content/suggest-subreddits', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = suggestSubredditsSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees invalides pour la suggestion.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+
+    try {
+      const subreddits = await suggestSubreddits(parsed.data);
+      return c.json({ success: true, subreddits });
+    } catch (err) {
+      const message =
+        err instanceof ContentStudioError
+          ? err.message
+          : `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`;
+      logger.warn('Subreddits suggestion failed', { error: message });
+      return c.json({ success: false, message });
+    }
+  });
+
+  app.post('/api/content/suggest-hn-keywords', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = suggestHnKeywordsSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees invalides pour la suggestion.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+
+    try {
+      const keywords = await suggestHnKeywords(parsed.data);
+      return c.json({ success: true, keywords });
+    } catch (err) {
+      const message =
+        err instanceof ContentStudioError
+          ? err.message
+          : `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`;
+      logger.warn('HN keywords suggestion failed', { error: message });
       return c.json({ success: false, message });
     }
   });
