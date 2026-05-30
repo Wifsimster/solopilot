@@ -10,12 +10,7 @@ export type ContentDraftStatus = 'pending' | 'edited' | 'used' | 'discarded';
 export type TargetSource = 'x' | 'reddit' | 'generic';
 
 export const CONTENT_DRAFT_KINDS = ['post'] as const;
-export const CONTENT_DRAFT_STATUSES = [
-  'pending',
-  'edited',
-  'used',
-  'discarded',
-] as const;
+export const CONTENT_DRAFT_STATUSES = ['pending', 'edited', 'used', 'discarded'] as const;
 export const TARGET_SOURCES = ['x', 'reddit', 'generic'] as const;
 
 const contentDraftKindSchema = z.enum(CONTENT_DRAFT_KINDS, {
@@ -48,10 +43,7 @@ export const contentDraftListQuerySchema = z.object({
   status: contentDraftStatusSchema.optional(),
   kind: contentDraftKindSchema.optional(),
   limit: z
-    .preprocess(
-      (v) => (typeof v === 'string' ? Number(v) : v),
-      z.number().int().min(1).max(500),
-    )
+    .preprocess((v) => (typeof v === 'string' ? Number(v) : v), z.number().int().min(1).max(500))
     .optional(),
 });
 
@@ -71,9 +63,7 @@ export const contentDraftPatchSchema = z
   })
   .refine(
     (data) =>
-      data.status !== undefined ||
-      data.edited_text !== undefined ||
-      data.used_on !== undefined,
+      data.status !== undefined || data.edited_text !== undefined || data.used_on !== undefined,
     { message: 'Au moins un champ a mettre a jour est requis.' },
   );
 
@@ -129,9 +119,7 @@ export function toContentDraftView(row: ContentDraftRecord): ContentDraftView {
   };
 }
 
-export function listContentDrafts(
-  filters: ContentDraftListOptions = {},
-): ContentDraftView[] {
+export function listContentDrafts(filters: ContentDraftListOptions = {}): ContentDraftView[] {
   const db = getDb();
   const clauses: string[] = [];
   const params: unknown[] = [];
@@ -302,6 +290,143 @@ export class ContentStudioError extends Error {
   }
 }
 
+const TARGET_AUDIENCE_MAX_LENGTH = 500;
+
+export const suggestAudienceSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, { message: 'Le nom du produit est requis.' })
+    .max(120, { message: 'Nom du produit trop long (max 120 caracteres).' }),
+  product_url: z
+    .string()
+    .trim()
+    .max(2000, { message: 'URL du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  product_description: z
+    .string()
+    .trim()
+    .max(2000, { message: 'Description du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  value_props: z
+    .array(z.string().trim().min(1).max(200))
+    .max(10, { message: 'Trop de propositions de valeur (max 10).' })
+    .optional()
+    .nullable(),
+  content_language: z.enum(['fr', 'en']).optional().nullable(),
+});
+
+export type SuggestAudienceInput = z.infer<typeof suggestAudienceSchema>;
+
+const suggestAudienceResponseSchema = z.object({
+  target_audience: z.string().min(1).max(TARGET_AUDIENCE_MAX_LENGTH),
+});
+
+const SUGGEST_AUDIENCE_SYSTEM_PROMPT = `Tu es un stratege marketing produit. On te donne les informations d'un produit (nom, URL, description, propositions de valeur) et tu dois proposer une description CONCISE de son audience cible ideale.
+
+Regles :
+- Reponds dans la langue demandee (fr ou en).
+- Sois concret et specifique : segments, roles, secteurs, niveau de maturite (ex: makers SaaS B2B francophones, PMs scale-up, devs indie).
+- Une a deux phrases maximum, style telegraphique accepte (listes de segments separes par des virgules).
+- MAXIMUM ${TARGET_AUDIENCE_MAX_LENGTH} caracteres.
+- Pas de phrase d'introduction ("Voici", "L'audience cible est...") : donne directement la description.
+- Pas de mention d'IA ou de generation automatique.
+
+Reponds STRICTEMENT en JSON avec la structure suivante :
+{
+  "target_audience": "<description concise de l'audience cible>"
+}`;
+
+/**
+ * Propose a concise target-audience description for a product using the AI
+ * model. Works from raw form values (name, URL, description, value props) so it
+ * can be called before the product is persisted.
+ */
+export async function suggestTargetAudience(input: SuggestAudienceInput): Promise<string> {
+  let config;
+  try {
+    config = loadConfig();
+  } catch (err) {
+    throw new ContentStudioError(
+      `Echec de la suggestion : configuration AI indisponible : ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  if (!config.GITHUB_TOKEN) {
+    throw new ContentStudioError(
+      'Echec de la suggestion : client AI indisponible (GITHUB_TOKEN manquant).',
+    );
+  }
+
+  const client = new OpenAI({
+    baseURL: 'https://models.github.ai/inference',
+    apiKey: config.GITHUB_TOKEN,
+    timeout: GENERATE_AI_TIMEOUT_MS,
+  });
+
+  const language = input.content_language ?? 'fr';
+  const valueProps =
+    input.value_props && input.value_props.length > 0
+      ? input.value_props.map((v, i) => `${i + 1}. ${v}`).join('\n')
+      : '(aucune proposition de valeur fournie)';
+
+  const userPayload = `PRODUIT
+Nom: ${input.name}
+URL: ${input.product_url || '(aucune URL fournie)'}
+Description: ${input.product_description || '(aucune description fournie)'}
+
+PROPOSITIONS DE VALEUR
+${valueProps}
+
+PARAMETRES
+Langue: ${language}
+
+Propose une description concise de l'audience cible ideale pour ce produit.`;
+
+  let raw: string;
+  try {
+    const response = await client.chat.completions.create({
+      model: config.AI_MODEL,
+      max_tokens: 512,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SUGGEST_AUDIENCE_SYSTEM_PROMPT },
+        { role: 'user', content: userPayload },
+      ],
+    });
+    logger.info('Audience suggestion API usage', {
+      inputTokens: response.usage?.prompt_tokens,
+      outputTokens: response.usage?.completion_tokens,
+      model: response.model,
+    });
+    raw = response.choices[0]?.message?.content ?? '';
+  } catch (err) {
+    throw new ContentStudioError(
+      `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new ContentStudioError(
+      `Echec de la suggestion : reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  const validated = suggestAudienceResponseSchema.safeParse(parsed);
+  if (!validated.success) {
+    throw new ContentStudioError(
+      `Echec de la suggestion : reponse AI invalide : ${validated.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+    );
+  }
+
+  return validated.data.target_audience.trim().slice(0, TARGET_AUDIENCE_MAX_LENGTH);
+}
+
 function platformConstraints(targetSource: TargetSource): string {
   switch (targetSource) {
     case 'x':
@@ -350,7 +475,7 @@ export async function generatePosts(
   const ctas =
     product.call_to_actions.length > 0
       ? product.call_to_actions.map((c, i) => `${i + 1}. ${c}`).join('\n')
-      : '(aucun appel a l\'action fourni)';
+      : "(aucun appel a l'action fourni)";
 
   const userPayload = `PRODUIT
 Nom: ${product.name}
@@ -425,13 +550,7 @@ Genere exactement ${count} drafts, chacun avec un angle DIFFERENT.`;
   const insertMany = db.transaction((items: { angle: string; text: string }[]) => {
     const now = Date.now();
     for (const item of items) {
-      const result = insert.run(
-        product.id,
-        targetSource,
-        item.angle,
-        item.text,
-        now,
-      );
+      const result = insert.run(product.id, targetSource, item.angle, item.text, now);
       insertedIds.push(Number(result.lastInsertRowid));
     }
   });

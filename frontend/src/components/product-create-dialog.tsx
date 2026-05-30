@@ -1,4 +1,5 @@
-import { useReducer, useRef, type Ref } from 'react';
+import { useReducer, useRef, useState, type Ref } from 'react';
+import { Sparkles, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -759,6 +760,41 @@ interface StudioSectionProps {
 
 /** "Studio de contenu" card: URL, audience, value props, CTAs, voice & language. */
 function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps) {
+  const [suggestingAudience, setSuggestingAudience] = useState(false);
+
+  const handleSuggestAudience = async () => {
+    const trimmedName = state.name.trim();
+    if (!trimmedName) {
+      toast.error('Renseigne le nom du produit avant de générer une audience cible.');
+      return;
+    }
+    setSuggestingAudience(true);
+    try {
+      const res = await fetch('/api/content/suggest-audience', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: trimmedName,
+          product_url: state.productUrl.trim() || null,
+          product_description: state.productDescription.trim() || null,
+          value_props: state.valueProps,
+          content_language: state.contentLanguage ?? 'fr',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.success === false || !data.target_audience) {
+        toast.error(data.message || `Erreur HTTP ${res.status}`);
+        return;
+      }
+      set('targetAudience', String(data.target_audience).slice(0, TARGET_AUDIENCE_MAX));
+      toast.success("Audience cible proposée par l'IA.");
+    } catch {
+      toast.error('Erreur réseau lors de la suggestion.');
+    } finally {
+      setSuggestingAudience(false);
+    }
+  };
+
   return (
     <div className="space-y-4 rounded-lg border p-4">
       <div>
@@ -784,7 +820,24 @@ function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps)
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="product-target-audience">Audience cible</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="product-target-audience">Audience cible</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
+            onClick={handleSuggestAudience}
+            disabled={suggestingAudience}
+          >
+            {suggestingAudience ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+            )}
+            {suggestingAudience ? 'Génération...' : "Proposer avec l'IA"}
+          </Button>
+        </div>
         <Textarea
           id="product-target-audience"
           value={state.targetAudience}

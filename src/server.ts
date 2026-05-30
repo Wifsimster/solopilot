@@ -96,6 +96,8 @@ import {
   contentDraftListQuerySchema,
   contentDraftPatchSchema,
   ContentStudioError,
+  suggestTargetAudience,
+  suggestAudienceSchema,
 } from './content-studio.js';
 import {
   fetchGithubRepos,
@@ -649,6 +651,36 @@ export function startServer(
   });
 
   // --- Content Studio API (available in both setup and operational mode) ---
+
+  app.post('/api/content/suggest-audience', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = suggestAudienceSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees invalides pour la suggestion.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+
+    try {
+      const targetAudience = await suggestTargetAudience(parsed.data);
+      return c.json({ success: true, target_audience: targetAudience });
+    } catch (err) {
+      const message =
+        err instanceof ContentStudioError
+          ? err.message
+          : `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`;
+      logger.warn('Audience suggestion failed', { error: message });
+      return c.json({ success: false, message });
+    }
+  });
 
   app.post('/api/products/:id/content/generate-posts', async (c) => {
     const id = c.req.param('id');
