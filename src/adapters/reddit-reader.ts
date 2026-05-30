@@ -163,6 +163,7 @@ export function createRedditReader(options: RedditReaderOptions): SourceReader {
 
     for (const subreddit of validSubreddits) {
       try {
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: paced per-subreddit calls; Reddit returns HTTP 429 under concurrent load
         const items = await fetchSubreddit(subreddit, productId, sinceTs, fetchedAt);
         for (const item of items) {
           if (!dedup.has(item.id)) dedup.set(item.id, item);
@@ -227,6 +228,7 @@ export function createRedditReader(options: RedditReaderOptions): SourceReader {
 
       const selftext = (post.selftext ?? '').trim();
       const text = selftext ? `${post.title}\n\n${selftext}` : post.title;
+      // react-doctor-disable-next-line react-doctor/js-set-map-lookups -- String.includes() substring test on a URL, not an array membership lookup
       const externalUrl = post.url && !post.url.includes('reddit.com') ? post.url : undefined;
 
       items.push({

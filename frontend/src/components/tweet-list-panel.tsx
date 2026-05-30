@@ -36,7 +36,7 @@ export function TweetListPanel({ runId, tweetCount }: { runId: number; tweetCoun
   if (!data || data.tweets.length === 0) {
     return (
       <div className="py-8 text-center text-muted-foreground">
-        <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
+        <MessageSquare className="size-8 mx-auto mb-2 opacity-50" />
         <p>Tweets non disponibles pour ce run.</p>
         {tweetCount > 0 && (
           <p className="text-xs mt-1">
@@ -70,7 +70,7 @@ export function TweetListPanel({ runId, tweetCount }: { runId: number; tweetCoun
                 className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
                 aria-label="Voir sur X"
               >
-                <ExternalLink className="h-3.5 w-3.5" />
+                <ExternalLink className="size-3.5" />
               </a>
             </div>
             <div className="flex items-center gap-2">

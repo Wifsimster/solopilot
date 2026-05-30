@@ -30,7 +30,7 @@ import { ErrorState } from '@/components/error-state';
 import { Plus, Archive, Loader2, Pencil, ExternalLink, Github } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateFr } from '@/lib/utils';
-import { useSelectedProduct } from '@/lib/product-context';
+import { useSelectedProduct } from '@/lib/product-context-hooks';
 import type { ProductRecord } from '@/types';
 
 function SourceBadges({ product }: { product: ProductRecord }) {
@@ -169,11 +169,11 @@ export function ProductsPage() {
         actions={
           <>
             <Button variant="outline" onClick={() => setGithubImportOpen(true)}>
-              <Github className="h-4 w-4" aria-hidden="true" />
+              <Github className="size-4" aria-hidden="true" />
               Importer depuis GitHub
             </Button>
             <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4" aria-hidden="true" />
+              <Plus className="size-4" aria-hidden="true" />
               Nouveau produit
             </Button>
           </>
@@ -220,7 +220,7 @@ export function ProductsPage() {
                               title={p.product_url}
                               aria-label={`Ouvrir l'URL de ${p.name}`}
                             >
-                              <ExternalLink className="h-3.5 w-3.5" />
+                              <ExternalLink className="size-3.5" />
                             </a>
                           )}
                           {isSelected && (
@@ -273,7 +273,7 @@ export function ProductsPage() {
                               className="h-8 px-2"
                               title="Éditer le produit"
                             >
-                              <Pencil className="h-3.5 w-3.5 mr-1" />
+                              <Pencil className="size-3.5 mr-1" />
                               Éditer
                             </Button>
                           )}
@@ -288,9 +288,9 @@ export function ProductsPage() {
                                   title="Archiver le produit"
                                 >
                                   {archivingId === p.id ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    <Loader2 className="size-3.5 animate-spin" />
                                   ) : (
-                                    <Archive className="h-3.5 w-3.5" />
+                                    <Archive className="size-3.5" />
                                   )}
                                 </Button>
                               </AlertDialogTrigger>

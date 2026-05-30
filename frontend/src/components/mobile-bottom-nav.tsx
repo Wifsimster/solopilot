@@ -32,7 +32,7 @@ export function MobileBottomNav({ onMore }: MobileBottomNavProps) {
             {({ isActive }) => (
               <>
                 <item.icon
-                  className={cn('h-5 w-5', isActive && 'scale-110')}
+                  className={cn('size-5', isActive && 'scale-110')}
                   aria-hidden="true"
                 />
                 <span className="truncate max-w-[64px]">{item.label}</span>
@@ -46,7 +46,7 @@ export function MobileBottomNav({ onMore }: MobileBottomNavProps) {
           className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
           aria-label="Plus d'options"
         >
-          <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+          <MoreHorizontal className="size-5" aria-hidden="true" />
           <span>Plus</span>
         </button>
       </div>

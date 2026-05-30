@@ -1,7 +1,7 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
-export const alertVariants = cva(
+const alertVariants = cva(
   "relative w-full rounded-lg border p-4 text-sm [&>svg~*]:pl-7 [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:text-foreground",
   {
     variants: {
@@ -27,18 +27,5 @@ export function Alert({
   return <div data-slot="alert" role="alert" ref={ref} className={cn(alertVariants({ variant }), className)} {...props} />;
 }
 
-export function AlertTitle({
-  className,
-  ref,
-  ...props
-}: React.HTMLAttributes<HTMLHeadingElement> & { ref?: React.Ref<HTMLHeadingElement> }) {
-  return <h5 data-slot="alert-title" ref={ref} className={cn("mb-1 font-medium leading-none tracking-tight", className)} {...props} />;
-}
-
-export function AlertDescription({
-  className,
-  ref,
-  ...props
-}: React.HTMLAttributes<HTMLParagraphElement> & { ref?: React.Ref<HTMLDivElement> }) {
-  return <div data-slot="alert-description" ref={ref} className={cn("text-sm [&_p]:leading-relaxed", className)} {...props} />;
-}
+export { AlertTitle } from "@/components/ui/alert-title";
+export { AlertDescription } from "@/components/ui/alert-description";

@@ -21,7 +21,7 @@ import { humanizeCron, nextCronDate, formatTimeUntil } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/responsive-dialog';
 import { MarkdownContent } from '@/components/markdown-content';
 import { toast } from 'sonner';
-import { useSelectedProduct, withProductId } from '@/lib/product-context';
+import { useSelectedProduct, withProductId } from '@/lib/product-context-hooks';
 import type { StatusResponse } from '@/types';
 
 const POLL_INTERVAL_MS = 4_000;
@@ -129,9 +129,9 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="sr-only" role="status" aria-live="polite">
+      <output className="sr-only" aria-live="polite">
         {liveMessage}
-      </div>
+      </output>
 
       <PageHeader
         title="Dashboard"
@@ -144,7 +144,7 @@ export function DashboardPage() {
                 aria-label="Lancer un run maintenant"
                 className="hidden sm:inline-flex"
               >
-                <Play className="h-4 w-4" aria-hidden="true" />
+                <Play className="size-4" aria-hidden="true" />
                 {running || triggering ? 'Run en cours…' : 'Lancer un run'}
               </Button>
             }
@@ -158,7 +158,7 @@ export function DashboardPage() {
 
       {cookiesExpired && (
         <Alert variant="destructive" role="alert">
-          <AlertCircle className="h-4 w-4" />
+          <AlertCircle className="size-4" />
           <AlertTitle>Session cookies expirés</AlertTitle>
           <AlertDescription>
             Vos cookies de session X semblent avoir expiré.{' '}
@@ -188,7 +188,7 @@ export function DashboardPage() {
           ) : nextRunLabel ? (
             <span>dans {nextRunLabel}</span>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">{'—'}</span>
           )}
         </StatCard>
         <StatCard title="Runs cumulés" icon={CalendarClock}>
@@ -238,13 +238,13 @@ export function DashboardPage() {
               <Button asChild variant="ghost" size="sm">
                 <Link to="/summaries" className="gap-1">
                   Toutes les synthèses
-                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                  <ArrowRight className="size-3.5" aria-hidden="true" />
                 </Link>
               </Button>
               <Button asChild variant="ghost" size="sm">
                 <Link to="/runs" className="gap-1">
                   Historique complet
-                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                  <ArrowRight className="size-3.5" aria-hidden="true" />
                 </Link>
               </Button>
             </div>
@@ -268,9 +268,9 @@ export function DashboardPage() {
             size="lg"
             disabled={running || triggering}
             aria-label="Lancer un run maintenant"
-            className="sm:hidden fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+72px)] z-30 h-14 w-14 rounded-full shadow-lg p-0"
+            className="sm:hidden fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+72px)] z-30 size-14 rounded-full shadow-lg p-0"
           >
-            <Play className="h-5 w-5" aria-hidden="true" />
+            <Play className="size-5" aria-hidden="true" />
           </Button>
         }
         title="Lancer un run maintenant ?"

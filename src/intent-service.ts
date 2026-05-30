@@ -8,7 +8,7 @@ import { loadConfig } from './config.js';
 export const INTENT_STATUSES = ['new', 'snoozed', 'dismissed', 'replied'] as const;
 export type IntentStatus = (typeof INTENT_STATUSES)[number];
 
-export const intentStatusSchema = z.enum(INTENT_STATUSES, {
+const intentStatusSchema = z.enum(INTENT_STATUSES, {
   errorMap: () => ({
     message: 'Statut invalide (new, snoozed, dismissed ou replied).',
   }),

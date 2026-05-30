@@ -8,27 +8,17 @@ import { getSetting, getProductSetting } from './settings-service.js';
 import { releaseTweetsForRun, getCollectionDateForRun } from './tweet-store.js';
 import { deleteMonthlySummariesReferencingRun } from './monthly-summary-service.js';
 import { getProduct } from './product-service.js';
+import { publishRunning, collectRunning, getCurrentRunId, updateRunStats } from './run-state.js';
 
-const publishRunning = new Map<string, boolean>();
-const collectRunning = new Map<string, boolean>();
-
-export function isRunning(productId: string = DEFAULT_PRODUCT_ID): boolean {
-  return publishRunning.get(productId) === true;
-}
-
-export function isCollecting(productId: string = DEFAULT_PRODUCT_ID): boolean {
-  return collectRunning.get(productId) === true;
-}
-
-export function isAnyRunning(): boolean {
-  for (const v of publishRunning.values()) if (v) return true;
-  return false;
-}
-
-export function isAnyCollecting(): boolean {
-  for (const v of collectRunning.values()) if (v) return true;
-  return false;
-}
+export {
+  isRunning,
+  isCollecting,
+  isAnyRunning,
+  isAnyCollecting,
+  getCurrentRunId,
+  updateRunStats,
+  getSuccessfulRunsByMonth,
+} from './run-state.js';
 
 function resolveDiscordWebhook(config: Config, productId: string): string | undefined {
   const product = getProduct(productId);
@@ -207,50 +197,6 @@ export function getLastRun(productId: string = DEFAULT_PRODUCT_ID): RunRecord | 
     .get(productId) as RunRecord | undefined;
 }
 
-export function updateRunStats(
-  runId: number,
-  updates: Partial<Pick<RunRecord, 'tweets_fetched' | 'tweets_posted' | 'thread_ids' | 'summary'>>,
-) {
-  const db = getDb();
-  const sets: string[] = [];
-  const values: unknown[] = [];
-
-  if (updates.tweets_fetched !== undefined) {
-    sets.push('tweets_fetched = ?');
-    values.push(updates.tweets_fetched);
-  }
-  if (updates.tweets_posted !== undefined) {
-    sets.push('tweets_posted = ?');
-    values.push(updates.tweets_posted);
-  }
-  if (updates.thread_ids !== undefined) {
-    sets.push('thread_ids = ?');
-    values.push(updates.thread_ids);
-  }
-  if (updates.summary !== undefined) {
-    sets.push('summary = ?');
-    values.push(updates.summary);
-  }
-
-  if (sets.length > 0) {
-    values.push(runId);
-    db.prepare(`UPDATE runs SET ${sets.join(', ')} WHERE id = ?`).run(...values);
-  }
-}
-
-export function getCurrentRunId(productId: string = DEFAULT_PRODUCT_ID): number | undefined {
-  if (publishRunning.get(productId) !== true && collectRunning.get(productId) !== true) {
-    return undefined;
-  }
-  const db = getDb();
-  const row = db
-    .prepare(
-      "SELECT id FROM runs WHERE status = 'running' AND product_id = ? ORDER BY id DESC LIMIT 1",
-    )
-    .get(productId) as { id: number } | undefined;
-  return row?.id;
-}
-
 /**
  * Soft-deletes a summary: nulls the summary, sets status to 'deleted',
  * releases associated tweets, and cascades to monthly summaries.
@@ -424,21 +370,4 @@ export function countSuccessfulSummaries(
     .prepare(`SELECT COUNT(*) as count FROM runs WHERE ${clauses.join(' AND ')}`)
     .get(...params) as { count: number };
   return row.count;
-}
-
-export function getSuccessfulRunsByMonth(
-  year: number,
-  month: number,
-  productId: string = DEFAULT_PRODUCT_ID,
-): RunRecord[] {
-  const db = getDb();
-  const from = `${year}-${String(month).padStart(2, '0')}-01`;
-  const toMonth = month === 12 ? 1 : month + 1;
-  const toYear = month === 12 ? year + 1 : year;
-  const to = `${toYear}-${String(toMonth).padStart(2, '0')}-01`;
-  return db
-    .prepare(
-      `SELECT * FROM runs WHERE status = 'success' AND summary IS NOT NULL AND product_id = ? AND started_at >= ? AND started_at < ? ORDER BY started_at ASC`,
-    )
-    .all(productId, from, to) as RunRecord[];
 }

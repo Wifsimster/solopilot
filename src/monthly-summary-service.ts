@@ -1,6 +1,6 @@
 import type { Config } from './config.js';
 import { getDb, DEFAULT_PRODUCT_ID, type MonthlySummaryRecord } from './db.js';
-import { getSuccessfulRunsByMonth } from './run-service.js';
+import { getSuccessfulRunsByMonth } from './run-state.js';
 import { createAIFilter } from './ai-filter.js';
 import { logger } from './logger.js';
 
@@ -74,9 +74,7 @@ export function getMonthlySummary(
 ): MonthlySummaryRecord | undefined {
   const db = getDb();
   return db
-    .prepare(
-      'SELECT * FROM monthly_summaries WHERE product_id = ? AND year = ? AND month = ?',
-    )
+    .prepare('SELECT * FROM monthly_summaries WHERE product_id = ? AND year = ? AND month = ?')
     .get(productId, year, month) as MonthlySummaryRecord | undefined;
 }
 
@@ -102,8 +100,8 @@ export function deleteMonthlySummariesReferencingRun(runId: number): void {
     source_run_ids: string;
   }[];
   for (const row of all) {
-    const ids: number[] = JSON.parse(row.source_run_ids);
-    if (ids.includes(runId)) {
+    const ids = new Set<number>(JSON.parse(row.source_run_ids));
+    if (ids.has(runId)) {
       db.prepare('DELETE FROM monthly_summaries WHERE id = ?').run(row.id);
       logger.info('Deleted stale monthly summary', {
         monthlySummaryId: row.id,

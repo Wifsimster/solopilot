@@ -1,5 +1,4 @@
-import { getDb, type SettingRecord, type ProductSettingRecord, DEFAULT_PRODUCT_ID } from './db.js';
-import { tryLoadConfigWithOverrides, type ConfigResult, type ConfigError } from './config.js';
+import { getDb, type SettingRecord, type ProductSettingRecord } from './db.js';
 
 const EDITABLE_KEYS = [
   'AI_MODEL',
@@ -26,10 +25,6 @@ export function isEditableKey(key: string): key is EditableKey {
 
 export function isCredentialKey(key: string): key is CredentialKey {
   return (CREDENTIAL_KEYS as readonly string[]).includes(key);
-}
-
-export function isSettableKey(key: string): key is SettableKey {
-  return isEditableKey(key) || isCredentialKey(key);
 }
 
 export function getSettings(): SettingRecord[] {
@@ -83,11 +78,6 @@ export function setProductSetting(productId: string, key: string, value: string 
   ).run(productId, key, value);
 }
 
-export function deleteProductSetting(productId: string, key: string): void {
-  const db = getDb();
-  db.prepare('DELETE FROM product_settings WHERE product_id = ? AND key = ?').run(productId, key);
-}
-
 export function getProductSettings(productId: string): ProductSettingRecord[] {
   const db = getDb();
   return db
@@ -102,20 +92,6 @@ export function getProductSettingsMap(productId: string): Record<string, string>
     if (r.value !== null) map[r.key] = r.value;
   }
   return map;
-}
-
-/**
- * Resolves config by merging in order: env → global settings → product_settings.
- * Highest priority wins.
- */
-export function tryLoadConfigForProduct(
-  productId: string = DEFAULT_PRODUCT_ID,
-): ConfigResult | ConfigError {
-  const overrides: Record<string, string> = {
-    ...getSettingsMap(),
-    ...getProductSettingsMap(productId),
-  };
-  return tryLoadConfigWithOverrides(overrides);
 }
 
 export function maskCredential(value: string): string {

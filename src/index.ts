@@ -1,7 +1,7 @@
 import { loadConfig, type Config } from './config.js';
 import { logger } from './logger.js';
 import { createAIFilter } from './ai-filter.js';
-import { getCurrentRunId, updateRunStats } from './run-service.js';
+import { getCurrentRunId, updateRunStats } from './run-state.js';
 import { getUnpublishedTweets, markTweetsAsUsed } from './tweet-store.js';
 import { getTodayDateParis } from './date-utils.js';
 import { DEFAULT_PRODUCT_ID } from './db.js';
@@ -52,12 +52,20 @@ export async function run(
 
   if (!summary) {
     logger.info('No AI news found — skipping', { productId });
-    if (runId) markTweetsAsUsed(items.map((t) => t.id), runId);
+    if (runId)
+      markTweetsAsUsed(
+        items.map((t) => t.id),
+        runId,
+      );
     return;
   }
 
   // 4. Mark items as consumed by this run
-  if (runId) markTweetsAsUsed(items.map((t) => t.id), runId);
+  if (runId)
+    markTweetsAsUsed(
+      items.map((t) => t.id),
+      runId,
+    );
 
   logger.info('Summary generated', { length: summary.length, productId });
 }

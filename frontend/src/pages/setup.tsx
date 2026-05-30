@@ -1,3 +1,4 @@
+import { Fragment, createElement, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,40 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Settings as SettingsIcon, ArrowRight } from "lucide-react";
 import type { SetupResponse } from "@/types";
 
+// Inline tags allowed in the trusted `howToFind` help strings (defined in the
+// backend constant REQUIRED_CREDENTIALS). Rendered as React elements rather than
+// injected as raw HTML, so no dangerouslySetInnerHTML is needed.
+const ALLOWED_INLINE_TAGS = new Set(["a", "code", "strong", "kbd", "em", "b"]);
+
+function nodeToReact(node: Node, key: number): ReactNode {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+  const el = node as Element;
+  const tag = el.tagName.toLowerCase();
+  const children = Array.from(el.childNodes).map((child, i) => nodeToReact(child, i));
+  if (!ALLOWED_INLINE_TAGS.has(tag)) {
+    // Drop unknown tags but keep their text content.
+    return createElement(Fragment, { key }, ...children);
+  }
+  if (tag === "a") {
+    const href = el.getAttribute("href") ?? undefined;
+    return createElement(
+      "a",
+      { key, href, target: "_blank", rel: "noopener noreferrer", className: "underline" },
+      ...children,
+    );
+  }
+  return createElement(tag, { key }, ...children);
+}
+
+function TrustedInline({ html }: { html: string }) {
+  if (typeof window === "undefined" || typeof DOMParser === "undefined") {
+    return html;
+  }
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  return Array.from(doc.body.childNodes).map((node, i) => nodeToReact(node, i));
+}
+
 export function SetupPage() {
   const { data: setup, loading } = useApi<SetupResponse>("/api/setup");
 
@@ -15,7 +50,7 @@ export function SetupPage() {
       <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-muted/30">
         <div className="max-w-2xl w-full mx-auto space-y-6">
           <div className="text-center space-y-3">
-            <Skeleton className="h-14 w-14 mx-auto rounded-full" />
+            <Skeleton className="size-14 mx-auto rounded-full" />
             <Skeleton className="h-8 w-64 mx-auto" />
             <Skeleton className="h-4 w-96 mx-auto" />
           </div>
@@ -35,10 +70,10 @@ export function SetupPage() {
       <div className="max-w-2xl w-full mx-auto space-y-6">
         <div className="text-center space-y-3">
           <div
-            className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary"
+            className="inline-flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary"
             aria-hidden="true"
           >
-            <SettingsIcon className="h-7 w-7" />
+            <SettingsIcon className="size-7" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Configuration requise</h1>
           <p className="text-muted-foreground">
@@ -47,20 +82,21 @@ export function SetupPage() {
           </p>
         </div>
 
-        <div
-          className="flex gap-1"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuenow={configuredCount}
-          aria-valuemax={totalCount}
-          aria-label={`Progression de la configuration : ${configuredCount} sur ${totalCount}`}
-        >
-          {credentials.map((cred) => (
-            <div
-              key={cred.key}
-              className={`h-2 flex-1 rounded-full transition-colors ${cred.configured ? 'bg-success' : 'bg-muted-foreground/20'}`}
-            />
-          ))}
+        <div>
+          <progress
+            className="sr-only"
+            value={configuredCount}
+            max={totalCount}
+            aria-label={`Progression de la configuration : ${configuredCount} sur ${totalCount}`}
+          />
+          <div className="flex gap-1" aria-hidden="true">
+            {credentials.map((cred) => (
+              <div
+                key={cred.key}
+                className={`h-2 flex-1 rounded-full transition-colors ${cred.configured ? 'bg-success' : 'bg-muted-foreground/20'}`}
+              />
+            ))}
+          </div>
         </div>
 
       <Card>
@@ -77,10 +113,9 @@ export function SetupPage() {
                 <div className="space-y-1 flex-1">
                   <p className="font-medium text-sm">{cred.label}</p>
                   <code className="text-xs text-muted-foreground">{cred.key}</code>
-                  <p
-                    className="text-xs text-muted-foreground leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: cred.howToFind }}
-                  />
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    <TrustedInline html={cred.howToFind} />
+                  </p>
                 </div>
               </li>
             ))}
@@ -100,8 +135,12 @@ export function SetupPage() {
             </p>
             <pre className="rounded-lg border bg-muted p-4 font-mono text-xs overflow-x-auto">
               {credentials
-                .filter((c) => !c.configured)
-                .map((c) => `${c.key}=your-${c.key.toLowerCase().replace(/_/g, "-")}-here`)
+                .reduce<string[]>((lines, c) => {
+                  if (!c.configured) {
+                    lines.push(`${c.key}=your-${c.key.toLowerCase().replace(/_/g, "-")}-here`);
+                  }
+                  return lines;
+                }, [])
                 .join("\n")}
             </pre>
           </CardContent>
@@ -136,7 +175,7 @@ export function SetupPage() {
           <Button asChild className="w-full" size="lg">
             <Link to="/">
               Accéder au dashboard
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              <ArrowRight className="size-4" aria-hidden="true" />
             </Link>
           </Button>
         ) : (

@@ -3,6 +3,7 @@
   "version": "1.32.0",
   "description": "Weekly AI news curator that scrapes X timeline and generates AI-related summaries",
   "type": "module",
+  "main": "dist/scheduler.js",
   "engines": {
     "node": ">=24.0.0"
   },

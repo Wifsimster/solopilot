@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useApi } from '@/hooks/use-api';
-import { useSelectedProduct } from '@/lib/product-context';
+import { useSelectedProduct } from '@/lib/product-context-hooks';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -104,23 +104,23 @@ interface DraftCardProps {
 function DraftCard({ draft, onMutated }: DraftCardProps) {
   const initialText = draft.edited_text ?? draft.text;
   const [text, setText] = useState(initialText);
-  const [lastSavedText, setLastSavedText] = useState(initialText);
   const [usedOn, setUsedOn] = useState<string>(draft.used_on ?? 'x');
   const [busy, setBusy] = useState<ContentDraftStatus | 'save' | null>(null);
 
   // Keep textarea in sync if the server-side draft changes (e.g. after refetch)
-  // while preserving in-flight user edits.
-  useEffect(() => {
-    const incoming = draft.edited_text ?? draft.text;
-    if (incoming !== lastSavedText) {
-      if (text === lastSavedText) {
-        setText(incoming);
-      }
-      setLastSavedText(incoming);
+  // while preserving in-flight user edits. The last saved value lives in a ref
+  // (it is never rendered) and the sync runs during render rather than in an
+  // effect to avoid an extra pass. A save also updates the ref directly.
+  const lastSavedTextRef = useRef(initialText);
+  const incomingText = draft.edited_text ?? draft.text;
+  if (incomingText !== lastSavedTextRef.current) {
+    if (text === lastSavedTextRef.current) {
+      setText(incomingText);
     }
-  }, [draft.edited_text, draft.text, lastSavedText, text]);
+    lastSavedTextRef.current = incomingText;
+  }
 
-  const dirty = text !== lastSavedText && text.trim().length > 0;
+  const dirty = text !== lastSavedTextRef.current && text.trim().length > 0;
 
   const patch = useCallback(
     async (
@@ -142,7 +142,7 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
         }
         toast.success(successMsg);
         if (typeof body.edited_text === 'string') {
-          setLastSavedText(body.edited_text);
+          lastSavedTextRef.current = body.edited_text;
         }
         onMutated();
       } catch {
@@ -163,7 +163,7 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
     );
   }, [dirty, patch, text]);
 
-  const handleBlur = useCallback(() => {
+  const saveDraftIfDirty = useCallback(() => {
     if (dirty) {
       void handleSave();
     }
@@ -222,7 +222,7 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onBlur={handleBlur}
+          onBlur={saveDraftIfDirty}
           rows={5}
           aria-label="Texte du draft"
         />
@@ -236,7 +236,7 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
               onClick={handleCopy}
               disabled={!text.trim()}
             >
-              <Copy className="h-3.5 w-3.5 mr-1" />
+              <Copy className="size-3.5 mr-1" />
               Copier
             </Button>
             {dirty && (
@@ -248,9 +248,9 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
                 disabled={busy !== null}
               >
                 {busy === 'save' ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  <Loader2 className="size-3.5 mr-1 animate-spin" />
                 ) : (
-                  <Save className="h-3.5 w-3.5 mr-1" />
+                  <Save className="size-3.5 mr-1" />
                 )}
                 Sauvegarder
               </Button>
@@ -283,9 +283,9 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
                   disabled={busy !== null}
                 >
                   {busy === 'used' ? (
-                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                    <Loader2 className="size-3.5 mr-1 animate-spin" />
                   ) : (
-                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                    <CheckCircle2 className="size-3.5 mr-1" />
                   )}
                   Marquer utilisée
                 </Button>
@@ -300,9 +300,9 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
                 disabled={busy !== null}
               >
                 {busy === 'discarded' ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  <Loader2 className="size-3.5 mr-1 animate-spin" />
                 ) : (
-                  <XCircle className="h-3.5 w-3.5 mr-1" />
+                  <XCircle className="size-3.5 mr-1" />
                 )}
                 Jeter
               </Button>
@@ -316,9 +316,9 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
                 disabled={busy !== null}
               >
                 {busy === 'pending' ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  <Loader2 className="size-3.5 mr-1 animate-spin" />
                 ) : (
-                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                  <RotateCcw className="size-3.5 mr-1" />
                 )}
                 Restaurer
               </Button>
@@ -352,7 +352,7 @@ function DraftsList({
     return (
       <Card>
         <CardContent className="py-10 text-center space-y-2">
-          <Wand2 className="h-8 w-8 mx-auto text-muted-foreground opacity-60" />
+          <Wand2 className="size-8 mx-auto text-muted-foreground opacity-60" />
           <p className="text-sm font-medium">{emptyTitle}</p>
           <p className="text-xs text-muted-foreground">{emptyHint}</p>
         </CardContent>
@@ -494,9 +494,9 @@ export function StudioPage() {
                 size="sm"
               >
                 {generating ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  <Loader2 className="size-3.5 mr-1 animate-spin" />
                 ) : (
-                  <Sparkles className="h-3.5 w-3.5 mr-1" />
+                  <Sparkles className="size-3.5 mr-1" />
                 )}
                 {btn.label}
               </Button>
@@ -511,7 +511,7 @@ export function StudioPage() {
 
       {firstError && (
         <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
+          <AlertCircle className="size-4" />
           <AlertDescription>
             Impossible de charger les drafts : {firstError}
           </AlertDescription>

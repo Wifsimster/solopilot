@@ -7,7 +7,8 @@ const slugSchema = z
   .min(1)
   .max(64)
   .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
-    message: 'L\'identifiant doit etre en minuscules, alphanumerique, avec tirets (pas en debut ni en fin).',
+    message:
+      "L'identifiant doit etre en minuscules, alphanumerique, avec tirets (pas en debut ni en fin).",
   });
 
 const subredditNameSchema = z.string().regex(/^[A-Za-z0-9_]{2,21}$/, {
@@ -23,23 +24,21 @@ const hnKeywordSchema = z
 const intentKeywordSchema = z
   .string()
   .trim()
-  .min(2, { message: 'Mot-cle d\'intention trop court (min 2 caracteres).' })
-  .max(128, { message: 'Mot-cle d\'intention trop long (max 128 caracteres).' });
+  .min(2, { message: "Mot-cle d'intention trop court (min 2 caracteres)." })
+  .max(128, { message: "Mot-cle d'intention trop long (max 128 caracteres)." });
 
 export const REPLY_VOICES = ['decontractee', 'professionnelle', 'directe', 'aidante'] as const;
 export type ReplyVoice = (typeof REPLY_VOICES)[number];
 
 const replyVoiceSchema = z.enum(REPLY_VOICES, {
   errorMap: () => ({
-    message:
-      'Voix de reponse invalide (decontractee, professionnelle, directe ou aidante).',
+    message: 'Voix de reponse invalide (decontractee, professionnelle, directe ou aidante).',
   }),
 });
 
 const contentVoiceSchema = z.enum(REPLY_VOICES, {
   errorMap: () => ({
-    message:
-      'Voix de contenu invalide (decontractee, professionnelle, directe ou aidante).',
+    message: 'Voix de contenu invalide (decontractee, professionnelle, directe ou aidante).',
   }),
 });
 
@@ -61,8 +60,8 @@ const valuePropSchema = z
 const callToActionSchema = z
   .string()
   .trim()
-  .min(3, { message: 'Appel a l\'action trop court (min 3 caracteres).' })
-  .max(200, { message: 'Appel a l\'action trop long (max 200 caracteres).' });
+  .min(3, { message: "Appel a l'action trop court (min 3 caracteres)." })
+  .max(200, { message: "Appel a l'action trop long (max 200 caracteres)." });
 
 const productBaseSchema = z.object({
   id: slugSchema,
@@ -95,7 +94,7 @@ const productBaseSchema = z.object({
   intent_enabled: z.boolean().optional(),
   intent_keywords: z
     .array(intentKeywordSchema)
-    .max(30, { message: 'Trop de mots-cles d\'intention (max 30).' })
+    .max(30, { message: "Trop de mots-cles d'intention (max 30)." })
     .optional()
     .nullable(),
   product_description: z
@@ -122,7 +121,7 @@ const productBaseSchema = z.object({
     .nullable(),
   call_to_actions: z
     .array(callToActionSchema)
-    .max(5, { message: 'Trop d\'appels a l\'action (max 5).' })
+    .max(5, { message: "Trop d'appels a l'action (max 5)." })
     .optional()
     .nullable(),
   content_voice: contentVoiceSchema.optional().nullable(),
@@ -164,7 +163,7 @@ export const productCreateSchema = productBaseSchema
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['intent_keywords'],
-        message: 'Au moins un mot-cle d\'intention est requis quand le matching est active.',
+        message: "Au moins un mot-cle d'intention est requis quand le matching est active.",
       });
     }
   });
@@ -174,11 +173,7 @@ export const productUpdateSchema = productBaseSchema
   .omit({ id: true })
   .refine(
     (data) => {
-      if (
-        data.x_enabled === false &&
-        data.reddit_enabled === false &&
-        data.hn_enabled === false
-      ) {
+      if (data.x_enabled === false && data.reddit_enabled === false && data.hn_enabled === false) {
         return false;
       }
       return true;
@@ -189,20 +184,19 @@ export const productUpdateSchema = productBaseSchema
 export type ProductCreateInput = z.infer<typeof productCreateSchema>;
 export type ProductUpdateInput = z.infer<typeof productUpdateSchema>;
 
-export interface ProductView
-  extends Omit<
-    ProductRecord,
-    | 'reddit_subreddits'
-    | 'x_enabled'
-    | 'reddit_enabled'
-    | 'hn_enabled'
-    | 'hn_keywords'
-    | 'intent_enabled'
-    | 'intent_keywords'
-    | 'value_props'
-    | 'call_to_actions'
-    | 'content_language'
-  > {
+export interface ProductView extends Omit<
+  ProductRecord,
+  | 'reddit_subreddits'
+  | 'x_enabled'
+  | 'reddit_enabled'
+  | 'hn_enabled'
+  | 'hn_keywords'
+  | 'intent_enabled'
+  | 'intent_keywords'
+  | 'value_props'
+  | 'call_to_actions'
+  | 'content_language'
+> {
   x_enabled: boolean;
   reddit_enabled: boolean;
   reddit_subreddits: string[];
@@ -244,9 +238,7 @@ export function toProductView(product: ProductRecord): ProductView {
     intent_keywords: deserializeStringArray(product.intent_keywords),
     value_props: deserializeStringArray(product.value_props),
     call_to_actions: deserializeStringArray(product.call_to_actions),
-    content_language: isContentLanguage(product.content_language)
-      ? product.content_language
-      : 'fr',
+    content_language: isContentLanguage(product.content_language) ? product.content_language : 'fr',
   };
 }
 
@@ -269,11 +261,6 @@ export function productExists(id: string): boolean {
   return !!getProduct(id);
 }
 
-export function isProductActive(id: string): boolean {
-  const p = getProduct(id);
-  return !!p && p.archived_at === null;
-}
-
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
@@ -294,9 +281,7 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
       ? JSON.stringify(input.reddit_subreddits)
       : null,
     input.hn_enabled === true ? 1 : 0,
-    input.hn_keywords && input.hn_keywords.length > 0
-      ? JSON.stringify(input.hn_keywords)
-      : null,
+    input.hn_keywords && input.hn_keywords.length > 0 ? JSON.stringify(input.hn_keywords) : null,
     input.intent_enabled === true ? 1 : 0,
     input.intent_keywords && input.intent_keywords.length > 0
       ? JSON.stringify(input.intent_keywords)
@@ -305,9 +290,7 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
     input.reply_voice ?? null,
     input.product_url ?? null,
     input.target_audience ?? null,
-    input.value_props && input.value_props.length > 0
-      ? JSON.stringify(input.value_props)
-      : null,
+    input.value_props && input.value_props.length > 0 ? JSON.stringify(input.value_props) : null,
     input.call_to_actions && input.call_to_actions.length > 0
       ? JSON.stringify(input.call_to_actions)
       : null,
@@ -370,9 +353,7 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
   if (patch.hn_keywords !== undefined) {
     sets.push('hn_keywords = ?');
     values.push(
-      patch.hn_keywords && patch.hn_keywords.length > 0
-        ? JSON.stringify(patch.hn_keywords)
-        : null,
+      patch.hn_keywords && patch.hn_keywords.length > 0 ? JSON.stringify(patch.hn_keywords) : null,
     );
   }
   if (patch.intent_enabled !== undefined) {
@@ -406,9 +387,7 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
   if (patch.value_props !== undefined) {
     sets.push('value_props = ?');
     values.push(
-      patch.value_props && patch.value_props.length > 0
-        ? JSON.stringify(patch.value_props)
-        : null,
+      patch.value_props && patch.value_props.length > 0 ? JSON.stringify(patch.value_props) : null,
     );
   }
   if (patch.call_to_actions !== undefined) {
@@ -448,14 +427,6 @@ export function archiveProduct(id: string): boolean {
     return true;
   }
   return false;
-}
-
-export function unarchiveProduct(id: string): boolean {
-  const db = getDb();
-  const result = db
-    .prepare('UPDATE products SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL')
-    .run(id);
-  return result.changes > 0;
 }
 
 export function deleteProductHard(id: string): boolean {

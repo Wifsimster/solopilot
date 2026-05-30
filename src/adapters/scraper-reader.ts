@@ -314,7 +314,10 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
         const updated = await refreshGqlIds();
         if (updated) {
           const retryUrl = `https://x.com/i/api/graphql/${homeTimelineId}/HomeLatestTimeline?variables=${encodeURIComponent(JSON.stringify(variables))}&features=${TIMELINE_FEATURES_ENCODED}`;
-          const retryResponse = await fetch(retryUrl, { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+          const retryResponse = await fetch(retryUrl, {
+            headers,
+            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          });
           if (retryResponse.ok) {
             const retryJson = (await retryResponse.json()) as Record<string, unknown>;
             return parseHomeTimelineResponse(retryJson);
@@ -521,6 +524,7 @@ export async function detectGqlIds(): Promise<{
 
   const result: { UserByScreenName?: string; HomeLatestTimeline?: string } = {};
   const operations = ['UserByScreenName', 'HomeLatestTimeline'] as const;
+  const operationSet = new Set<string>(operations);
   const idPattern = /queryId:"([^"]+)",operationName:"([^"]+)",operationType:"query"/g;
 
   // Fetch bundles concurrently in batches, stop early once we found both
@@ -530,6 +534,7 @@ export async function detectGqlIds(): Promise<{
     i += 5
   ) {
     const batch = scriptUrls.slice(i, i + 5);
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop -- batches are processed sequentially on purpose to stop early once both GraphQL op IDs are found
     const scripts = await Promise.all(
       batch.map((url) =>
         fetch(url)
@@ -542,7 +547,7 @@ export async function detectGqlIds(): Promise<{
       let m: RegExpExecArray | null;
       while ((m = idPattern.exec(js)) !== null) {
         const [, queryId, opName] = m;
-        if (operations.includes(opName as (typeof operations)[number])) {
+        if (operationSet.has(opName)) {
           result[opName as keyof typeof result] = queryId;
         }
       }

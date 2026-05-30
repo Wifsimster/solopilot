@@ -31,7 +31,7 @@ export function StatCard({ title, icon: Icon, tone = 'default', hint, children }
             )}
             aria-hidden="true"
           >
-            <Icon className="h-5 w-5" />
+            <Icon className="size-5" />
           </div>
         )}
         <div className="min-w-0 flex-1 space-y-0.5">

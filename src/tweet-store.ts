@@ -1,5 +1,5 @@
 import { getDb, DEFAULT_PRODUCT_ID } from './db.js';
-import type { Item, ItemSource, Tweet } from './ports.js';
+import type { Item, ItemSource } from './ports.js';
 import { logger } from './logger.js';
 
 export interface StoreItemsResult {
@@ -58,17 +58,6 @@ export function storeItems(
   return { inserted, insertedIds };
 }
 
-/**
- * Backward-compatible alias — see storeItems.
- */
-export function storeTweets(
-  tweets: Tweet[],
-  collectionDate: string,
-  productId: string = DEFAULT_PRODUCT_ID,
-): StoreItemsResult {
-  return storeItems(tweets, collectionDate, productId);
-}
-
 interface ItemQueryOptions {
   source?: ItemSource;
 }
@@ -93,11 +82,7 @@ export function getUnpublishedTweets(
   options: ItemQueryOptions = {},
 ): Item[] {
   const db = getDb();
-  const clauses = [
-    'collection_date = ?',
-    'product_id = ?',
-    'used_in_run_id IS NULL',
-  ];
+  const clauses = ['collection_date = ?', 'product_id = ?', 'used_in_run_id IS NULL'];
   const params: unknown[] = [collectionDate, productId];
   if (options.source) {
     clauses.push('source = ?');
@@ -156,11 +141,7 @@ export function countUnpublishedTweets(
   options: ItemQueryOptions = {},
 ): number {
   const db = getDb();
-  const clauses = [
-    'collection_date = ?',
-    'product_id = ?',
-    'used_in_run_id IS NULL',
-  ];
+  const clauses = ['collection_date = ?', 'product_id = ?', 'used_in_run_id IS NULL'];
   const params: unknown[] = [collectionDate, productId];
   if (options.source) {
     clauses.push('source = ?');
@@ -222,8 +203,7 @@ export function countTweetsForDate(
 }
 
 function mapRowToItem(row: ItemRow, productId: string): Item {
-  const source: ItemSource =
-    row.source === 'reddit' ? 'reddit' : row.source === 'hn' ? 'hn' : 'x';
+  const source: ItemSource = row.source === 'reddit' ? 'reddit' : row.source === 'hn' ? 'hn' : 'x';
   return {
     id: row.id,
     source,

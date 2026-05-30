@@ -43,7 +43,7 @@ function truncate(text: string, max: number): string {
 /**
  * Format a run summary as a Discord embed payload.
  */
-export function formatDiscordPayload(summary: string, runId: number): DiscordPayload {
+function formatDiscordPayload(summary: string, runId: number): DiscordPayload {
   const safe = sanitize(summary);
 
   return {
