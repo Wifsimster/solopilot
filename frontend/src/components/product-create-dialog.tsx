@@ -222,6 +222,7 @@ interface FormState {
   productDescription: string;
   replyVoice: ReplyVoice | null;
   productUrl: string;
+  productionUrl: string;
   targetAudience: string;
   valueProps: string[];
   callToActions: string[];
@@ -261,6 +262,7 @@ function buildInitialFormState(initialValues: ProductRecord | null): FormState {
         ? initialValues.reply_voice
         : null,
     productUrl: initialValues?.product_url ?? '',
+    productionUrl: initialValues?.production_url ?? '',
     targetAudience: initialValues?.target_audience ?? '',
     valueProps: initialValues?.value_props ?? [],
     callToActions: initialValues?.call_to_actions ?? [],
@@ -406,6 +408,12 @@ async function submitProduct({
     return;
   }
 
+  const trimmedProductionUrl = state.productionUrl.trim();
+  if (trimmedProductionUrl && !/^https?:\/\//i.test(trimmedProductionUrl)) {
+    set('error', "L'URL de production doit commencer par http:// ou https://.");
+    return;
+  }
+
   if (state.targetAudience.length > TARGET_AUDIENCE_MAX) {
     set('error', `Audience cible trop longue (max ${TARGET_AUDIENCE_MAX} caractères).`);
     return;
@@ -514,6 +522,12 @@ async function submitProduct({
       body.product_url = trimmedProductUrl;
     } else if (!isEdit) {
       body.product_url = null;
+    }
+
+    if (trimmedProductionUrl) {
+      body.production_url = trimmedProductionUrl;
+    } else if (!isEdit) {
+      body.production_url = null;
     }
 
     const trimmedAudience = state.targetAudience.trim();
@@ -930,17 +944,33 @@ function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps)
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="product-url">URL du produit</Label>
+        <Label htmlFor="product-url">URL du dépôt / source</Label>
         <Input
           id="product-url"
           type="url"
           value={state.productUrl}
           onChange={(e) => set('productUrl', e.target.value)}
+          placeholder="https://github.com/org/repo"
+          autoComplete="off"
+        />
+        <p className="text-xs text-muted-foreground">
+          Sert à enrichir les suggestions de l'IA (ex. dépôt GitHub). N'est pas inséré dans les
+          posts.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="production-url">URL de production</Label>
+        <Input
+          id="production-url"
+          type="url"
+          value={state.productionUrl}
+          onChange={(e) => set('productionUrl', e.target.value)}
           placeholder="https://exemple.com"
           autoComplete="off"
         />
         <p className="text-xs text-muted-foreground">
-          URL principale (doit commencer par http:// ou https://).
+          Lien public inséré dans les posts générés. À défaut, l'URL du dépôt est utilisée.
         </p>
       </div>
 

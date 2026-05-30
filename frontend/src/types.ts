@@ -114,6 +114,7 @@ export interface ProductRecord {
   product_description: string | null;
   reply_voice: ReplyVoice | null;
   product_url: string | null;
+  production_url: string | null;
   target_audience: string | null;
   value_props: string[];
   call_to_actions: string[];

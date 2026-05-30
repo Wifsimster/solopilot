@@ -273,6 +273,7 @@ Règles :
   * reddit : ~500 caractères max, ton conversationnel, première personne, pas de spam évident.
   * generic : ~500 caractères max, ton type LinkedIn, professionnel mais accessible.
 - Intègre subtilement un appel à l'action quand pertinent (parmi ceux fournis).
+- Quand tu inclus un lien, utilise EXACTEMENT l'URL à promouvoir fournie. N'invente jamais d'URL et ne lie jamais vers un dépôt de code (ex. github.com).
 - Pas de mention d'IA, de bot, ou de génération automatique.
 - Pas d'emojis sauf si voix = decontractee.
 - Chaque draft a un \`angle\` court (2-6 mots) qui résume l'approche.
@@ -832,9 +833,11 @@ export async function generatePosts(
       ? product.call_to_actions.map((c, i) => `${i + 1}. ${c}`).join('\n')
       : "(aucun appel a l'action fourni)";
 
+  const promoUrl = product.production_url || product.product_url;
+
   const userPayload = `PRODUIT
 Nom: ${product.name}
-URL: ${product.product_url || '(aucune URL fournie)'}
+URL à promouvoir: ${promoUrl || '(aucune URL fournie)'}
 Description: ${product.product_description || '(aucune description fournie)'}
 Audience cible: ${product.target_audience || '(non specifiee)'}
 

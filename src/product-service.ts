@@ -109,6 +109,12 @@ const productBaseSchema = z.object({
     .max(2000, { message: 'URL du produit trop longue (max 2000 caracteres).' })
     .optional()
     .nullable(),
+  production_url: z
+    .string()
+    .url({ message: 'URL de production invalide.' })
+    .max(2000, { message: 'URL de production trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
   target_audience: z
     .string()
     .max(500, { message: 'Audience cible trop longue (max 500 caracteres).' })
@@ -264,8 +270,8 @@ export function productExists(id: string): boolean {
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
-    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords, product_description, reply_voice, product_url, target_audience, value_props, call_to_actions, content_voice, content_language)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.name,
@@ -289,6 +295,7 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
     input.product_description ?? null,
     input.reply_voice ?? null,
     input.product_url ?? null,
+    input.production_url ?? null,
     input.target_audience ?? null,
     input.value_props && input.value_props.length > 0 ? JSON.stringify(input.value_props) : null,
     input.call_to_actions && input.call_to_actions.length > 0
@@ -379,6 +386,10 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
   if (patch.product_url !== undefined) {
     sets.push('product_url = ?');
     values.push(patch.product_url ?? null);
+  }
+  if (patch.production_url !== undefined) {
+    sets.push('production_url = ?');
+    values.push(patch.production_url ?? null);
   }
   if (patch.target_audience !== undefined) {
     sets.push('target_audience = ?');
