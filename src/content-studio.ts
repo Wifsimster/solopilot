@@ -340,11 +340,11 @@ Reponds STRICTEMENT en JSON avec la structure suivante :
 }`;
 
 /**
- * Propose a concise target-audience description for a product using the AI
- * model. Works from raw form values (name, URL, description, value props) so it
- * can be called before the product is persisted.
+ * Load the AI config and build an OpenAI client for a content-studio
+ * suggestion, throwing a French `ContentStudioError` when the config or token
+ * is missing. Shared by the audience and CTA suggestion helpers.
  */
-export async function suggestTargetAudience(input: SuggestAudienceInput): Promise<string> {
+function createSuggestionClient(): { client: OpenAI; config: ReturnType<typeof loadConfig> } {
   let config;
   try {
     config = loadConfig();
@@ -365,6 +365,17 @@ export async function suggestTargetAudience(input: SuggestAudienceInput): Promis
     apiKey: config.GITHUB_TOKEN,
     timeout: GENERATE_AI_TIMEOUT_MS,
   });
+
+  return { client, config };
+}
+
+/**
+ * Propose a concise target-audience description for a product using the AI
+ * model. Works from raw form values (name, URL, description, value props) so it
+ * can be called before the product is persisted.
+ */
+export async function suggestTargetAudience(input: SuggestAudienceInput): Promise<string> {
+  const { client, config } = createSuggestionClient();
 
   const language = input.content_language ?? 'fr';
   const valueProps =
@@ -425,6 +436,151 @@ Propose une description concise de l'audience cible ideale pour ce produit.`;
   }
 
   return validated.data.target_audience.trim().slice(0, TARGET_AUDIENCE_MAX_LENGTH);
+}
+
+const CTA_MIN_LENGTH = 3;
+const CTA_MAX_LENGTH = 200;
+const CTAS_MAX_COUNT = 5;
+
+export const suggestCtasSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, { message: 'Le nom du produit est requis.' })
+    .max(120, { message: 'Nom du produit trop long (max 120 caracteres).' }),
+  product_url: z
+    .string()
+    .trim()
+    .max(2000, { message: 'URL du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  product_description: z
+    .string()
+    .trim()
+    .max(2000, { message: 'Description du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  target_audience: z
+    .string()
+    .trim()
+    .max(500, { message: 'Audience cible trop longue (max 500 caracteres).' })
+    .optional()
+    .nullable(),
+  value_props: z
+    .array(z.string().trim().min(1).max(200))
+    .max(10, { message: 'Trop de propositions de valeur (max 10).' })
+    .optional()
+    .nullable(),
+  content_language: z.enum(['fr', 'en']).optional().nullable(),
+});
+
+export type SuggestCtasInput = z.infer<typeof suggestCtasSchema>;
+
+const suggestCtasResponseSchema = z.object({
+  call_to_actions: z.array(z.string().min(1)).min(1),
+});
+
+const SUGGEST_CTAS_SYSTEM_PROMPT = `Tu es un copywriter spécialisé en conversion. On te donne les informations d'un produit (nom, URL, description, audience cible, propositions de valeur) et tu dois proposer des appels à l'action (CTA) courts et percutants.
+
+Regles :
+- Reponds dans la langue demandee (fr ou en).
+- Propose entre 3 et ${CTAS_MAX_COUNT} CTA, varies (essai gratuit, demande de demo, inscription, telechargement, contact...).
+- Chaque CTA fait entre ${CTA_MIN_LENGTH} et ${CTA_MAX_LENGTH} caracteres, a l'imperatif, oriente action.
+- Pas de numerotation, pas de ponctuation finale superflue, pas d'emojis.
+- Pas de mention d'IA ou de generation automatique.
+
+Reponds STRICTEMENT en JSON avec la structure suivante :
+{
+  "call_to_actions": ["<cta 1>", "<cta 2>", "<cta 3>"]
+}`;
+
+/**
+ * Propose a short list of calls to action for a product using the AI model.
+ * Works from raw form values so it can be called before the product is
+ * persisted. The returned CTAs are trimmed, length-clamped, de-duplicated and
+ * capped at {@link CTAS_MAX_COUNT}.
+ */
+export async function suggestCallToActions(input: SuggestCtasInput): Promise<string[]> {
+  const { client, config } = createSuggestionClient();
+
+  const language = input.content_language ?? 'fr';
+  const valueProps =
+    input.value_props && input.value_props.length > 0
+      ? input.value_props.map((v, i) => `${i + 1}. ${v}`).join('\n')
+      : '(aucune proposition de valeur fournie)';
+
+  const userPayload = `PRODUIT
+Nom: ${input.name}
+URL: ${input.product_url || '(aucune URL fournie)'}
+Description: ${input.product_description || '(aucune description fournie)'}
+Audience cible: ${input.target_audience || '(non specifiee)'}
+
+PROPOSITIONS DE VALEUR
+${valueProps}
+
+PARAMETRES
+Langue: ${language}
+
+Propose entre 3 et ${CTAS_MAX_COUNT} appels a l'action courts et varies pour ce produit.`;
+
+  let raw: string;
+  try {
+    const response = await client.chat.completions.create({
+      model: config.AI_MODEL,
+      max_tokens: 512,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SUGGEST_CTAS_SYSTEM_PROMPT },
+        { role: 'user', content: userPayload },
+      ],
+    });
+    logger.info('CTA suggestion API usage', {
+      inputTokens: response.usage?.prompt_tokens,
+      outputTokens: response.usage?.completion_tokens,
+      model: response.model,
+    });
+    raw = response.choices[0]?.message?.content ?? '';
+  } catch (err) {
+    throw new ContentStudioError(
+      `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new ContentStudioError(
+      `Echec de la suggestion : reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  const validated = suggestCtasResponseSchema.safeParse(parsed);
+  if (!validated.success) {
+    throw new ContentStudioError(
+      `Echec de la suggestion : reponse AI invalide : ${validated.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+    );
+  }
+
+  const seen = new Set<string>();
+  const ctas: string[] = [];
+  for (const candidate of validated.data.call_to_actions) {
+    const trimmed = candidate.trim().slice(0, CTA_MAX_LENGTH);
+    if (trimmed.length < CTA_MIN_LENGTH) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ctas.push(trimmed);
+    if (ctas.length >= CTAS_MAX_COUNT) break;
+  }
+
+  if (ctas.length === 0) {
+    throw new ContentStudioError(
+      "Echec de la suggestion : aucun appel a l'action valide propose par l'IA.",
+    );
+  }
+
+  return ctas;
 }
 
 function platformConstraints(targetSource: TargetSource): string {
