@@ -56,6 +56,7 @@ export interface ProductRecord {
   product_description: string | null;
   reply_voice: string | null;
   product_url: string | null;
+  production_url: string | null;
   target_audience: string | null;
   value_props: string | null;
   call_to_actions: string | null;
@@ -180,6 +181,7 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'products', 'product_description', `TEXT`);
   addColumnIfMissing(database, 'products', 'reply_voice', `TEXT`);
   addColumnIfMissing(database, 'products', 'product_url', `TEXT`);
+  addColumnIfMissing(database, 'products', 'production_url', `TEXT`);
   addColumnIfMissing(database, 'products', 'target_audience', `TEXT`);
   addColumnIfMissing(database, 'products', 'value_props', `TEXT`);
   addColumnIfMissing(database, 'products', 'call_to_actions', `TEXT`);
