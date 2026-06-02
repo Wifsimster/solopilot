@@ -251,7 +251,7 @@ export async function triggerRerun(
   }
 
   const collectionDate =
-    getCollectionDateForRun(originalRunId) ?? originalRun.started_at.split('T')[0].split(' ')[0];
+    getCollectionDateForRun(originalRunId) ?? originalRun.started_at.substring(0, 10);
 
   if (!collectionDate) {
     return { success: false, message: 'Impossible de determiner la date de collecte.' };
@@ -310,6 +310,18 @@ export interface SummaryFilters {
   search?: string;
 }
 
+const MONTH_FILTER_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+function monthFilterRange(month: string): { from: string; to: string } | undefined {
+  if (!MONTH_FILTER_PATTERN.test(month)) return undefined;
+  const [year, mon] = month.split('-').map(Number);
+  const from = `${year}-${String(mon).padStart(2, '0')}-01`;
+  const toMonth = mon === 12 ? 1 : mon + 1;
+  const toYear = mon === 12 ? year + 1 : year;
+  const to = `${toYear}-${String(toMonth).padStart(2, '0')}-01`;
+  return { from, to };
+}
+
 export function getSuccessfulSummaries(
   limit = 20,
   offset = 0,
@@ -321,13 +333,10 @@ export function getSuccessfulSummaries(
   const params: unknown[] = [productId];
 
   if (filters?.month) {
-    const [year, mon] = filters.month.split('-').map(Number);
-    const from = `${year}-${String(mon).padStart(2, '0')}-01`;
-    const toMonth = mon === 12 ? 1 : mon + 1;
-    const toYear = mon === 12 ? year + 1 : year;
-    const to = `${toYear}-${String(toMonth).padStart(2, '0')}-01`;
+    const range = monthFilterRange(filters.month);
+    if (!range) return [];
     clauses.push(`started_at >= ?`, `started_at < ?`);
-    params.push(from, to);
+    params.push(range.from, range.to);
   }
 
   if (filters?.search) {
@@ -352,13 +361,10 @@ export function countSuccessfulSummaries(
   const params: unknown[] = [productId];
 
   if (filters?.month) {
-    const [year, mon] = filters.month.split('-').map(Number);
-    const from = `${year}-${String(mon).padStart(2, '0')}-01`;
-    const toMonth = mon === 12 ? 1 : mon + 1;
-    const toYear = mon === 12 ? year + 1 : year;
-    const to = `${toYear}-${String(toMonth).padStart(2, '0')}-01`;
+    const range = monthFilterRange(filters.month);
+    if (!range) return 0;
     clauses.push(`started_at >= ?`, `started_at < ?`);
-    params.push(from, to);
+    params.push(range.from, range.to);
   }
 
   if (filters?.search) {
