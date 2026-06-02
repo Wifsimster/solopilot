@@ -100,7 +100,21 @@ export function deleteMonthlySummariesReferencingRun(runId: number): void {
     source_run_ids: string;
   }[];
   for (const row of all) {
-    const ids = new Set<number>(JSON.parse(row.source_run_ids));
+    let ids: Set<number>;
+    try {
+      const parsed = JSON.parse(row.source_run_ids) as unknown;
+      if (!Array.isArray(parsed)) {
+        logger.warn('Monthly summary source_run_ids is not an array', { id: row.id });
+        continue;
+      }
+      ids = new Set(parsed.filter((v): v is number => typeof v === 'number'));
+    } catch (err) {
+      logger.warn('Failed to parse monthly summary source_run_ids', {
+        id: row.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
     if (ids.has(runId)) {
       db.prepare('DELETE FROM monthly_summaries WHERE id = ?').run(row.id);
       logger.info('Deleted stale monthly summary', {
