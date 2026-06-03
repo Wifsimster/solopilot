@@ -1,7 +1,7 @@
 import { loadConfig, type Config } from './config.js';
 import { logger } from './logger.js';
 import { createAIFilter } from './ai-filter.js';
-import { getCurrentRunId, updateRunStats } from './run-state.js';
+import { getCurrentRunId, updateRunStats, collectRunning } from './run-state.js';
 import { getUnpublishedTweets, markTweetsAsUsed } from './tweet-store.js';
 import { getTodayDateParis } from './date-utils.js';
 import { DEFAULT_PRODUCT_ID } from './db.js';
@@ -22,20 +22,31 @@ export async function run(
 
   const runId = getCurrentRunId(productId);
 
-  // 1. Do a final collection sweep across all enabled sources (skip for historical re-runs)
+  // 1. Do a final collection sweep across all enabled sources (skip for historical re-runs
+  //    and skip if the hourly collect is already running, to avoid concurrent X API calls).
   if (!overrideCollectionDate) {
-    try {
-      await collectTweets(config, productId);
-    } catch (err) {
-      logger.warn('Final collection sweep failed before publish', {
-        productId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    if (collectRunning.get(productId) === true) {
+      logger.info('Collect already running, skipping in-publish sweep', { productId });
+    } else {
+      collectRunning.set(productId, true);
+      try {
+        await collectTweets(config, productId);
+      } catch (err) {
+        logger.warn('Final collection sweep failed before publish', {
+          productId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        collectRunning.set(productId, false);
+      }
     }
   }
 
-  // 2. Read all accumulated items for today
-  const items = getUnpublishedTweets(collectionDate, productId);
+  // 2. Read all accumulated items that haven't been published yet (across all dates,
+  //    so tweets stored between yesterday's publish and today's are not stranded).
+  const items = overrideCollectionDate
+    ? getUnpublishedTweets(productId, { collectionDate })
+    : getUnpublishedTweets(productId);
   if (runId) updateRunStats(runId, { tweets_fetched: items.length });
 
   if (items.length === 0) {

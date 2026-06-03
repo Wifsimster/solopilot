@@ -1,4 +1,5 @@
 import { getDb, DEFAULT_PRODUCT_ID, type RunRecord } from './db.js';
+import { getParisMonthRangeUtc } from './date-utils.js';
 
 export const publishRunning = new Map<string, boolean>();
 export const collectRunning = new Map<string, boolean>();
@@ -71,10 +72,7 @@ export function getSuccessfulRunsByMonth(
   productId: string = DEFAULT_PRODUCT_ID,
 ): RunRecord[] {
   const db = getDb();
-  const from = `${year}-${String(month).padStart(2, '0')}-01`;
-  const toMonth = month === 12 ? 1 : month + 1;
-  const toYear = month === 12 ? year + 1 : year;
-  const to = `${toYear}-${String(toMonth).padStart(2, '0')}-01`;
+  const { from, to } = getParisMonthRangeUtc(year, month);
   return db
     .prepare(
       `SELECT * FROM runs WHERE status = 'success' AND summary IS NOT NULL AND product_id = ? AND started_at >= ? AND started_at < ? ORDER BY started_at ASC`,
