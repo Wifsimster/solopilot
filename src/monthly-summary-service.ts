@@ -3,6 +3,7 @@ import { getDb, DEFAULT_PRODUCT_ID, type MonthlySummaryRecord } from './db.js';
 import { getSuccessfulRunsByMonth } from './run-state.js';
 import { createAIFilter } from './ai-filter.js';
 import { logger } from './logger.js';
+import { utcToParisYearMonth } from './date-utils.js';
 
 const MAX_INPUT_SUMMARIES = 10;
 const MAX_INPUT_CHARS = 20000;
@@ -129,16 +130,24 @@ export function getAvailableMonths(
   productId: string = DEFAULT_PRODUCT_ID,
 ): { year: number; month: number; run_count: number }[] {
   const db = getDb();
-  return db
+  const rows = db
     .prepare(
-      `SELECT
-         CAST(strftime('%Y', started_at) AS INTEGER) as year,
-         CAST(strftime('%m', started_at) AS INTEGER) as month,
-         COUNT(*) as run_count
-       FROM runs
-       WHERE status = 'success' AND summary IS NOT NULL AND product_id = ?
-       GROUP BY strftime('%Y-%m', started_at)
-       ORDER BY year DESC, month DESC`,
+      `SELECT started_at FROM runs
+       WHERE status = 'success' AND summary IS NOT NULL AND product_id = ?`,
     )
-    .all(productId) as { year: number; month: number; run_count: number }[];
+    .all(productId) as { started_at: string }[];
+
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const { year, month } = utcToParisYearMonth(row.started_at);
+    const key = `${year}-${String(month).padStart(2, '0')}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([key, count]) => {
+      const [y, m] = key.split('-').map(Number);
+      return { year: y, month: m, run_count: count };
+    })
+    .sort((a, b) => b.year - a.year || b.month - a.month);
 }

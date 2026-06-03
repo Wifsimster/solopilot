@@ -60,6 +60,7 @@ export function storeItems(
 
 interface ItemQueryOptions {
   source?: ItemSource;
+  collectionDate?: string;
 }
 
 interface ItemRow {
@@ -73,17 +74,24 @@ interface ItemRow {
 }
 
 /**
- * Returns all items for a given date that haven't been used in a publish run yet.
- * Optionally filter by source.
+ * Returns all items for a product that haven't been used in a publish run yet.
+ * Optionally restrict by collection date or source.
+ *
+ * When no collectionDate is provided, returns every unused item across all dates.
+ * This ensures tweets stored between yesterday's publish and today's publish are
+ * not stranded by the daily date boundary.
  */
 export function getUnpublishedTweets(
-  collectionDate: string,
   productId: string = DEFAULT_PRODUCT_ID,
   options: ItemQueryOptions = {},
 ): Item[] {
   const db = getDb();
-  const clauses = ['collection_date = ?', 'product_id = ?', 'used_in_run_id IS NULL'];
-  const params: unknown[] = [collectionDate, productId];
+  const clauses = ['product_id = ?', 'used_in_run_id IS NULL'];
+  const params: unknown[] = [productId];
+  if (options.collectionDate) {
+    clauses.push('collection_date = ?');
+    params.push(options.collectionDate);
+  }
   if (options.source) {
     clauses.push('source = ?');
     params.push(options.source);

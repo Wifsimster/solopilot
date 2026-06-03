@@ -9,6 +9,7 @@ import { releaseTweetsForRun, getCollectionDateForRun } from './tweet-store.js';
 import { deleteMonthlySummariesReferencingRun } from './monthly-summary-service.js';
 import { getProduct } from './product-service.js';
 import { publishRunning, collectRunning } from './run-state.js';
+import { getParisMonthRangeUtc, utcToParisDate } from './date-utils.js';
 
 export {
   isRunning,
@@ -158,15 +159,32 @@ export function getRunHistory(
   limit = 20,
   offset = 0,
   productId: string = DEFAULT_PRODUCT_ID,
+  triggerType?: string,
 ): RunRecord[] {
   const db = getDb();
+  if (triggerType) {
+    return db
+      .prepare(
+        'SELECT * FROM runs WHERE product_id = ? AND trigger_type = ? ORDER BY id DESC LIMIT ? OFFSET ?',
+      )
+      .all(productId, triggerType, limit, offset) as RunRecord[];
+  }
   return db
     .prepare('SELECT * FROM runs WHERE product_id = ? ORDER BY id DESC LIMIT ? OFFSET ?')
     .all(productId, limit, offset) as RunRecord[];
 }
 
-export function countRuns(productId: string = DEFAULT_PRODUCT_ID): number {
+export function countRuns(
+  productId: string = DEFAULT_PRODUCT_ID,
+  triggerType?: string,
+): number {
   const db = getDb();
+  if (triggerType) {
+    const row = db
+      .prepare('SELECT COUNT(*) as count FROM runs WHERE product_id = ? AND trigger_type = ?')
+      .get(productId, triggerType) as { count: number };
+    return row.count;
+  }
   const row = db
     .prepare('SELECT COUNT(*) as count FROM runs WHERE product_id = ?')
     .get(productId) as { count: number };
@@ -249,11 +267,13 @@ export async function triggerRerun(
   if (publishRunning.get(productId) === true) {
     return { success: false, message: 'Un run est deja en cours.' };
   }
+  publishRunning.set(productId, true);
 
   const collectionDate =
-    getCollectionDateForRun(originalRunId) ?? originalRun.started_at.substring(0, 10);
+    getCollectionDateForRun(originalRunId) ?? utcToParisDate(originalRun.started_at);
 
   if (!collectionDate) {
+    publishRunning.set(productId, false);
     return { success: false, message: 'Impossible de determiner la date de collecte.' };
   }
 
@@ -272,8 +292,6 @@ export async function triggerRerun(
   );
   const { lastInsertRowid } = insert.run(productId);
   const runId = Number(lastInsertRowid);
-
-  publishRunning.set(productId, true);
 
   try {
     await run(config, collectionDate, productId);
@@ -315,11 +333,7 @@ const MONTH_FILTER_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 function monthFilterRange(month: string): { from: string; to: string } | undefined {
   if (!MONTH_FILTER_PATTERN.test(month)) return undefined;
   const [year, mon] = month.split('-').map(Number);
-  const from = `${year}-${String(mon).padStart(2, '0')}-01`;
-  const toMonth = mon === 12 ? 1 : mon + 1;
-  const toYear = mon === 12 ? year + 1 : year;
-  const to = `${toYear}-${String(toMonth).padStart(2, '0')}-01`;
-  return { from, to };
+  return getParisMonthRangeUtc(year, mon);
 }
 
 export function getSuccessfulSummaries(

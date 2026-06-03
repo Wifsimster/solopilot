@@ -462,6 +462,12 @@ export function startServer(
     if (!key) {
       return c.json({ success: false, message: 'La cle est requise.' }, 400);
     }
+    if (!isEditableKey(key) && !isCredentialKey(key)) {
+      return c.json({ success: false, message: 'Cle non autorisee.' }, 400);
+    }
+    if (typeof value === 'string' && value.length > 4096) {
+      return c.json({ success: false, message: 'Valeur trop longue (max 4096 caracteres).' }, 400);
+    }
     setProductSetting(id, key, value);
     return c.json({ success: true, message: 'Parametre du produit mis a jour.' });
   });
@@ -1089,12 +1095,8 @@ export function startServer(
       const offset = Number(c.req.query('offset') || '0');
       const type = c.req.query('type');
       const productId = resolveProductId(c.req.query('productId'));
-      const runs = getRunHistory(limit, offset, productId);
-      const total = countRuns(productId);
-      if (type) {
-        const filtered = runs.filter((r) => r.trigger_type === type);
-        return c.json({ runs: filtered, total });
-      }
+      const runs = getRunHistory(limit, offset, productId, type);
+      const total = countRuns(productId, type);
       return c.json({ runs, total });
     });
 

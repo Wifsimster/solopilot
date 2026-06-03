@@ -24,5 +24,8 @@ export function buildMergedConfig(baseConfig: Config, overrides: Record<string, 
     ...(overrides.COLLECT_CRON_SCHEDULE && {
       COLLECT_CRON_SCHEDULE: overrides.COLLECT_CRON_SCHEDULE,
     }),
+    ...(overrides.CRON_SCHEDULE && {
+      CRON_SCHEDULE: overrides.CRON_SCHEDULE,
+    }),
   };
 }
