@@ -13,6 +13,7 @@ const { registerSolopilot } = await import('../dist/workflow/bootstrap.js');
 const { buildBriefing, renderBriefingText } = await import('../dist/modules/cockpit/briefing.js');
 const facturation = await import('../dist/modules/facturation/store.js');
 const { draftRelance } = await import('../dist/modules/facturation/relance.js');
+const compta = await import('../dist/modules/comptabilite/compta.js');
 
 let failures = 0;
 const assert = (cond, msg) => {
@@ -71,7 +72,7 @@ assert(all.length === 4, `all four runs listed (got ${all.length})`);
 console.log('bootstrap (real steps + veille workflows):');
 resetRegistry();
 registerSolopilot();
-for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate', 'facturation.relance', 'facturation.sync']) {
+for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate', 'facturation.relance', 'facturation.sync', 'compta.seuils', 'compta.echeance']) {
   assert(getStep(use) !== undefined, `step registered: ${use}`);
 }
 const registered = listWorkflows();
@@ -79,6 +80,7 @@ const veille = registered.filter((w) => w.module === 'veille');
 assert(veille.length === 3, `three veille workflows registered (got ${veille.length})`);
 assert(registered.some((w) => w.id === 'cockpit.daily-briefing'), 'cockpit.daily-briefing registered');
 assert(registered.filter((w) => w.module === 'facturation').length === 2, 'two facturation workflows registered');
+assert(registered.filter((w) => w.module === 'compta').length === 2, 'two compta workflows registered');
 assert(registered.every((w) => !w.enabled), 'every workflow ships disabled (no prod impact)');
 const unresolved = registered.flatMap((w) => w.steps).filter((s) => getStep(s.use) === undefined);
 assert(unresolved.length === 0, `every step resolves (unresolved: ${unresolved.map((s) => s.use).join(',') || 'none'})`);
@@ -101,12 +103,27 @@ const syncRun = await runWorkflowById('facturation.sync-stripe', { config: cfg, 
 assert(syncRun.status === 'success', 'sync run succeeds without Stripe configured');
 assert(syncRun.trace[0].status === 'ok', 'sync step is a graceful no-op when Stripe absent');
 
+console.log('comptabilité (CA, seuils, URSSAF):');
+// The paid invoice above (1200.00) plus a manual recette (500.00) form the year CA.
+compta.addLedgerEntry('default', { kind: 'recette', amount_cents: 50000, label: 'Prestation conseil' });
+const cs = compta.comptaStatus('default');
+assert(cs.caCents === 170000, `year CA aggregates paid invoice + ledger (got ${cs.caCents})`);
+assert(cs.plafondCents === 7770000 && cs.activityType === 'services_bnc', 'default plafond is services BNC');
+assert(compta.renderSeuilsAlert(cs) === null, 'no seuils alert below threshold');
+const decl = compta.urssafDeclaration('default');
+assert(decl.isEstimate === true && /\d/.test(decl.periodLabel), 'urssaf declaration is an estimate with a period');
+assert(compta.renderUrssafReminder(decl).includes('URSSAF'), 'urssaf reminder renders');
+compta.setComptaConfig('default', { activityType: 'vente' });
+assert(compta.comptaStatus('default').plafondCents === 18870000, 'config switches plafond to vente');
+compta.setComptaConfig('default', { activityType: 'services_bnc' });
+
 console.log('cockpit briefing:');
 const brief = buildBriefing('default');
 assert(brief.veille.status === 'live' && brief.facturation.status === 'live', 'briefing reports facturation live');
 assert(brief.facturation.unpaid === 0, 'briefing reflects ledger state (paid invoice)');
+assert(brief.compta.status === 'live' && brief.compta.caCents === 170000, 'briefing reports compta live with CA');
 const text = renderBriefingText(brief);
-assert(text.includes('BRIEF DU JOUR') && text.includes('FACTURATION'), 'briefing renders facturation section');
+assert(text.includes('BRIEF DU JOUR') && text.includes('FACTURATION') && text.includes('COMPTABILITÉ'), 'briefing renders all live sections');
 
 resetRegistry();
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);

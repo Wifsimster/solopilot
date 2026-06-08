@@ -29,6 +29,7 @@ import {
   Workflow,
   Gauge,
   Receipt,
+  Calculator,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -71,7 +72,10 @@ const NAV_SECTIONS: NavSection[] = [
   {
     id: 'manage',
     label: 'Gérer',
-    items: [{ to: '/facturation', label: 'Facturation', icon: Receipt }],
+    items: [
+      { to: '/facturation', label: 'Facturation', icon: Receipt },
+      { to: '/comptabilite', label: 'Comptabilité', icon: Calculator },
+    ],
   },
   {
     id: 'configure',

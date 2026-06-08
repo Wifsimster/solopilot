@@ -128,12 +128,13 @@ envoyées sur validation.
 
 Trois modules indépendants, livrables en parallèle ou en séquence.
 
-### Comptabilité
-- [ ] Table `ledger` (recettes/dépenses), calcul du CA glissant.
-- [ ] Workflow `compta.seuils` : surveille les plafonds micro-entreprise et le
-      seuil de franchise TVA, alerte avant dépassement.
-- [ ] Workflow `compta.echeance-urssaf` : rappel de déclaration (mensuel/trim.)
-      avec CA pré-calculé. **Rappel + préparation, pas de télédéclaration.**
+### Comptabilité ✅ (voir [ADR-0017](adr/0017-comptabilite-urssaf.md))
+- [x] Table `ledger` (recettes/dépenses) + CA encaissé (factures payées + recettes).
+- [x] `comptaStatus` : plafonds micro & seuil franchise TVA, alerte ≥80%.
+- [x] `urssafDeclaration` : CA de la période (mensuel/trim.) + cotisations estimées.
+- [x] Workflows `compta.seuils` et `compta.echeance-urssaf` (`enabled: false`).
+- [x] API + écran Comptabilité (jauges plafond/TVA + estimation URSSAF) ; cockpit branché.
+- [x] Smoke test (CA agrégé, plafonds, no-alert, config). **Estimations — pas de télédéclaration.**
 
 ### CRM
 - [ ] Tables `contacts`, `deals`, `interactions`. Les leads d'Acquisition se

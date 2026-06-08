@@ -28,7 +28,13 @@ interface Briefing {
     overdue: number;
     overdueAmountCents: number;
   };
-  compta: { status: ModuleStatus };
+  compta: {
+    status: ModuleStatus;
+    caCents: number;
+    plafondPct: number;
+    approachingPlafond: boolean;
+    tvaExceeded: boolean;
+  };
   agenda: { status: ModuleStatus };
   workflows: { total: number; byStatus: Record<string, number> };
 }
@@ -155,7 +161,23 @@ export function CockpitPage() {
             </CardContent>
           </Card>
 
-          <PlannedCard title="Comptabilité" hint="Suivi du CA, plafonds micro, échéances URSSAF." />
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="text-base font-semibold">Comptabilité</div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold tabular-nums">{data.compta.plafondPct}%</div>
+              <div className="text-sm text-muted-foreground">
+                du plafond micro — CA {(data.compta.caCents / 100).toFixed(2)} €
+              </div>
+              {(data.compta.approachingPlafond || data.compta.tvaExceeded) && (
+                <Badge variant="destructive" className="mt-2 text-xs">
+                  {data.compta.tvaExceeded ? 'Seuil TVA dépassé' : 'Plafond proche'}
+                </Badge>
+              )}
+            </CardContent>
+          </Card>
+
           <PlannedCard title="Agenda" hint="Synchronisation Google Calendar et rappels." />
         </div>
       )}

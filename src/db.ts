@@ -383,6 +383,34 @@ function runFacturationMigrations(database: Database.Database) {
   );
 }
 
+export interface LedgerRecord {
+  id: string;
+  product_id: string;
+  kind: 'recette' | 'depense';
+  amount_cents: number;
+  label: string;
+  occurred_on: string;
+  created_at: number;
+}
+
+// Comptabilité module migrations (ADR-0017). Idempotent. Manual revenue/expense
+// ledger; invoiced revenue (CA) is read from paid invoices, this complements it.
+function runComptaMigrations(database: Database.Database) {
+  database.exec(`CREATE TABLE IF NOT EXISTS ledger (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL DEFAULT '${DEFAULT_PRODUCT_ID}' REFERENCES products(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    occurred_on TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`);
+
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_ledger_product_date ON ledger(product_id, occurred_on)`,
+  );
+}
+
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -443,6 +471,7 @@ export function getDb(): Database.Database {
     runProductMigrations(db);
     runWorkflowMigrations(db);
     runFacturationMigrations(db);
+    runComptaMigrations(db);
 
     logger.info('Database initialized', { path: dbPath });
   }

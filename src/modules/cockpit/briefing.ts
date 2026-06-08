@@ -12,6 +12,7 @@ import { getUnpublishedTweets } from '../../tweet-store.js';
 import { listIntentSignals } from '../../intent-service.js';
 import { listWorkflowRuns } from '../../workflow/run-store.js';
 import { facturationSummary } from '../facturation/store.js';
+import { comptaStatus } from '../comptabilite/compta.js';
 import { getTodayDateParis } from '../../date-utils.js';
 import { DEFAULT_PRODUCT_ID } from '../../db.js';
 
@@ -35,7 +36,13 @@ export interface Briefing {
     overdue: number;
     overdueAmountCents: number;
   };
-  compta: { status: ModuleStatus };
+  compta: {
+    status: ModuleStatus;
+    caCents: number;
+    plafondPct: number;
+    approachingPlafond: boolean;
+    tvaExceeded: boolean;
+  };
   agenda: { status: ModuleStatus };
   workflows: { total: number; byStatus: Record<string, number> };
 }
@@ -52,6 +59,7 @@ export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing
   }
 
   const facturation = facturationSummary(activityId);
+  const compta = comptaStatus(activityId);
 
   return {
     activityId,
@@ -71,7 +79,13 @@ export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing
       overdue: facturation.overdue,
       overdueAmountCents: facturation.overdueAmountCents,
     },
-    compta: { status: 'planned' },
+    compta: {
+      status: 'live',
+      caCents: compta.caCents,
+      plafondPct: compta.plafondPct,
+      approachingPlafond: compta.approachingPlafond,
+      tvaExceeded: compta.tvaExceeded,
+    },
     agenda: { status: 'planned' },
     workflows: { total: recentRuns.length, byStatus },
   };
@@ -117,8 +131,17 @@ export function renderBriefingText(b: Briefing): string {
   }
   lines.push('');
 
+  lines.push('**COMPTABILITÉ**');
+  const ca = `${(b.compta.caCents / 100).toFixed(2)} €`;
+  if (b.compta.approachingPlafond || b.compta.tvaExceeded) {
+    lines.push(`• ⚠️ CA ${ca} — ${b.compta.plafondPct}% du plafond micro${b.compta.tvaExceeded ? ', seuil TVA dépassé' : ''}.`);
+  } else {
+    lines.push(`• CA encaissé cette année : ${ca} (${b.compta.plafondPct}% du plafond).`);
+  }
+  lines.push('');
+
   lines.push('**À VENIR**');
-  lines.push('• Comptabilité/URSSAF et Agenda arrivent dans les prochains modules.');
+  lines.push('• L\'Agenda (Google Calendar) arrive dans le prochain module.');
 
   return lines.join('\n');
 }

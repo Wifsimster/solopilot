@@ -100,6 +100,17 @@ export function listOverdueInvoices(
     .all(productId, today) as InvoiceRecord[];
 }
 
+/** Sum of invoices marked paid within [from, to) — the encaissed turnover (CA). */
+export function sumPaidInvoicesCents(productId: string, from: string, to: string): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COALESCE(SUM(amount_cents), 0) AS total FROM invoices
+       WHERE product_id = ? AND status = 'paid' AND paid_on >= ? AND paid_on < ?`,
+    )
+    .get(productId, from, to) as { total: number };
+  return row.total;
+}
+
 export function markInvoicePaid(id: string, paidOn: string = getTodayDateParis()): boolean {
   const res = getDb()
     .prepare(`UPDATE invoices SET status = 'paid', paid_on = ? WHERE id = ? AND status != 'paid'`)

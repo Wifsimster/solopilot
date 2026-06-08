@@ -81,6 +81,17 @@ import {
 } from './modules/facturation/store.js';
 import { draftRelance } from './modules/facturation/relance.js';
 import {
+  comptaStatus,
+  urssafDeclaration,
+  listLedger,
+  addLedgerEntry,
+  ledgerCreateSchema,
+  setComptaConfig,
+  comptaConfigSchema,
+  getActivityType,
+  getDeclarationPeriod,
+} from './modules/comptabilite/compta.js';
+import {
   listIntentSignals,
   getIntentSignal,
   updateIntentSignal,
@@ -322,6 +333,44 @@ export function startServer(
     const today = getTodayDateParis();
     const drafts = listOverdueInvoices(activityId, today).map((inv) => draftRelance(inv, today));
     return c.json(drafts);
+  });
+
+  // --- Comptabilité API — turnover, thresholds and URSSAF estimates (read + config) ---
+
+  app.get('/api/comptabilite', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    return c.json({
+      status: comptaStatus(activityId),
+      urssaf: urssafDeclaration(activityId),
+      config: {
+        activityType: getActivityType(activityId),
+        declarationPeriod: getDeclarationPeriod(activityId),
+      },
+    });
+  });
+
+  app.post('/api/comptabilite/config', async (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const parsed = comptaConfigSchema.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) {
+      return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
+    }
+    setComptaConfig(activityId, parsed.data);
+    return c.json({ success: true });
+  });
+
+  app.get('/api/comptabilite/ledger', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    return c.json(listLedger(activityId));
+  });
+
+  app.post('/api/comptabilite/ledger', async (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const parsed = ledgerCreateSchema.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) {
+      return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
+    }
+    return c.json(addLedgerEntry(activityId, parsed.data), 201);
   });
 
   // --- Workflows API (read-only, available in both setup and operational mode) ---
