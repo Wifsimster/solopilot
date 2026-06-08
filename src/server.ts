@@ -155,6 +155,8 @@ import {
   suggestSubredditsSchema,
   suggestHnKeywords,
   suggestHnKeywordsSchema,
+  suggestIntentKeywords,
+  suggestIntentKeywordsSchema,
 } from './content-studio.js';
 import {
   fetchGithubRepos,
@@ -1166,6 +1168,36 @@ export function startServer(
           ? err.message
           : `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`;
       logger.warn('HN keywords suggestion failed', { error: message });
+      return c.json({ success: false, message });
+    }
+  });
+
+  app.post('/api/content/suggest-intent-keywords', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = suggestIntentKeywordsSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees invalides pour la suggestion.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+
+    try {
+      const keywords = await suggestIntentKeywords(parsed.data);
+      return c.json({ success: true, intent_keywords: keywords });
+    } catch (err) {
+      const message =
+        err instanceof ContentStudioError
+          ? err.message
+          : `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`;
+      logger.warn('Intent keywords suggestion failed', { error: message });
       return c.json({ success: false, message });
     }
   });

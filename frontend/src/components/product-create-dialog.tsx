@@ -137,72 +137,217 @@ const parseCtas = makeLengthParser(
   (j) => `CTA trop long : ${j} (max ${CTA_MAX} caractères).`,
 );
 
-interface AiSuggestionOptions<T> {
-  endpoint: string;
-  /** Build the request body, or return null (after toasting) to abort. */
-  buildBody: () => Record<string, unknown> | null;
-  /** Pull the typed value out of the JSON response, or null when missing. */
-  extract: (data: Record<string, unknown>) => T | null | undefined;
-  /** Apply the suggestion to the form. */
-  apply: (value: T) => void;
-  successMessage: string;
+/** POST a suggestion request and pull the typed value out, or null on any failure. */
+async function postSuggestion<T>(
+  endpoint: string,
+  body: Record<string, unknown>,
+  extract: (data: Record<string, unknown>) => T | null | undefined,
+): Promise<T | null> {
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok || data.success === false) return null;
+    const value = extract(data);
+    return value === null || value === undefined ? null : value;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Drives a "Proposer avec l'IA" suggestion: owns the loading flag, POSTs the
- * body, surfaces success/error toasts, and applies the result. Shared by every
- * generatable field so the per-field handlers stay declarative.
+ * Drives the single "Tout générer avec l'IA" action: fills every generatable
+ * field from the product name (+ optional URL) in one click. Suggestions feed
+ * each other, so the foundation fields (description → audience → value props)
+ * are generated sequentially and threaded through a local accumulator — React
+ * state updates are async and wouldn't be visible to the next call — then the
+ * dependent fields (subreddits, HN keywords, CTAs, intent phrases) run in
+ * parallel off that foundation. Failures are collected per field so a single
+ * endpoint error doesn't abort the rest.
  */
-function useAiSuggestion<T>(options: AiSuggestionOptions<T>): {
-  suggesting: boolean;
-  suggest: () => Promise<void>;
-} {
-  const [suggesting, setSuggesting] = useState(false);
-  const suggest = async () => {
-    const body = options.buildBody();
-    if (!body) return;
-    setSuggesting(true);
+function useGenerateAll(
+  state: FormState,
+  set: Setter,
+): { generating: boolean; generateAll: () => Promise<void> } {
+  const [generating, setGenerating] = useState(false);
+
+  const generateAll = async () => {
+    const name = state.name.trim();
+    if (!name) {
+      toast.error('Renseigne le nom du produit avant de générer avec l’IA.');
+      return;
+    }
+    setGenerating(true);
+    const language = state.contentLanguage ?? 'fr';
+    const url = state.productUrl.trim() || null;
+    // Seed from anything the user already typed so existing input informs the AI.
+    const acc = {
+      description: state.productDescription.trim(),
+      audience: state.targetAudience.trim(),
+      valueProps: state.valueProps,
+    };
+    const failed: string[] = [];
+
     try {
-      const res = await fetch(options.endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      const value = res.ok && data.success !== false ? options.extract(data) : undefined;
-      if (value === null || value === undefined) {
-        toast.error(data.message || `Erreur HTTP ${res.status}`);
-        return;
+      // --- Foundation: sequential, each builds on the previous result ---
+      const description = await postSuggestion<string>(
+        '/api/content/suggest-description',
+        {
+          name,
+          product_url: url,
+          target_audience: acc.audience || null,
+          value_props: acc.valueProps,
+          content_language: language,
+        },
+        (d) => (typeof d.product_description === 'string' ? d.product_description : null),
+      );
+      if (description) {
+        acc.description = description.slice(0, PRODUCT_DESCRIPTION_MAX);
+        set('productDescription', acc.description);
+      } else {
+        failed.push('description');
       }
-      options.apply(value);
-      toast.success(options.successMessage);
-    } catch {
-      toast.error('Erreur réseau lors de la suggestion.');
+
+      const audience = await postSuggestion<string>(
+        '/api/content/suggest-audience',
+        {
+          name,
+          product_url: url,
+          product_description: acc.description || null,
+          value_props: acc.valueProps,
+          content_language: language,
+        },
+        (d) => (typeof d.target_audience === 'string' ? d.target_audience : null),
+      );
+      if (audience) {
+        acc.audience = audience.slice(0, TARGET_AUDIENCE_MAX);
+        set('targetAudience', acc.audience);
+      } else {
+        failed.push('audience cible');
+      }
+
+      const valueProps = await postSuggestion<string[]>(
+        '/api/content/suggest-value-props',
+        {
+          name,
+          product_url: url,
+          product_description: acc.description || null,
+          target_audience: acc.audience || null,
+          content_language: language,
+        },
+        (d) => (Array.isArray(d.value_props) ? (d.value_props as string[]) : null),
+      );
+      if (valueProps) {
+        acc.valueProps = valueProps.slice(0, VALUE_PROPS_MAX);
+        set('valueProps', acc.valueProps);
+      } else {
+        failed.push('propositions de valeur');
+      }
+
+      // --- Dependent fields: parallel, off the freshly built foundation ---
+      const sourceCtx = {
+        name,
+        product_url: url,
+        product_description: acc.description || null,
+        target_audience: acc.audience || null,
+        content_language: language,
+      };
+
+      await Promise.all([
+        (async () => {
+          const subreddits = await postSuggestion<string[]>(
+            '/api/content/suggest-subreddits',
+            sourceCtx,
+            (d) => (Array.isArray(d.subreddits) ? (d.subreddits as string[]) : null),
+          );
+          if (subreddits) {
+            set('subreddits', subreddits);
+            set('redditEnabled', true);
+          } else {
+            failed.push('subreddits');
+          }
+        })(),
+        (async () => {
+          const keywords = await postSuggestion<string[]>(
+            '/api/content/suggest-hn-keywords',
+            sourceCtx,
+            (d) => (Array.isArray(d.keywords) ? (d.keywords as string[]) : null),
+          );
+          if (keywords) {
+            set('hnKeywords', keywords.slice(0, HN_KEYWORDS_MAX));
+            set('hnEnabled', true);
+          } else {
+            failed.push('mots-clés Hacker News');
+          }
+        })(),
+        (async () => {
+          const ctas = await postSuggestion<string[]>(
+            '/api/content/suggest-ctas',
+            { ...sourceCtx, value_props: acc.valueProps },
+            (d) => (Array.isArray(d.call_to_actions) ? (d.call_to_actions as string[]) : null),
+          );
+          if (ctas) {
+            set('callToActions', ctas.slice(0, CTAS_MAX));
+          } else {
+            failed.push('calls to action');
+          }
+        })(),
+        (async () => {
+          const intent = await postSuggestion<string[]>(
+            '/api/content/suggest-intent-keywords',
+            sourceCtx,
+            (d) => (Array.isArray(d.intent_keywords) ? (d.intent_keywords as string[]) : null),
+          );
+          if (intent) {
+            set('intentKeywords', intent.slice(0, INTENT_KEYWORDS_MAX));
+            set('intentEnabled', true);
+          } else {
+            failed.push("mots-clés d'intention");
+          }
+        })(),
+      ]);
     } finally {
-      setSuggesting(false);
+      setGenerating(false);
+    }
+
+    if (failed.length === 0) {
+      toast.success("Tous les champs ont été générés par l'IA.");
+    } else if (failed.length >= 7) {
+      toast.error("Échec de la génération IA. Vérifie le nom du produit et réessaie.");
+    } else {
+      toast.warning(`Champs générés. Non générés : ${failed.join(', ')}.`);
     }
   };
-  return { suggesting, suggest };
+
+  return { generating, generateAll };
 }
 
-/** Small "Proposer avec l'IA" button rendered next to a generatable field. */
-function SuggestButton({ suggesting, onClick }: { suggesting: boolean; onClick: () => void }) {
+/** Prominent single-click "fill every field with AI" control. */
+function GenerateAllButton({ generating, onClick }: { generating: boolean; onClick: () => void }) {
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      className="h-7 gap-1.5 text-xs shrink-0"
-      onClick={onClick}
-      disabled={suggesting}
-    >
-      {suggesting ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-      ) : (
-        <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden />
-      )}
-      {suggesting ? 'Génération...' : "Proposer avec l'IA"}
-    </Button>
+    <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold tracking-tight">Génération assistée par l'IA</h3>
+          <p className="text-xs text-muted-foreground">
+            Remplit en une fois la description, l'audience, les propositions de valeur, les CTA, les
+            sources (subreddits, mots-clés HN) et les mots-clés d'intention à partir du nom et de
+            l'URL.
+          </p>
+        </div>
+        <Button type="button" className="gap-1.5 shrink-0" onClick={onClick} disabled={generating}>
+          {generating ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          ) : (
+            <Sparkles className="h-4 w-4" aria-hidden />
+          )}
+          {generating ? 'Génération...' : "Tout générer avec l'IA"}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -600,52 +745,6 @@ interface SourcesSectionProps {
 
 /** "Sources" card: X (Twitter), Reddit (subreddit picker) and Hacker News. */
 function SourcesSection({ state, set, subredditRef, hnRef }: SourcesSectionProps) {
-  // Both source suggestions share the same product context; applying them also
-  // turns the source on so the freshly-filled field isn't left greyed out.
-  const sourceBody = (name: string) => ({
-    name,
-    product_url: state.productUrl.trim() || null,
-    product_description: state.productDescription.trim() || null,
-    target_audience: state.targetAudience.trim() || null,
-    content_language: state.contentLanguage ?? 'fr',
-  });
-
-  const subreddits = useAiSuggestion<string[]>({
-    endpoint: '/api/content/suggest-subreddits',
-    buildBody: () => {
-      const name = state.name.trim();
-      if (!name) {
-        toast.error('Renseigne le nom du produit avant de générer des subreddits.');
-        return null;
-      }
-      return sourceBody(name);
-    },
-    extract: (data) => (Array.isArray(data.subreddits) ? (data.subreddits as string[]) : null),
-    apply: (value) => {
-      set('subreddits', value);
-      set('redditEnabled', true);
-    },
-    successMessage: "Subreddits proposés par l'IA.",
-  });
-
-  const hnKeywords = useAiSuggestion<string[]>({
-    endpoint: '/api/content/suggest-hn-keywords',
-    buildBody: () => {
-      const name = state.name.trim();
-      if (!name) {
-        toast.error('Renseigne le nom du produit avant de générer des mots-clés.');
-        return null;
-      }
-      return sourceBody(name);
-    },
-    extract: (data) => (Array.isArray(data.keywords) ? (data.keywords as string[]) : null),
-    apply: (value) => {
-      set('hnKeywords', value.slice(0, HN_KEYWORDS_MAX));
-      set('hnEnabled', true);
-    },
-    successMessage: "Mots-clés Hacker News proposés par l'IA.",
-  });
-
   return (
     <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
       <div>
@@ -702,12 +801,9 @@ function SourcesSection({ state, set, subredditRef, hnRef }: SourcesSectionProps
             aria-label="Activer la source Reddit"
           />
         </div>
-        <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="product-subreddits" className="text-xs">
-            Subreddits
-          </Label>
-          <SuggestButton suggesting={subreddits.suggesting} onClick={subreddits.suggest} />
-        </div>
+        <Label htmlFor="product-subreddits" className="text-xs">
+          Subreddits
+        </Label>
         <div className={cn('mt-1', !state.redditEnabled && 'opacity-50 pointer-events-none')}>
           <SubredditPicker
             ref={subredditRef}
@@ -736,12 +832,9 @@ function SourcesSection({ state, set, subredditRef, hnRef }: SourcesSectionProps
             aria-label="Activer la source Hacker News"
           />
         </div>
-        <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="product-hn-keywords" className="text-xs">
-            Mots-clés
-          </Label>
-          <SuggestButton suggesting={hnKeywords.suggesting} onClick={hnKeywords.suggest} />
-        </div>
+        <Label htmlFor="product-hn-keywords" className="text-xs">
+          Mots-clés
+        </Label>
         <div className={cn(!state.hnEnabled && 'opacity-50 pointer-events-none')}>
           <div className="mt-1">
             <ChipInput
@@ -776,28 +869,6 @@ interface IntentSectionProps {
 
 /** "Détection d'intention" card: intent toggle + keywords + AI analysis context. */
 function IntentSection({ state, set, intentRef }: IntentSectionProps) {
-  const description = useAiSuggestion<string>({
-    endpoint: '/api/content/suggest-description',
-    buildBody: () => {
-      const name = state.name.trim();
-      if (!name) {
-        toast.error('Renseigne le nom du produit avant de générer une description.');
-        return null;
-      }
-      return {
-        name,
-        product_url: state.productUrl.trim() || null,
-        target_audience: state.targetAudience.trim() || null,
-        value_props: state.valueProps,
-        content_language: state.contentLanguage ?? 'fr',
-      };
-    },
-    extract: (data) =>
-      typeof data.product_description === 'string' ? data.product_description : null,
-    apply: (value) => set('productDescription', value.slice(0, PRODUCT_DESCRIPTION_MAX)),
-    successMessage: "Description du produit proposée par l'IA.",
-  });
-
   return (
     <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
       <div>
@@ -853,10 +924,7 @@ function IntentSection({ state, set, intentRef }: IntentSectionProps) {
       {/* AI analysis context — applies to lead analysis, independent of matching toggle */}
       <div className="space-y-3">
         <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <Label htmlFor="product-description">Description du produit (pour l'IA)</Label>
-            <SuggestButton suggesting={description.suggesting} onClick={description.suggest} />
-          </div>
+          <Label htmlFor="product-description">Description du produit (pour l'IA)</Label>
           <Textarea
             id="product-description"
             value={state.productDescription}
@@ -920,72 +988,6 @@ interface StudioSectionProps {
 
 /** "Studio de contenu" card: URL, audience, value props, CTAs, voice & language. */
 function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps) {
-  // Shared guard: every suggestion needs at least the product name.
-  const requireName = (): string | null => {
-    const trimmed = state.name.trim();
-    if (!trimmed) {
-      toast.error('Renseigne le nom du produit avant de générer du contenu.');
-      return null;
-    }
-    return trimmed;
-  };
-
-  const audience = useAiSuggestion<string>({
-    endpoint: '/api/content/suggest-audience',
-    buildBody: () => {
-      const name = requireName();
-      if (!name) return null;
-      return {
-        name,
-        product_url: state.productUrl.trim() || null,
-        product_description: state.productDescription.trim() || null,
-        value_props: state.valueProps,
-        content_language: state.contentLanguage ?? 'fr',
-      };
-    },
-    extract: (data) => (typeof data.target_audience === 'string' ? data.target_audience : null),
-    apply: (value) => set('targetAudience', value.slice(0, TARGET_AUDIENCE_MAX)),
-    successMessage: "Audience cible proposée par l'IA.",
-  });
-
-  const valuePropsSuggestion = useAiSuggestion<string[]>({
-    endpoint: '/api/content/suggest-value-props',
-    buildBody: () => {
-      const name = requireName();
-      if (!name) return null;
-      return {
-        name,
-        product_url: state.productUrl.trim() || null,
-        product_description: state.productDescription.trim() || null,
-        target_audience: state.targetAudience.trim() || null,
-        content_language: state.contentLanguage ?? 'fr',
-      };
-    },
-    extract: (data) => (Array.isArray(data.value_props) ? (data.value_props as string[]) : null),
-    apply: (value) => set('valueProps', value.slice(0, VALUE_PROPS_MAX)),
-    successMessage: "Propositions de valeur proposées par l'IA.",
-  });
-
-  const ctas = useAiSuggestion<string[]>({
-    endpoint: '/api/content/suggest-ctas',
-    buildBody: () => {
-      const name = requireName();
-      if (!name) return null;
-      return {
-        name,
-        product_url: state.productUrl.trim() || null,
-        product_description: state.productDescription.trim() || null,
-        target_audience: state.targetAudience.trim() || null,
-        value_props: state.valueProps,
-        content_language: state.contentLanguage ?? 'fr',
-      };
-    },
-    extract: (data) =>
-      Array.isArray(data.call_to_actions) ? (data.call_to_actions as string[]) : null,
-    apply: (value) => set('callToActions', value.slice(0, CTAS_MAX)),
-    successMessage: "Calls to action proposés par l'IA.",
-  });
-
   return (
     <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
       <div>
@@ -1027,10 +1029,7 @@ function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps)
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="product-target-audience">Audience cible</Label>
-          <SuggestButton suggesting={audience.suggesting} onClick={audience.suggest} />
-        </div>
+        <Label htmlFor="product-target-audience">Audience cible</Label>
         <Textarea
           id="product-target-audience"
           value={state.targetAudience}
@@ -1057,13 +1056,7 @@ function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps)
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="product-value-props">Propositions de valeur</Label>
-          <SuggestButton
-            suggesting={valuePropsSuggestion.suggesting}
-            onClick={valuePropsSuggestion.suggest}
-          />
-        </div>
+        <Label htmlFor="product-value-props">Propositions de valeur</Label>
         <ChipInput
           ref={valuePropRef}
           id="product-value-props"
@@ -1083,10 +1076,7 @@ function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps)
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="product-ctas">Calls to action</Label>
-          <SuggestButton suggesting={ctas.suggesting} onClick={ctas.suggest} />
-        </div>
+        <Label htmlFor="product-ctas">Calls to action</Label>
         <ChipInput
           ref={ctaRef}
           id="product-ctas"
@@ -1186,6 +1176,8 @@ function ProductForm({
   const valuePropRef = useRef<ChipInputHandle>(null);
   const ctaRef = useRef<ChipInputHandle>(null);
 
+  const { generating, generateAll } = useGenerateAll(state, set);
+
   const handleNameBlur = () => {
     if (!isEdit && !idTouchedRef.current && state.name.trim() && !state.id) {
       set('id', slugify(state.name));
@@ -1274,6 +1266,8 @@ function ProductForm({
         />
       </div>
 
+      <GenerateAllButton generating={generating} onClick={() => void generateAll()} />
+
       <SourcesSection state={state} set={set} subredditRef={subredditRef} hnRef={hnRef} />
 
       <IntentSection state={state} set={set} intentRef={intentRef} />
@@ -1296,7 +1290,7 @@ function ProductForm({
         >
           Annuler
         </Button>
-        <Button type="submit" disabled={state.submitting}>
+        <Button type="submit" disabled={state.submitting || generating}>
           {state.submitting
             ? isEdit
               ? 'Mise à jour...'

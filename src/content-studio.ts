@@ -991,6 +991,98 @@ Propose entre 4 et ${HN_KEYWORDS_MAX_COUNT} mots-cles de recherche Hacker News p
   return keywords;
 }
 
+const INTENT_KEYWORD_MIN_LENGTH = 2;
+const INTENT_KEYWORD_MAX_LENGTH = 128;
+const INTENT_KEYWORDS_MAX_COUNT = 12;
+
+export const suggestIntentKeywordsSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, { message: 'Le nom du produit est requis.' })
+    .max(120, { message: 'Nom du produit trop long (max 120 caracteres).' }),
+  product_url: z
+    .string()
+    .trim()
+    .max(2000, { message: 'URL du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  product_description: z
+    .string()
+    .trim()
+    .max(2000, { message: 'Description du produit trop longue (max 2000 caracteres).' })
+    .optional()
+    .nullable(),
+  target_audience: z
+    .string()
+    .trim()
+    .max(500, { message: 'Audience cible trop longue (max 500 caracteres).' })
+    .optional()
+    .nullable(),
+  content_language: z.enum(['fr', 'en']).optional().nullable(),
+});
+
+export type SuggestIntentKeywordsInput = z.infer<typeof suggestIntentKeywordsSchema>;
+
+const suggestIntentKeywordsResponseSchema = z.object({
+  intent_keywords: z.array(z.string().min(1)).min(1),
+});
+
+const SUGGEST_INTENT_KEYWORDS_SYSTEM_PROMPT = `Tu es un expert en detection d'intention d'achat sur les reseaux sociaux et forums. On te donne les informations d'un produit (nom, URL, description, audience) et, si disponible, le contenu de son depot GitHub. Tu dois proposer des EXPRESSIONS D'INTENTION : des bouts de phrase que quelqu'un ecrirait en exprimant un besoin que ce produit resout.
+
+Regles :
+- Reponds dans la langue demandee (fr ou en).
+- Propose des expressions naturelles, telles qu'un utilisateur les ecrirait (ex: "alternative a figma", "je cherche un outil pour", "quelqu'un utilise", "recommande un").
+- Entre 5 et ${INTENT_KEYWORDS_MAX_COUNT} expressions, chacune entre ${INTENT_KEYWORD_MIN_LENGTH} et ${INTENT_KEYWORD_MAX_LENGTH} caracteres.
+- Privilegie des expressions de recherche active de solution (frustration, comparaison, demande de recommandation), pas des descriptions de fonctionnalites.
+- Pas de numerotation, pas d'emojis, pas de mention d'IA ou de generation automatique.
+
+Reponds STRICTEMENT en JSON avec la structure suivante :
+{
+  "intent_keywords": ["<expression 1>", "<expression 2>", "<expression 3>"]
+}`;
+
+/**
+ * Propose buyer-intent phrases (the kind a prospect would write when looking for
+ * a solution the product solves) using the AI model, grounded on the GitHub repo
+ * when `product_url` points to one. Phrases are trimmed, length-clamped,
+ * de-duplicated and capped at {@link INTENT_KEYWORDS_MAX_COUNT}.
+ */
+export async function suggestIntentKeywords(input: SuggestIntentKeywordsInput): Promise<string[]> {
+  const language = input.content_language ?? 'fr';
+  const userPayload = `PRODUIT
+Nom: ${input.name}
+URL: ${input.product_url || '(aucune URL fournie)'}
+Description: ${input.product_description || '(aucune description fournie)'}
+Audience cible: ${input.target_audience || '(non specifiee)'}
+
+PARAMETRES
+Langue: ${language}
+
+Propose entre 5 et ${INTENT_KEYWORDS_MAX_COUNT} expressions d'intention pour ce produit.`;
+
+  const result = await runSuggestion({
+    productUrl: input.product_url,
+    systemPrompt: SUGGEST_INTENT_KEYWORDS_SYSTEM_PROMPT,
+    userPayload,
+    responseSchema: suggestIntentKeywordsResponseSchema,
+    logLabel: 'Intent keywords suggestion',
+  });
+
+  const keywords = dedupeBoundedList(
+    result.intent_keywords,
+    INTENT_KEYWORD_MIN_LENGTH,
+    INTENT_KEYWORD_MAX_LENGTH,
+    INTENT_KEYWORDS_MAX_COUNT,
+  );
+  if (keywords.length === 0) {
+    throw new ContentStudioError(
+      "Echec de la suggestion : aucune expression d'intention valide proposee par l'IA.",
+    );
+  }
+  return keywords;
+}
+
 function platformConstraints(targetSource: TargetSource): string {
   switch (targetSource) {
     case 'x':
