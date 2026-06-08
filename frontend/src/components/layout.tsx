@@ -254,12 +254,24 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+function formatBuildDate(buildDate: string | null | undefined): string | null {
+  if (!buildDate) return null;
+  return new Date(buildDate).toLocaleString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export function Layout() {
   const { data: versionInfo } = useApi<{ version: string; buildDate: string | null }>(
     '/api/version',
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const buildDate = formatBuildDate(versionInfo?.buildDate);
 
   return (
     <div className="min-h-screen bg-background">
@@ -299,6 +311,7 @@ export function Layout() {
           </button>
           <p className="px-1 text-[11px] text-muted-foreground">
             v{versionInfo?.version || 'dev'}
+            {buildDate && <span className="block">Build {buildDate}</span>}
           </p>
         </div>
       </aside>
@@ -330,20 +343,7 @@ export function Layout() {
           <div className="mx-auto max-w-screen-2xl px-6">
             <p className="text-xs text-muted-foreground">
               Solopilot v{versionInfo?.version || 'dev'}
-              {versionInfo?.buildDate && (
-                <>
-                  {' '}
-                  (Build{' '}
-                  {new Date(versionInfo.buildDate).toLocaleString('fr-FR', {
-                    day: 'numeric',
-                    month: 'long',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                  )
-                </>
-              )}
+              {buildDate && <> (Build {buildDate})</>}
             </p>
           </div>
         </footer>
@@ -400,6 +400,7 @@ export function Layout() {
               </button>
               <p className="px-3 pt-2 text-xs text-muted-foreground">
                 v{versionInfo?.version || 'dev'}
+                {buildDate && <span className="block">Build {buildDate}</span>}
               </p>
             </div>
           </DrawerBody>
