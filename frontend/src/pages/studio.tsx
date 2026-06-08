@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useApi } from '@/hooks/use-api';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -18,6 +19,7 @@ import {
 } from '@/components/ui/select';
 import {
   AlertCircle,
+  AlertTriangle,
   Sparkles,
   Copy,
   CheckCircle2,
@@ -26,10 +28,22 @@ import {
   Loader2,
   Wand2,
   Save,
+  Globe,
+  Mic,
+  Link2,
+  ExternalLink,
+  Settings2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatRelativeFr } from '@/lib/utils';
-import type { ContentDraft, ContentDraftStatus, TargetSource } from '@/types';
+import { cn, formatRelativeFr } from '@/lib/utils';
+import type {
+  ContentDraft,
+  ContentDraftStatus,
+  ContentLanguage,
+  ContentVoice,
+  ProductRecord,
+  TargetSource,
+} from '@/types';
 
 type StatusFilter = ContentDraftStatus;
 
@@ -51,13 +65,13 @@ const TABS: TabConfig[] = [
     id: 'edited',
     label: 'Éditées',
     emptyTitle: 'Aucune version éditée.',
-    emptyHint: 'Modifie le texte d\'un draft pour le retrouver ici.',
+    emptyHint: "Modifie le texte d'un draft pour le retrouver ici.",
   },
   {
     id: 'used',
     label: 'Utilisées',
     emptyTitle: 'Aucun draft utilisé pour le moment.',
-    emptyHint: 'Marque un draft comme utilisé après l\'avoir posté.',
+    emptyHint: "Marque un draft comme utilisé après l'avoir posté.",
   },
   {
     id: 'discarded',
@@ -73,6 +87,23 @@ const USED_ON_OPTIONS: { value: string; label: string }[] = [
   { value: 'linkedin', label: 'LinkedIn' },
   { value: 'autre', label: 'Autre' },
 ];
+
+// Character budgets per platform, mirroring the backend generation prompt
+// (src/content-studio.ts → platformConstraints). X enforces a hard 280-char
+// cap; reddit/generic are soft "recommended" ceilings. The live counter uses
+// these to warn before the user pastes something the platform will reject.
+const PLATFORM_LIMITS: Record<TargetSource, number> = {
+  x: 280,
+  reddit: 500,
+  generic: 500,
+};
+
+const VOICE_LABELS: Record<ContentVoice, string> = {
+  decontractee: 'Décontractée',
+  professionnelle: 'Professionnelle',
+  directe: 'Directe',
+  aidante: 'Aidante',
+};
 
 function targetSourceLabel(source: TargetSource | null): string {
   if (source === 'x') return 'X';
@@ -97,6 +128,44 @@ function statusBadgeVariant(
   return 'secondary';
 }
 
+/** Pre-select the "posted on" platform from the draft's target source. */
+function defaultUsedOn(source: TargetSource | null): string {
+  if (source === 'reddit') return 'reddit';
+  if (source === 'generic') return 'linkedin';
+  return 'x';
+}
+
+/** True when a URL points at a code-hosting repo rather than a product site. */
+function isCodeRepoUrl(url: string): boolean {
+  return /(?:github\.com|gitlab\.com|bitbucket\.org)/i.test(url);
+}
+
+/** Strip protocol and trailing slash for compact display. */
+function prettyUrl(url: string): string {
+  return url.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+}
+
+/** Live character count with platform-aware over-limit warning. */
+function CharCount({ length, source }: { length: number; source: TargetSource | null }) {
+  const limit = source ? PLATFORM_LIMITS[source] : null;
+  if (limit === null) {
+    return <span className="text-xs text-muted-foreground tabular-nums">{length} car.</span>;
+  }
+  const over = length > limit;
+  const near = !over && length > limit * 0.9;
+  return (
+    <span
+      className={cn(
+        'text-xs tabular-nums',
+        over ? 'text-destructive font-medium' : near ? 'text-warning' : 'text-muted-foreground',
+      )}
+    >
+      {length} / {limit}
+      {over ? (source === 'x' ? ' · dépasse la limite X' : ' · au-dessus du format conseillé') : ''}
+    </span>
+  );
+}
+
 interface DraftCardProps {
   draft: ContentDraft;
   onMutated: () => void;
@@ -105,7 +174,7 @@ interface DraftCardProps {
 function DraftCard({ draft, onMutated }: DraftCardProps) {
   const initialText = draft.edited_text ?? draft.text;
   const [text, setText] = useState(initialText);
-  const [usedOn, setUsedOn] = useState<string>(draft.used_on ?? 'x');
+  const [usedOn, setUsedOn] = useState<string>(draft.used_on ?? defaultUsedOn(draft.target_source));
   const [busy, setBusy] = useState<ContentDraftStatus | 'save' | null>(null);
 
   // Keep textarea in sync if the server-side draft changes (e.g. after refetch)
@@ -157,11 +226,7 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
 
   const handleSave = useCallback(async () => {
     if (!dirty) return;
-    await patch(
-      { edited_text: text, status: 'edited' },
-      'save',
-      'Modifications enregistrées.',
-    );
+    await patch({ edited_text: text, status: 'edited' }, 'save', 'Modifications enregistrées.');
   }, [dirty, patch, text]);
 
   const saveDraftIfDirty = useCallback(() => {
@@ -180,11 +245,7 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
   }, [text]);
 
   const handleMarkUsed = useCallback(async () => {
-    await patch(
-      { status: 'used', used_on: usedOn },
-      'used',
-      'Marquée comme utilisée.',
-    );
+    await patch({ status: 'used', used_on: usedOn }, 'used', 'Marquée comme utilisée.');
   }, [patch, usedOn]);
 
   const handleDiscard = useCallback(async () => {
@@ -208,10 +269,7 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
                 {draft.angle}
               </Badge>
             )}
-            <Badge
-              variant={statusBadgeVariant(draft.status)}
-              className="text-[10px] px-1.5 py-0"
-            >
+            <Badge variant={statusBadgeVariant(draft.status)} className="text-[10px] px-1.5 py-0">
               {statusLabel(draft.status)}
             </Badge>
           </div>
@@ -227,6 +285,10 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
           rows={5}
           aria-label="Texte du draft"
         />
+
+        <div className="flex justify-end -mt-1">
+          <CharCount length={text.length} source={draft.target_source} />
+        </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border">
           <div className="flex flex-wrap items-center gap-2">
@@ -262,10 +324,7 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
             {draft.status !== 'used' && (
               <>
                 <Select value={usedOn} onValueChange={setUsedOn}>
-                  <SelectTrigger
-                    className="h-8 w-[110px] text-xs"
-                    aria-label="Plateforme utilisée"
-                  >
+                  <SelectTrigger className="h-8 w-[110px] text-xs" aria-label="Plateforme utilisée">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -382,27 +441,120 @@ const GENERATE_BUTTONS: GenerateButton[] = [
   { key: 'generic', label: 'Générer 5 posts génériques', count: 5, source: 'generic' },
 ];
 
+/**
+ * Compact, read-only summary of the product settings that drive generation
+ * (language, voice, promo URL) plus actionable hints when settings that
+ * materially affect draft quality are missing. Keeps the user from generating
+ * a batch of off-target drafts before realising a key field is empty.
+ */
+function ProductContextStrip({ product }: { product: ProductRecord }) {
+  const lang: ContentLanguage = product.content_language ?? 'fr';
+  const voice = product.content_voice ?? product.reply_voice ?? 'professionnelle';
+  const promoUrl = product.production_url || product.product_url || null;
+  const promoIsRepoOnly = !product.production_url && !!promoUrl && isCodeRepoUrl(promoUrl);
+  const missingValueProps = product.value_props.length === 0;
+  const missingCtas = product.call_to_actions.length === 0;
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          <Globe className="size-3.5" />
+          {lang === 'en' ? 'Anglais' : 'Français'}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Mic className="size-3.5" />
+          {VOICE_LABELS[voice]}
+        </span>
+        {promoUrl ? (
+          <a
+            href={promoUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 max-w-[20rem] hover:text-foreground hover:underline"
+          >
+            <Link2 className="size-3.5 shrink-0" />
+            <span className="truncate">{prettyUrl(promoUrl)}</span>
+            <ExternalLink className="size-3 shrink-0" />
+          </a>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-warning">
+            <Link2 className="size-3.5" />
+            Aucune URL à promouvoir
+          </span>
+        )}
+      </div>
+
+      {!promoUrl && (
+        <Alert variant="warning">
+          <AlertTriangle className="size-4" />
+          <AlertDescription>
+            Aucune URL à promouvoir n'est configurée : les drafts ne contiendront pas de lien vers
+            ton produit.{' '}
+            <Link to="/products" className="font-medium underline underline-offset-2">
+              Ajoute une URL de production
+            </Link>
+            .
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {promoIsRepoOnly && (
+        <Alert variant="warning">
+          <AlertTriangle className="size-4" />
+          <AlertDescription>
+            La seule URL connue pointe vers un dépôt de code ({prettyUrl(promoUrl!)}). Les drafts
+            risquent de renvoyer vers GitHub.{' '}
+            <Link to="/products" className="font-medium underline underline-offset-2">
+              Renseigne une URL de production
+            </Link>{' '}
+            pour des liens orientés produit.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {(missingValueProps || missingCtas) && (
+        <Alert>
+          <Settings2 className="size-4" />
+          <AlertDescription>
+            {missingValueProps && missingCtas
+              ? 'Ajoute des propositions de valeur et des appels à l’action'
+              : missingValueProps
+                ? 'Ajoute des propositions de valeur'
+                : 'Ajoute des appels à l’action'}{' '}
+            dans les{' '}
+            <Link to="/products" className="font-medium underline underline-offset-2">
+              paramètres du produit
+            </Link>{' '}
+            pour des drafts plus convaincants.
+          </AlertDescription>
+        </Alert>
+      )}
+    </div>
+  );
+}
+
 export function StudioPage() {
   const { selectedProductId } = useSelectedProduct();
   const [activeTab, setActiveTab] = useState<StatusFilter>('pending');
-  const [generating, setGenerating] = useState(false);
+  const [generating, setGenerating] = useState<TargetSource | null>(null);
 
-  const pendingReq = useApi<ContentDraft[]>(
-    '/api/content-drafts?status=pending&kind=post',
-    { productId: selectedProductId },
+  const productReq = useApi<ProductRecord>(
+    `/api/products/${encodeURIComponent(selectedProductId)}`,
   );
-  const editedReq = useApi<ContentDraft[]>(
-    '/api/content-drafts?status=edited&kind=post',
-    { productId: selectedProductId },
-  );
-  const usedReq = useApi<ContentDraft[]>(
-    '/api/content-drafts?status=used&kind=post',
-    { productId: selectedProductId },
-  );
-  const discardedReq = useApi<ContentDraft[]>(
-    '/api/content-drafts?status=discarded&kind=post',
-    { productId: selectedProductId },
-  );
+
+  const pendingReq = useApi<ContentDraft[]>('/api/content-drafts?status=pending&kind=post', {
+    productId: selectedProductId,
+  });
+  const editedReq = useApi<ContentDraft[]>('/api/content-drafts?status=edited&kind=post', {
+    productId: selectedProductId,
+  });
+  const usedReq = useApi<ContentDraft[]>('/api/content-drafts?status=used&kind=post', {
+    productId: selectedProductId,
+  });
+  const discardedReq = useApi<ContentDraft[]>('/api/content-drafts?status=discarded&kind=post', {
+    productId: selectedProductId,
+  });
 
   const requestsByStatus = useMemo(
     () => ({
@@ -437,7 +589,7 @@ export function StudioPage() {
         toast.error('Sélectionne un produit avant de générer.');
         return;
       }
-      setGenerating(true);
+      setGenerating(targetSource);
       try {
         const res = await fetch(
           `/api/products/${encodeURIComponent(selectedProductId)}/content/generate-posts`,
@@ -453,12 +605,15 @@ export function StudioPage() {
           return;
         }
         const generated = Array.isArray(json) ? json.length : count;
-        toast.success(`${generated} draft${generated > 1 ? 's' : ''} généré${generated > 1 ? 's' : ''}.`);
+        toast.success(
+          `${generated} draft${generated > 1 ? 's' : ''} généré${generated > 1 ? 's' : ''}.`,
+        );
+        setActiveTab('pending');
         refetchAll();
       } catch {
         toast.error('Erreur réseau lors de la génération.');
       } finally {
-        setGenerating(false);
+        setGenerating(null);
       }
     },
     [refetchAll, selectedProductId],
@@ -470,8 +625,10 @@ export function StudioPage() {
     (usedReq.loading && !usedReq.data) ||
     (discardedReq.loading && !discardedReq.data);
 
-  const firstError =
-    pendingReq.error || editedReq.error || usedReq.error || discardedReq.error;
+  const firstError = pendingReq.error || editedReq.error || usedReq.error || discardedReq.error;
+
+  const lang: ContentLanguage = productReq.data?.content_language ?? 'fr';
+  const langLabel = lang === 'en' ? 'anglais' : 'français';
 
   return (
     <div className="space-y-6">
@@ -484,27 +641,31 @@ export function StudioPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold">Générer des drafts</CardTitle>
           <CardDescription>
-            Les drafts sont en français par défaut. Change la langue dans les
-            paramètres du produit.
+            Les drafts sont générés en {langLabel}, selon la voix et les infos du produit.
+            Ajuste-les dans les paramètres du produit.
           </CardDescription>
         </CardHeader>
-        <CardContent className="pb-5">
+        <CardContent className="pb-5 space-y-4">
+          {productReq.data && <ProductContextStrip product={productReq.data} />}
           <div className="flex flex-wrap items-center gap-2">
-            {GENERATE_BUTTONS.map((btn) => (
-              <Button
-                key={btn.key}
-                onClick={() => handleGenerate(btn.count, btn.source)}
-                disabled={generating}
-                size="sm"
-              >
-                {generating ? (
-                  <Loader2 className="size-3.5 mr-1 animate-spin" />
-                ) : (
-                  <Sparkles className="size-3.5 mr-1" />
-                )}
-                {btn.label}
-              </Button>
-            ))}
+            {GENERATE_BUTTONS.map((btn) => {
+              const isThisGenerating = generating === btn.source;
+              return (
+                <Button
+                  key={btn.key}
+                  onClick={() => handleGenerate(btn.count, btn.source)}
+                  disabled={generating !== null}
+                  size="sm"
+                >
+                  {isThisGenerating ? (
+                    <Loader2 className="size-3.5 mr-1 animate-spin" />
+                  ) : (
+                    <Sparkles className="size-3.5 mr-1" />
+                  )}
+                  {isThisGenerating ? 'Génération…' : btn.label}
+                </Button>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
@@ -512,9 +673,7 @@ export function StudioPage() {
       {firstError && (
         <Alert variant="destructive">
           <AlertCircle className="size-4" />
-          <AlertDescription>
-            Impossible de charger les drafts : {firstError}
-          </AlertDescription>
+          <AlertDescription>Impossible de charger les drafts : {firstError}</AlertDescription>
         </Alert>
       )}
 
