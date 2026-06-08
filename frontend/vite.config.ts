@@ -12,12 +12,12 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.png", "apple-touch-icon.png"],
       manifest: {
-        name: "X AI Weekly Bot",
-        short_name: "X AI Bot",
+        name: "Solopilot",
+        short_name: "Solopilot",
         description:
-          "Tableau de bord pour la curation et le résumé hebdomadaire de l'actualité IA sur X.",
-        theme_color: "#0f172a",
-        background_color: "#0f172a",
+          "Le back-office autonome de l'entreprise individuelle : veille, acquisition, CRM, facturation et agenda dans un briefing quotidien.",
+        theme_color: "#6c4cf0",
+        background_color: "#18181d",
         display: "standalone",
         orientation: "portrait",
         scope: "/",

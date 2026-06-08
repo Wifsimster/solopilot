@@ -1,14 +1,14 @@
 import type { LucideIcon } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 type StatTone = 'default' | 'success' | 'warning' | 'destructive';
 
 const toneStyles: Record<StatTone, string> = {
-  default: 'bg-primary/10 text-primary',
-  success: 'bg-success/10 text-success',
-  warning: 'bg-warning/10 text-warning',
-  destructive: 'bg-destructive/10 text-destructive',
+  default: 'bg-accent text-accent-foreground',
+  success: 'bg-success/12 text-success dark:bg-success/20',
+  warning: 'bg-warning/15 text-warning dark:bg-warning/25',
+  destructive: 'bg-destructive/12 text-destructive dark:bg-destructive/20',
 };
 
 interface StatCardProps {
@@ -21,29 +21,27 @@ interface StatCardProps {
 
 export function StatCard({ title, icon: Icon, tone = 'default', hint, children }: StatCardProps) {
   return (
-    <Card>
-      <CardContent className="flex items-start gap-3 p-4 sm:p-5">
+    <Card className="group relative overflow-hidden p-4 transition-colors hover:border-muted-foreground/20 sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {title}
+        </p>
         {Icon && (
           <div
             className={cn(
-              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+              'flex size-8 shrink-0 items-center justify-center rounded-lg',
               toneStyles[tone],
             )}
             aria-hidden="true"
           >
-            <Icon className="size-5" />
+            <Icon className="size-4" />
           </div>
         )}
-        <div className="min-w-0 flex-1 space-y-0.5">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {title}
-          </p>
-          <div className="text-xl sm:text-2xl font-semibold tracking-tight truncate">
-            {children}
-          </div>
-          {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-        </div>
-      </CardContent>
+      </div>
+      <div className="mt-2 truncate text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
+        {children}
+      </div>
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
     </Card>
   );
 }

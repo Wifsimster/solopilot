@@ -5,5 +5,5 @@ export function CardContent({
   ref,
   ...props
 }: React.HTMLAttributes<HTMLDivElement> & { ref?: React.Ref<HTMLDivElement> }) {
-  return <div data-slot="card-content" ref={ref} className={cn("p-6 pt-0", className)} {...props} />;
+  return <div data-slot="card-content" ref={ref} className={cn("p-5 pt-0 sm:p-6 sm:pt-0", className)} {...props} />;
 }

@@ -41,7 +41,7 @@ export function TableHead({
   ref,
   ...props
 }: React.ThHTMLAttributes<HTMLTableCellElement> & { ref?: React.Ref<HTMLTableCellElement> }) {
-  return <th data-slot="table-head" ref={ref} className={cn("h-12 px-4 text-left align-middle font-medium text-muted-foreground", className)} {...props} />;
+  return <th data-slot="table-head" ref={ref} className={cn("h-11 px-4 text-left align-middle text-xs font-medium uppercase tracking-wide text-muted-foreground", className)} {...props} />;
 }
 
 export function TableCell({
