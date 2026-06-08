@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { Item, SourceOpts, SourceReader } from '../ports.js';
 import { logger } from '../logger.js';
 
-const USER_AGENT = 'x-ai-weekly-bot/1.0';
+const USER_AGENT = 'solopilot/1.0';
 const FETCH_TIMEOUT_MS = 30_000;
 const SUBREDDIT_PATTERN = /^[A-Za-z0-9_]{2,21}$/;
 
