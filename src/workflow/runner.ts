@@ -22,6 +22,13 @@ export interface RunWorkflowOptions {
   config: Config;
   activityId?: string;
   trigger?: Trigger['kind'];
+  /**
+   * Apply the per-(module, activity) concurrency guard. Default true. Set false
+   * when the delegated work already has its own guard (e.g. the veille flip,
+   * where triggerCollect/triggerRun guard themselves) to preserve exact
+   * behaviour and avoid over-serializing collect vs digest (ADR-0020).
+   */
+  guard?: boolean;
 }
 
 export class WorkflowBusyError extends Error {}
@@ -38,12 +45,15 @@ export async function runWorkflowById(
 
   const activityId = options.activityId ?? DEFAULT_PRODUCT_ID;
   const trigger = options.trigger ?? 'manual';
+  const useGuard = options.guard ?? true;
   const guardKey = `${wf.module}:${activityId}`;
 
-  if (moduleGuards.get(guardKey) === true) {
-    throw new WorkflowBusyError(`A ${wf.module} workflow is already running for ${activityId}`);
+  if (useGuard) {
+    if (moduleGuards.get(guardKey) === true) {
+      throw new WorkflowBusyError(`A ${wf.module} workflow is already running for ${activityId}`);
+    }
+    moduleGuards.set(guardKey, true);
   }
-  moduleGuards.set(guardKey, true);
 
   const runId = openWorkflowRun(wf.id, activityId, trigger);
 
@@ -79,7 +89,7 @@ export async function runWorkflowById(
     logger.error('Workflow runner failed', { workflow: wf.id, message });
     return failed;
   } finally {
-    moduleGuards.set(guardKey, false);
+    if (useGuard) moduleGuards.set(guardKey, false);
   }
 }
 

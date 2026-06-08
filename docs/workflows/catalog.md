@@ -18,9 +18,13 @@ venir, leads chauds, dernier digest de veille — condensé en un message.
 
 | Workflow | Déclencheur | Étapes | Statut |
 |---|---|---|---|
-| `veille.collect` | cron `0 * * * *` | `fetch.sources` → `persist` | ✅ |
-| `veille.digest` | cron `30 7 * * *` | `fetch.sources` → lire corpus → `ai.summarize` → `notify.discord` | ✅ |
-| `veille.monthly` | cron mensuel | agréger digests → `ai.summarize` → `persist` | ✅ |
+| `veille.collect` | cron `0 * * * *` | `veille.collect-run` (→ `triggerCollect`) | ✅ `enabled` (flip ADR-0020) |
+| `veille.digest` | cron `30 7 * * *` | `veille.publish-run` (→ `triggerRun` : IA + Discord) | ✅ `enabled` (flip ADR-0020) |
+
+> Le flip route la prod via le moteur quand `WORKFLOW_SCHEDULER=true` (OFF par
+> défaut). Les workflows **délèguent** aux services éprouvés → comportement
+> identique. Les étapes décomposées (`fetch.sources`, `ai.summarize`, `persist`,
+> `notify.discord`) restent enregistrées comme briques réutilisables.
 
 ## Acquisition (intent signals + studio + leads existants)
 

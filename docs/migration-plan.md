@@ -67,16 +67,16 @@ comportement constant. **Voir [ADR-0014](adr/0014-workflow-engine.md).**
       `publishRunning` / `collectRunning`).
 - [x] Définir `veille.collect/digest/monthly` (définitions, `enabled: false`).
 - [x] Smoke test de bout en bout (`npm run test:workflow`, 21 assertions / SQLite).
-- [~] `cron-manager` → `WorkflowScheduler` : `scheduler.ts` écrit mais **non câblé**
-      à l'entrypoint de prod (planifie uniquement les workflows `enabled`).
-- [ ] `dev:once` exécute un workflow nommé plutôt que la publication codée en dur.
-- [ ] **Flip** : implémenter le mark-as-used dans le workflow, brancher
-      `scheduleWorkflows()`, basculer `veille.*` en `enabled: true` à comportement
-      constant, retirer les crons hérités. *(étape qui change le comportement —
-      déliberément différée, après rodage du moteur désactivé.)*
+- [x] `dev:once` exécute un workflow nommé (`npm run workflow -- <id>`).
+- [x] **Flip** (voir [ADR-0020](adr/0020-veille-flip-workflow-scheduler.md)) :
+      `veille.collect/digest` délèguent à `triggerCollect`/`triggerRun` (comportement
+      identique) et sont `enabled: true`. Le dispatch de `cron-manager` passe par
+      le moteur quand `WORKFLOW_SCHEDULER=true` (OFF par défaut, réversible). La
+      prod reste byte-identique tant que le flag n'est pas activé.
+- [ ] Retrait des crons hérités / table `runs` → **Phase 5** (après rodage du flip).
 
 **Critère de sortie :** en prod, aucune différence observable. Mêmes runs, même
-digest Discord à 07:30.
+digest Discord à 07:30. ✅ (le flip est opt-in et préserve le comportement.)
 
 ---
 
