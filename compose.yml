@@ -2,7 +2,7 @@ name: x-ai-weekly-bot
 
 services:
   x-ai-weekly-bot:
-    image: ghcr.io/wifsimster/x-ai-weekly-bot:latest
+    image: ghcr.io/wifsimster/solopilot:latest
     container_name: x-ai-weekly-bot
     restart: unless-stopped
     ports:

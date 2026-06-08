@@ -197,10 +197,10 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/wifsimster/x-ai-weekly-bot:latest
-            ghcr.io/wifsimster/x-ai-weekly-bot:v${{ steps.version_parts.outputs.full }}
-            ghcr.io/wifsimster/x-ai-weekly-bot:${{ steps.version_parts.outputs.minor }}
-            ghcr.io/wifsimster/x-ai-weekly-bot:${{ steps.version_parts.outputs.major }}
+            ghcr.io/wifsimster/solopilot:latest
+            ghcr.io/wifsimster/solopilot:v${{ steps.version_parts.outputs.full }}
+            ghcr.io/wifsimster/solopilot:${{ steps.version_parts.outputs.minor }}
+            ghcr.io/wifsimster/solopilot:${{ steps.version_parts.outputs.major }}
           build-args: |
             VERSION=${{ steps.version.outputs.new_version }}
             BUILD_DATE=${{ github.event.repository.updated_at }}
