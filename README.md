@@ -152,7 +152,7 @@ Le pipeline CI/CD (Integration et Deploiement Continus) se declenche a chaque pu
 ### Production
 
 ```bash
-# Sur le serveur, dans /opt/docker/x-ai-weekly-bot/
+# Sur le serveur, dans /opt/docker/solopilot/
 cp .env.example .env
 docker compose pull
 docker compose up -d

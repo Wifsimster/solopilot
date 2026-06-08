@@ -3,7 +3,7 @@ import type { Item, SourceOpts, SourceReader } from '../ports.js';
 import { logger } from '../logger.js';
 import { getProduct, toProductView } from '../product-service.js';
 
-const USER_AGENT = 'x-ai-weekly-bot/1.0';
+const USER_AGENT = 'solopilot/1.0';
 const FETCH_TIMEOUT_MS = 30_000;
 const HITS_PER_PAGE = 50;
 

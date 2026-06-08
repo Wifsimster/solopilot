@@ -137,7 +137,7 @@ export async function fetchGithubRepos(opts: GithubFetchOpts): Promise<GithubRep
 
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
-    'User-Agent': 'x-ai-weekly-bot/1.x',
+    'User-Agent': 'solopilot/1.x',
   };
   if (githubToken) {
     headers.Authorization = `Bearer ${githubToken}`;
@@ -298,7 +298,7 @@ export async function fetchGithubRepoContext(
 
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
-    'User-Agent': 'x-ai-weekly-bot/1.x',
+    'User-Agent': 'solopilot/1.x',
   };
   if (githubToken) {
     headers.Authorization = `Bearer ${githubToken}`;

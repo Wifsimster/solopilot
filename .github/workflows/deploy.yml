@@ -28,7 +28,7 @@ jobs:
       || github.event.workflow_run.conclusion == 'success'
     defaults:
       run:
-        working-directory: /opt/docker/x-ai-weekly-bot
+        working-directory: /opt/docker/solopilot
     steps:
       - name: Pull latest image(s)
         run: docker compose pull
