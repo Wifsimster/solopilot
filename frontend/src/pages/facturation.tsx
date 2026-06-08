@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Bar, BarChart, CartesianGrid, XAxis } from 'recharts';
 import { RefreshCw } from 'lucide-react';
@@ -130,6 +130,45 @@ export function FacturationPage() {
   const revenue = useMemo(() => monthlyRevenue(list), [list]);
   const drafts = relances.data ?? [];
 
+  const markPaid = useCallback(
+    async (id: string) => {
+      try {
+        const res = await fetch(`/api/facturation/invoices/${id}/paid`, { method: 'POST' });
+        if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
+        toast.success('Facture marquée payée.');
+        invoices.refetch();
+      } catch {
+        toast.error('Impossible de marquer la facture payée.');
+      }
+    },
+    [invoices],
+  );
+
+  const allColumns = useMemo<ColumnDef<Invoice>[]>(
+    () => [
+      ...columns,
+      {
+        id: 'actions',
+        header: '',
+        cell: ({ row }) => {
+          const inv = row.original;
+          if (inv.status === 'paid' || inv.status === 'void') return null;
+          return (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs"
+              onClick={() => markPaid(inv.id)}
+            >
+              Marquer payée
+            </Button>
+          );
+        },
+      },
+    ],
+    [markPaid],
+  );
+
   async function syncStripe() {
     setSyncing(true);
     try {
@@ -240,7 +279,7 @@ export function FacturationPage() {
         </div>
       ) : (
         <DataTable
-          columns={columns}
+          columns={allColumns}
           data={list}
           initialSorting={[{ id: 'issued_on', desc: true }]}
           facetedFilters={[
