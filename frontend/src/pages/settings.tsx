@@ -19,10 +19,10 @@ export function SettingsPage() {
           <Skeleton className="h-9 w-40" />
           <Skeleton className="h-5 w-96" />
         </div>
-        <Skeleton className="h-48 rounded-lg" />
-        <Skeleton className="h-64 rounded-lg" />
-        <Skeleton className="h-32 rounded-lg" />
-        <Skeleton className="h-32 rounded-lg" />
+        <Skeleton className="h-48 rounded-xl" />
+        <Skeleton className="h-64 rounded-xl" />
+        <Skeleton className="h-32 rounded-xl" />
+        <Skeleton className="h-32 rounded-xl" />
       </div>
     );
   }
@@ -46,7 +46,7 @@ export function SettingsPage() {
   const { credentialInfo } = config;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader
         title="Paramètres"
         description="Configuration globale (identité X) et configuration par produit (requête, webhook, plannings, prompt IA)."
@@ -63,18 +63,27 @@ export function SettingsPage() {
         </Alert>
       )}
 
-      <ProductSettingsCard />
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight">Paramètres par produit</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Surcharges appliquées uniquement au produit sélectionné.
+          </p>
+        </div>
+        <ProductSettingsCard />
+      </section>
 
-      <div className="pt-2">
-        <h2 className="text-lg font-semibold">Paramètres globaux</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Ces paramètres s'appliquent à l'ensemble des produits (identité X partagée). Reddit et
-          Hacker News (Algolia) ne nécessitent pas d'authentification.
-        </p>
-      </div>
-
-      <CookiesCard credentialInfo={credentialInfo} onSaved={refetch} />
-      <GraphqlCard envDefaults={config.envDefaults} onSaved={refetch} />
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight">Paramètres globaux</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Ces paramètres s'appliquent à l'ensemble des produits (identité X partagée). Reddit et
+            Hacker News (Algolia) ne nécessitent pas d'authentification.
+          </p>
+        </div>
+        <CookiesCard credentialInfo={credentialInfo} onSaved={refetch} />
+        <GraphqlCard envDefaults={config.envDefaults} onSaved={refetch} />
+      </section>
     </div>
   );
 }

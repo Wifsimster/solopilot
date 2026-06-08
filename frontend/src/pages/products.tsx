@@ -27,7 +27,7 @@ import { ProductCreateDialog } from '@/components/product-create-dialog';
 import { GithubImportDialog } from '@/components/github-import-dialog';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
-import { Plus, Archive, Loader2, Pencil, ExternalLink, Github } from 'lucide-react';
+import { Plus, Archive, Loader2, Pencil, ExternalLink, Github, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateFr } from '@/lib/utils';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
@@ -135,11 +135,17 @@ export function ProductsPage() {
   if (loading && !data) {
     return (
       <div className="space-y-6">
-        <div>
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="mt-2 h-4 w-72" />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-40" />
+            <Skeleton className="h-10 w-36" />
+          </div>
         </div>
-        <Skeleton className="h-64 w-full rounded-lg" />
+        <Skeleton className="h-64 w-full rounded-xl" />
       </div>
     );
   }
@@ -180,145 +186,167 @@ export function ProductsPage() {
         }
       />
 
-
       {products.length === 0 ? (
         <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            Aucun produit configuré. Cliquez sur « Nouveau produit » pour en créer un.
+          <CardContent className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+              <Package className="size-5 text-muted-foreground" aria-hidden="true" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-medium">Aucun produit configuré</p>
+              <p className="text-sm text-muted-foreground">
+                Créez votre premier produit pour commencer à surveiller vos sources.
+              </p>
+            </div>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="size-4" aria-hidden="true" />
+              Nouveau produit
+            </Button>
           </CardContent>
         </Card>
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nom</TableHead>
-                  <TableHead>Identifiant</TableHead>
-                  <TableHead>Sources</TableHead>
-                  <TableHead>Requête X</TableHead>
-                  <TableHead>Créé le</TableHead>
-                  <TableHead>Statut</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {products.map((p) => {
-                  const isSelected = p.id === selectedProductId;
-                  const isArchived = !!p.archived_at;
-                  return (
-                    <TableRow key={p.id}>
-                      <TableCell className="font-medium">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span>{p.name}</span>
-                          {p.product_url && (
-                            <a
-                              href={p.product_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-muted-foreground hover:text-foreground transition-colors"
-                              title={p.product_url}
-                              aria-label={`Ouvrir l'URL de ${p.name}`}
-                            >
-                              <ExternalLink className="size-3.5" />
-                            </a>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[160px]">Nom</TableHead>
+                    <TableHead className="min-w-[120px]">Identifiant</TableHead>
+                    <TableHead className="min-w-[120px]">Sources</TableHead>
+                    <TableHead className="min-w-[160px]">Requête X</TableHead>
+                    <TableHead className="min-w-[110px]">Créé le</TableHead>
+                    <TableHead className="min-w-[90px]">Statut</TableHead>
+                    <TableHead className="min-w-[160px] text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {products.map((p) => {
+                    const isSelected = p.id === selectedProductId;
+                    const isArchived = !!p.archived_at;
+                    return (
+                      <TableRow
+                        key={p.id}
+                        className={isSelected ? 'bg-accent/40' : undefined}
+                      >
+                        <TableCell className="font-medium">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span>{p.name}</span>
+                            {p.product_url && (
+                              <a
+                                href={p.product_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-muted-foreground hover:text-foreground transition-colors"
+                                title={p.product_url}
+                                aria-label={`Ouvrir l'URL de ${p.name}`}
+                              >
+                                <ExternalLink className="size-3.5" />
+                              </a>
+                            )}
+                            {isSelected && (
+                              <Badge variant="secondary" className="text-xs">
+                                sélectionné
+                              </Badge>
+                            )}
+                            {p.target_audience && (
+                              <Badge variant="success" className="text-xs">
+                                Studio configuré
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <code className="text-xs font-mono bg-muted rounded px-1.5 py-0.5">
+                            {p.id}
+                          </code>
+                        </TableCell>
+                        <TableCell>
+                          <SourceBadges product={p} />
+                        </TableCell>
+                        <TableCell
+                          className="text-sm text-muted-foreground max-w-[200px] truncate"
+                          title={p.x_query ?? ''}
+                        >
+                          {truncate(p.x_query, 50)}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                          {formatCreatedAt(p.created_at)}
+                        </TableCell>
+                        <TableCell>
+                          {isArchived ? (
+                            <Badge variant="outline">Archivé</Badge>
+                          ) : (
+                            <Badge variant="success">Actif</Badge>
                           )}
-                          {isSelected && (
-                            <Badge variant="secondary" className="text-xs">
-                              sélectionné
-                            </Badge>
-                          )}
-                          {p.target_audience && (
-                            <Badge variant="success" className="text-xs">
-                              Studio configuré
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <code className="text-xs font-mono">{p.id}</code>
-                      </TableCell>
-                      <TableCell>
-                        <SourceBadges product={p} />
-                      </TableCell>
-                      <TableCell className="text-sm" title={p.x_query ?? ''}>
-                        {truncate(p.x_query, 50)}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatCreatedAt(p.created_at)}
-                      </TableCell>
-                      <TableCell>
-                        {isArchived ? (
-                          <Badge variant="outline">Archivé</Badge>
-                        ) : (
-                          <Badge variant="success">Actif</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {!isSelected && !isArchived && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setSelectedProductId(p.id)}
-                            >
-                              Sélectionner
-                            </Button>
-                          )}
-                          {!isArchived && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setEditingProduct(p)}
-                              className="h-8 px-2"
-                              title="Éditer le produit"
-                            >
-                              <Pencil className="size-3.5 mr-1" />
-                              Éditer
-                            </Button>
-                          )}
-                          {!isArchived && (
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={archivingId === p.id}
-                                  className="h-8 px-2 text-destructive hover:text-destructive"
-                                  title="Archiver le produit"
-                                >
-                                  {archivingId === p.id ? (
-                                    <Loader2 className="size-3.5 animate-spin" />
-                                  ) : (
-                                    <Archive className="size-3.5" />
-                                  )}
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Archiver « {p.name} » ?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Le produit sera archivé (suppression douce). Ses données
-                                    historiques resteront accessibles, mais il ne sera plus utilisé
-                                    pour les nouveaux runs.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Annuler</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleArchive(p.id)}>
-                                    Archiver
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {!isSelected && !isArchived && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-xs"
+                                onClick={() => setSelectedProductId(p.id)}
+                              >
+                                Sélectionner
+                              </Button>
+                            )}
+                            {!isArchived && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setEditingProduct(p)}
+                                className="h-8 px-2"
+                                title="Éditer le produit"
+                              >
+                                <Pencil className="size-3.5 mr-1" />
+                                Éditer
+                              </Button>
+                            )}
+                            {!isArchived && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={archivingId === p.id}
+                                    className="h-8 px-2 text-destructive hover:text-destructive"
+                                    title="Archiver le produit"
+                                  >
+                                    {archivingId === p.id ? (
+                                      <Loader2 className="size-3.5 animate-spin" />
+                                    ) : (
+                                      <Archive className="size-3.5" />
+                                    )}
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Archiver « {p.name} » ?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Le produit sera archivé (suppression douce). Ses données
+                                      historiques resteront accessibles, mais il ne sera plus utilisé
+                                      pour les nouveaux runs.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Annuler</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => handleArchive(p.id)}>
+                                      Archiver
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}

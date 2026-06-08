@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { StatusDot, CardFlash, type Flash } from './shared';
 import type { ConfigResponse } from '@/types';
 
@@ -46,21 +46,23 @@ export function CookiesCard({ credentialInfo, onSaved }: CookiesCardProps) {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="font-semibold">Session Cookies X</div>
-            <p className="text-sm text-muted-foreground">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle>Session Cookies X</CardTitle>
+            <CardDescription>
               Cookies de session pour le scraping (extraits depuis votre navigateur : DevTools &gt;
               Application &gt; Cookies &gt; x.com)
-            </p>
+            </CardDescription>
           </div>
-          <StatusDot configured={!!credentialInfo.authTokenMasked && !!credentialInfo.csrfTokenMasked} />
+          <div className="shrink-0">
+            <StatusDot configured={!!credentialInfo.authTokenMasked && !!credentialInfo.csrfTokenMasked} />
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         <CardFlash flash={flash} />
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
             <Label htmlFor="auth_token">auth_token</Label>
             <Input
@@ -74,13 +76,16 @@ export function CookiesCard({ credentialInfo, onSaved }: CookiesCardProps) {
               {credentialInfo.authTokenMasked ? (
                 <>
                   Valeur actuelle :{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{credentialInfo.authTokenMasked}</code>
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    {credentialInfo.authTokenMasked}
+                  </code>
                 </>
               ) : (
                 'Non configuré'
               )}
             </p>
           </div>
+
           <div className="space-y-2">
             <Label htmlFor="csrf_token">ct0 (CSRF token)</Label>
             <Input
@@ -94,14 +99,17 @@ export function CookiesCard({ credentialInfo, onSaved }: CookiesCardProps) {
               {credentialInfo.csrfTokenMasked ? (
                 <>
                   Valeur actuelle :{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{credentialInfo.csrfTokenMasked}</code>
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    {credentialInfo.csrfTokenMasked}
+                  </code>
                 </>
               ) : (
                 'Non configuré'
               )}
             </p>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+
+          <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:gap-4">
             <Button type="submit" disabled={saving}>
               {saving ? 'Validation...' : 'Valider et sauvegarder'}
             </Button>
