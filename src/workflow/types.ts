@@ -78,9 +78,25 @@ export interface StripeConnector {
   listInvoices(): Promise<StripeInvoiceData[]>;
 }
 
+/** Generic calendar event shape exchanged with an ICS feed / calendar provider. */
+export interface CalendarEventData {
+  external_id: string;
+  title: string;
+  starts_at: string;
+  ends_at: string | null;
+  location: string | null;
+}
+
+export interface CalendarConnector {
+  isConfigured(): boolean;
+  /** Upcoming events from the feed. Resolves to [] when not configured. */
+  listUpcoming(): Promise<CalendarEventData[]>;
+}
+
 export interface ConnectorRegistry {
   discord: DiscordConnector;
   stripe: StripeConnector;
+  calendar: CalendarConnector;
 }
 
 export interface StepContext {

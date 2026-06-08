@@ -33,6 +33,10 @@ const configSchema = z.object({
   // Optional: Stripe secret key for the Facturation module. When absent, the
   // module works as a local invoice ledger and Stripe sync degrades gracefully.
   STRIPE_API_KEY: z.string().min(1).optional(),
+
+  // Optional: a calendar ICS feed URL (e.g. Google Calendar secret address) for
+  // the Agenda module. When absent, Agenda works as a local event store.
+  AGENDA_ICS_URL: z.string().url().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;

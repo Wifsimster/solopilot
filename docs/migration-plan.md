@@ -145,12 +145,15 @@ Trois modules indépendants, livrables en parallèle ou en séquence.
 - [x] Smoke test (pipeline, staleness, relance, clôture).
 - [ ] `crm.promote-lead` (promotion auto des leads) — attend le bus d'événements.
 
-### Agenda
-- [ ] Connecteur `CalendarConnector` (Google Calendar MCP).
-- [ ] Workflow `agenda.sync` : pull des événements → alimente le cockpit.
-- [ ] Workflow `agenda.rappels` : rappels de RDV / time-blocking.
+### Agenda ✅ (voir [ADR-0019](adr/0019-agenda-calendar.md))
+- [x] Store local d'événements + connecteur ICS optionnel (dégradation gracieuse).
+- [x] Workflow `agenda.sync` : flux ICS → store (no-op sans flux).
+- [x] Workflow `agenda.rappels` : rappels de l'agenda du jour.
+- [x] API + écran Agenda ; cockpit branché.
+- [x] Smoke test (parse ICS, événements, sync gracieux).
 
-**Critère de sortie :** les six domaines métier tournent en workflows. ADR-0017+.
+**Critère de sortie atteint :** les six domaines métier tournent en workflows.
+Tous les modules référencés par le cockpit sont **live**.
 
 ---
 

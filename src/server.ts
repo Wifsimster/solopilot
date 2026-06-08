@@ -106,6 +106,13 @@ import {
 } from './modules/crm/store.js';
 import { draftFollowup } from './modules/crm/followup.js';
 import {
+  listUpcomingEvents,
+  listEventsForDay,
+  createEvent,
+  eventCreateSchema,
+  agendaSummary,
+} from './modules/agenda/store.js';
+import {
   listIntentSignals,
   getIntentSignal,
   updateIntentSignal,
@@ -433,6 +440,24 @@ export function startServer(
   app.get('/api/crm/relances', (c) => {
     const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(listStaleDeals(activityId).map(draftFollowup));
+  });
+
+  // --- Agenda API — calendar events (read + manual create) ---
+
+  app.get('/api/agenda', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    return c.json({
+      summary: agendaSummary(activityId),
+      today: listEventsForDay(activityId),
+      upcoming: listUpcomingEvents(activityId),
+    });
+  });
+
+  app.post('/api/agenda/events', async (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const parsed = eventCreateSchema.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
+    return c.json(createEvent(activityId, parsed.data), 201);
   });
 
   // --- Workflows API (read-only, available in both setup and operational mode) ---

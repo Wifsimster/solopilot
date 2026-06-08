@@ -14,6 +14,7 @@ import { listWorkflowRuns } from '../../workflow/run-store.js';
 import { facturationSummary } from '../facturation/store.js';
 import { comptaStatus } from '../comptabilite/compta.js';
 import { crmSummary } from '../crm/store.js';
+import { agendaSummary } from '../agenda/store.js';
 import { getTodayDateParis } from '../../date-utils.js';
 import { DEFAULT_PRODUCT_ID } from '../../db.js';
 
@@ -50,7 +51,13 @@ export interface Briefing {
     staleDeals: number;
     openValueCents: number;
   };
-  agenda: { status: ModuleStatus };
+  agenda: {
+    status: ModuleStatus;
+    todayCount: number;
+    upcomingCount: number;
+    nextTitle: string | null;
+    nextStartsAt: string | null;
+  };
   workflows: { total: number; byStatus: Record<string, number> };
 }
 
@@ -68,6 +75,7 @@ export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing
   const facturation = facturationSummary(activityId);
   const compta = comptaStatus(activityId);
   const crm = crmSummary(activityId);
+  const agenda = agendaSummary(activityId);
 
   return {
     activityId,
@@ -100,7 +108,13 @@ export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing
       staleDeals: crm.staleDeals,
       openValueCents: crm.openValueCents,
     },
-    agenda: { status: 'planned' },
+    agenda: {
+      status: 'live',
+      todayCount: agenda.todayCount,
+      upcomingCount: agenda.upcomingCount,
+      nextTitle: agenda.nextTitle,
+      nextStartsAt: agenda.nextStartsAt,
+    },
     workflows: { total: recentRuns.length, byStatus },
   };
 }
@@ -164,8 +178,14 @@ export function renderBriefingText(b: Briefing): string {
   }
   lines.push('');
 
-  lines.push('**À VENIR**');
-  lines.push('• L\'Agenda (Google Calendar) arrive dans le prochain module.');
+  lines.push('**AGENDA**');
+  if (b.agenda.todayCount > 0) {
+    lines.push(`• ${b.agenda.todayCount} événement(s) aujourd'hui.`);
+  } else if (b.agenda.nextTitle) {
+    lines.push(`• Prochain : « ${b.agenda.nextTitle} ».`);
+  } else {
+    lines.push('_Aucun événement à venir._');
+  }
 
   return lines.join('\n');
 }
