@@ -34,6 +34,11 @@ const configSchema = z.object({
   // module works as a local invoice ledger and Stripe sync degrades gracefully.
   STRIPE_API_KEY: z.string().min(1).optional(),
 
+  // Optional: Stripe publishable key. Required only to mount the embedded
+  // Checkout for collecting payment on an invoice; absent = the "Encaisser"
+  // action stays hidden and the ledger works unchanged.
+  STRIPE_PUBLISHABLE_KEY: z.string().min(1).optional(),
+
   // Optional: a calendar ICS feed URL (e.g. Google Calendar secret address) for
   // the Agenda module. When absent, Agenda works as a local event store.
   AGENDA_ICS_URL: z.string().url().optional(),

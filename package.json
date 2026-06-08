@@ -47,6 +47,8 @@
     "@schedule-x/events-service": "^4.6.0",
     "@schedule-x/react": "^4.1.0",
     "@schedule-x/theme-default": "^4.6.0",
+    "@stripe/react-stripe-js": "^6.6.0",
+    "@stripe/stripe-js": "^9.7.0",
     "@tanstack/react-table": "^8.21.3",
     "better-sqlite3": "^12.8.0",
     "class-variance-authority": "^0.7.1",

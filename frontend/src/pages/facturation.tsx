@@ -18,6 +18,7 @@ import {
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { FacturationInvoiceDialog } from '@/components/facturation-invoice-dialog';
+import { StripeCheckoutDialog } from '@/components/stripe-checkout-dialog';
 import { useSelectedProduct, withProductId } from '@/lib/product-context-hooks';
 
 interface Invoice {
@@ -122,10 +123,13 @@ export function FacturationPage() {
   const { selectedProductId } = useSelectedProduct();
   const invoices = useApi<Invoice[]>('/api/facturation/invoices', { productId: selectedProductId });
   const relances = useApi<Relance[]>('/api/facturation/relances', { productId: selectedProductId });
-  const stripe = useApi<{ configured: boolean }>('/api/facturation/stripe', {
-    productId: selectedProductId,
-  });
+  const stripe = useApi<{ configured: boolean; checkout: boolean; publishableKey: string | null }>(
+    '/api/facturation/stripe',
+    { productId: selectedProductId },
+  );
   const [syncing, setSyncing] = useState(false);
+  const checkout = stripe.data?.checkout ?? false;
+  const publishableKey = stripe.data?.publishableKey ?? null;
 
   const list = useMemo(() => invoices.data ?? [], [invoices.data]);
   const revenue = useMemo(() => monthlyRevenue(list), [list]);
@@ -155,19 +159,29 @@ export function FacturationPage() {
           const inv = row.original;
           if (inv.status === 'paid' || inv.status === 'void') return null;
           return (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-xs"
-              onClick={() => markPaid(inv.id)}
-            >
-              Marquer payée
-            </Button>
+            <div className="flex items-center justify-end gap-2">
+              {checkout && publishableKey && (
+                <StripeCheckoutDialog
+                  invoiceId={inv.id}
+                  invoiceLabel={inv.number}
+                  publishableKey={publishableKey}
+                  productId={selectedProductId}
+                />
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={() => markPaid(inv.id)}
+              >
+                Marquer payée
+              </Button>
+            </div>
           );
         },
       },
     ],
-    [markPaid],
+    [markPaid, checkout, publishableKey, selectedProductId],
   );
 
   async function syncStripe() {
