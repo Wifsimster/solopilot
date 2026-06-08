@@ -195,6 +195,16 @@ export function FacturationPage() {
           columns={columns}
           data={list}
           initialSorting={[{ id: 'issued_on', desc: true }]}
+          facetedFilters={[
+            {
+              columnId: 'status',
+              title: 'Statut',
+              options: (Object.keys(STATUS_META) as Invoice['status'][]).map((s) => ({
+                label: STATUS_META[s].label,
+                value: s,
+              })),
+            },
+          ]}
           emptyMessage="Aucune facture. Le module fonctionne en ledger local ; la synchronisation Stripe est optionnelle."
         />
       )}
