@@ -16,6 +16,9 @@ const { draftRelance } = await import('../dist/modules/facturation/relance.js');
 const compta = await import('../dist/modules/comptabilite/compta.js');
 const crm = await import('../dist/modules/crm/store.js');
 const { draftFollowup } = await import('../dist/modules/crm/followup.js');
+const agenda = await import('../dist/modules/agenda/store.js');
+const { parseIcs } = await import('../dist/connectors/calendar.js');
+const { getTodayDateParis } = await import('../dist/date-utils.js');
 
 let failures = 0;
 const assert = (cond, msg) => {
@@ -74,7 +77,7 @@ assert(all.length === 4, `all four runs listed (got ${all.length})`);
 console.log('bootstrap (real steps + veille workflows):');
 resetRegistry();
 registerSolopilot();
-for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate', 'facturation.relance', 'facturation.sync', 'compta.seuils', 'compta.echeance', 'crm.followup']) {
+for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate', 'facturation.relance', 'facturation.sync', 'compta.seuils', 'compta.echeance', 'crm.followup', 'agenda.sync', 'agenda.rappels']) {
   assert(getStep(use) !== undefined, `step registered: ${use}`);
 }
 const registered = listWorkflows();
@@ -84,6 +87,7 @@ assert(registered.some((w) => w.id === 'cockpit.daily-briefing'), 'cockpit.daily
 assert(registered.filter((w) => w.module === 'facturation').length === 2, 'two facturation workflows registered');
 assert(registered.filter((w) => w.module === 'compta').length === 2, 'two compta workflows registered');
 assert(registered.filter((w) => w.module === 'crm').length === 1, 'one crm workflow registered');
+assert(registered.filter((w) => w.module === 'agenda').length === 2, 'two agenda workflows registered');
 assert(registered.every((w) => !w.enabled), 'every workflow ships disabled (no prod impact)');
 const unresolved = registered.flatMap((w) => w.steps).filter((s) => getStep(s.use) === undefined);
 assert(unresolved.length === 0, `every step resolves (unresolved: ${unresolved.map((s) => s.use).join(',') || 'none'})`);
@@ -137,14 +141,26 @@ assert(inter.id !== undefined && crm.getDeal(deal.id).updated_at >= deal.updated
 assert(crm.updateDealStage(deal.id, 'gagne').stage === 'gagne', 'deal stage moved to gagne');
 assert(crm.crmSummary('default').openDeals === 0, 'won deal leaves the open pipeline');
 
+console.log('agenda (ICS parse, events, sync):');
+const ics = 'BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:evt-1@test\nSUMMARY:Réunion client\nDTSTART:20260610T090000Z\nDTEND:20260610T100000Z\nLOCATION:Visio\nEND:VEVENT\nEND:VCALENDAR';
+const parsed = parseIcs(ics);
+assert(parsed.length === 1 && parsed[0].title === 'Réunion client' && parsed[0].starts_at === '2026-06-10T09:00:00Z', 'ICS VEVENT parsed to ISO');
+const today = getTodayDateParis();
+agenda.createEvent('default', { title: 'RDV prospect', starts_at: `${today}T10:00:00`, location: 'Téléphone' });
+assert(agenda.listEventsForDay('default', today).length === 1, 'event listed for today');
+assert(agenda.agendaSummary('default').todayCount === 1, 'agenda summary counts today');
+const agendaSyncRun = await runWorkflowById('agenda.sync', { config: cfg, trigger: 'manual' });
+assert(agendaSyncRun.status === 'success' && agendaSyncRun.trace[0].status === 'ok', 'agenda.sync is a graceful no-op without an ICS feed');
+
 console.log('cockpit briefing:');
 const brief = buildBriefing('default');
 assert(brief.veille.status === 'live' && brief.facturation.status === 'live', 'briefing reports facturation live');
 assert(brief.facturation.unpaid === 0, 'briefing reflects ledger state (paid invoice)');
 assert(brief.compta.status === 'live' && brief.compta.caCents === 170000, 'briefing reports compta live with CA');
 assert(brief.crm.status === 'live', 'briefing reports crm live');
+assert(brief.agenda.status === 'live' && brief.agenda.todayCount === 1, 'briefing reports agenda live with today event');
 const text = renderBriefingText(brief);
-assert(['BRIEF DU JOUR', 'FACTURATION', 'COMPTABILITÉ', 'CRM'].every((s) => text.includes(s)), 'briefing renders all live sections');
+assert(['BRIEF DU JOUR', 'FACTURATION', 'COMPTABILITÉ', 'CRM', 'AGENDA'].every((s) => text.includes(s)), 'briefing renders all live sections');
 
 resetRegistry();
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);

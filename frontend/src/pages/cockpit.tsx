@@ -41,24 +41,14 @@ interface Briefing {
     staleDeals: number;
     openValueCents: number;
   };
-  agenda: { status: ModuleStatus };
+  agenda: {
+    status: ModuleStatus;
+    todayCount: number;
+    upcomingCount: number;
+    nextTitle: string | null;
+    nextStartsAt: string | null;
+  };
   workflows: { total: number; byStatus: Record<string, number> };
-}
-
-function PlannedCard({ title, hint }: { title: string; hint: string }) {
-  return (
-    <Card className="opacity-70">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between text-base font-semibold">
-          {title}
-          <Badge variant="outline" className="text-xs">
-            À venir
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="text-sm text-muted-foreground">{hint}</CardContent>
-    </Card>
-  );
 }
 
 export function CockpitPage() {
@@ -202,7 +192,20 @@ export function CockpitPage() {
             </CardContent>
           </Card>
 
-          <PlannedCard title="Agenda" hint="Synchronisation Google Calendar et rappels." />
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="text-base font-semibold">Agenda</div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold tabular-nums">{data.agenda.todayCount}</div>
+              <div className="text-sm text-muted-foreground">
+                événement(s) aujourd'hui
+                {data.agenda.nextTitle && data.agenda.todayCount === 0 && (
+                  <> — prochain : {data.agenda.nextTitle}</>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

@@ -61,8 +61,8 @@ venir, leads chauds, dernier digest de veille — condensé en un message.
 
 | Workflow | Déclencheur | Étapes | Statut |
 |---|---|---|---|
-| `agenda.sync` | cron `*/30 * * * *` | `calendar.pull` → `persist` | 🆕 |
-| `agenda.rappels` | cron quotidien | événements du jour → `notify` rappels / time-blocking | 🆕 |
+| `agenda.sync` | cron `*/30 * * * *` | `agenda.sync` (flux ICS → store, no-op sans flux) | ✅ défini (`enabled: false`) |
+| `agenda.rappels` | cron `0 7 * * *` | `agenda.rappels` (événements du jour) → `notify.discord` | ✅ défini (`enabled: false`) |
 
 ---
 

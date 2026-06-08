@@ -497,6 +497,41 @@ function runCrmMigrations(database: Database.Database) {
   );
 }
 
+export interface CalendarEventRecord {
+  id: string;
+  product_id: string;
+  external_id: string | null;
+  title: string;
+  starts_at: string;
+  ends_at: string | null;
+  location: string | null;
+  source: string;
+  created_at: number;
+}
+
+// Agenda module migrations (ADR-0019). Idempotent. Local calendar events; ICS
+// sync stores its external uid in external_id for idempotent upserts.
+function runAgendaMigrations(database: Database.Database) {
+  database.exec(`CREATE TABLE IF NOT EXISTS calendar_events (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL DEFAULT '${DEFAULT_PRODUCT_ID}' REFERENCES products(id) ON DELETE CASCADE,
+    external_id TEXT,
+    title TEXT NOT NULL,
+    starts_at TEXT NOT NULL,
+    ends_at TEXT,
+    location TEXT,
+    source TEXT NOT NULL DEFAULT 'manual',
+    created_at INTEGER NOT NULL
+  )`);
+
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_calendar_events_product_start ON calendar_events(product_id, starts_at)`,
+  );
+  database.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_calendar_events_external ON calendar_events(product_id, external_id) WHERE external_id IS NOT NULL`,
+  );
+}
+
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -559,6 +594,7 @@ export function getDb(): Database.Database {
     runFacturationMigrations(db);
     runComptaMigrations(db);
     runCrmMigrations(db);
+    runAgendaMigrations(db);
 
     logger.info('Database initialized', { path: dbPath });
   }

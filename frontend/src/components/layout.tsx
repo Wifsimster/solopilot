@@ -31,6 +31,7 @@ import {
   Receipt,
   Calculator,
   Users,
+  CalendarDays,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -77,6 +78,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/facturation', label: 'Facturation', icon: Receipt },
       { to: '/comptabilite', label: 'Comptabilité', icon: Calculator },
+      { to: '/agenda', label: 'Agenda', icon: CalendarDays },
     ],
   },
   {
