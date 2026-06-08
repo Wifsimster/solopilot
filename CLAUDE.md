@@ -2,7 +2,11 @@
 
 ## Project Overview
 
-X AI Weekly Bot — a full-stack TypeScript application that scrapes an X (Twitter) timeline hourly, accumulates tweets in SQLite, and publishes a daily AI-generated summary via Discord at 07:30. Includes a React web dashboard for configuration and monitoring.
+Solopilot (anciennement « X AI Weekly Bot ») — the autonomous back-office for the company of one. A full-stack TypeScript application that runs an auto-entrepreneur's recurring administrative work as AI-driven **workflows**: veille, acquisition, CRM, invoicing, accounting/URSSAF, and agenda — surfaced as a single daily briefing.
+
+**Migration in progress.** The product is being generalized from a single X-veille bot into a workflow-driven platform. The **Veille** module (hourly X/Reddit/HN collection + daily AI summary to Discord at 07:30) is in production; Cockpit, Facturation (Stripe), Comptabilite/URSSAF, CRM, and Agenda (Google Calendar) are planned. See [docs/vision.md](docs/vision.md), [docs/migration-plan.md](docs/migration-plan.md), [docs/reimplementation-plan.md](docs/reimplementation-plan.md), and [ADR-0013](docs/adr/0013-from-bot-to-solopilot-workflow-platform.md).
+
+**Core principle — everything is a workflow.** The current `cron → run → (collect | publish) → notify` pipeline is being promoted to a generic workflow engine (Trigger, Step, Workflow, Run). Adding a business capability = writing a workflow, not extending the monolith. Today's bot becomes the `veille.collect` / `veille.digest` workflows with zero behavioural change (strangler-fig).
 
 ## Tech Stack
 

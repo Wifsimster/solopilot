@@ -1,11 +1,15 @@
-# X AI Weekly Bot
+# Solopilot
 
-Bot de veille IA automatisee qui scrape votre timeline X toutes les heures, accumule les tweets pertinents et publie un resume quotidien en francais via Discord. Interface web incluse pour la configuration et le suivi.
+> Le systeme d'exploitation autonome de l'entreprise d'une personne.
+
+Solopilot est le back-office unique de l'auto-entrepreneur : veille, acquisition, CRM, facturation, comptabilite et agenda, orchestres par des **workflows** pilotes par IA. On decrit son entreprise une fois, et la plateforme fait tourner le quotidien administratif, condense dans un brief matinal unique.
+
+> **Etat actuel** — Solopilot evolue depuis « X AI Weekly Bot ». Le module de **veille** (collecte X/Reddit/HN + resume IA quotidien sur Discord) est en production. Les modules Cockpit, Facturation, Comptabilite, CRM et Agenda sont planifies. Voir la [vision](docs/vision.md), le [plan de migration](docs/migration-plan.md) et le [plan de reimplementation](docs/reimplementation-plan.md).
 
 ## Table des matieres
 
-- [A quoi sert ce produit ?](#a-quoi-sert-ce-produit-)
-- [Fonctionnalites principales](#fonctionnalites-principales)
+- [Vision et feuille de route](#vision-et-feuille-de-route)
+- [Fonctionnalites](#fonctionnalites)
 - [Comment ca fonctionne](#comment-ca-fonctionne)
 - [Environnements](#environnements)
 - [Configuration](#configuration)
@@ -14,57 +18,79 @@ Bot de veille IA automatisee qui scrape votre timeline X toutes les heures, accu
 - [Stack technique](#stack-technique)
 - [Documentation complementaire](#documentation-complementaire)
 
+### Documentation produit & architecture
+
+| Document | Description |
+|----------|-------------|
+| [Vision](docs/vision.md) | Ce que devient Solopilot et pourquoi |
+| [Plan de migration](docs/migration-plan.md) | Bot → Solopilot, phase par phase |
+| [Plan de reimplementation](docs/reimplementation-plan.md) | Architecture workflow, interfaces, modules |
+| [Catalogue des workflows](docs/workflows/catalog.md) | Tous les workflows cibles par module |
+| [ADR-0013 : Plateforme workflow](docs/adr/0013-from-bot-to-solopilot-workflow-platform.md) | Decision : du bot a la plateforme de workflows |
+
 ### Documentation technique
 
 | Document | Description |
 |----------|-------------|
 | [Reference API](docs/api-reference.md) | Endpoints REST du serveur backend |
 | [Integration Discord](docs/discord-integration.md) | Configuration et utilisation des notifications Discord |
-| [ADR-0001 : Collecte horaire](docs/adr/0001-hourly-collect-daily-publish-architecture.md) | Decision d'architecture : separation collecte horaire et publication quotidienne |
+| [ADR-0001 : Collecte horaire](docs/adr/0001-hourly-collect-daily-publish-architecture.md) | Separation collecte horaire et publication quotidienne |
 
-## A quoi sert ce produit ?
+## Vision et feuille de route
 
-- **Veille IA automatisee** — Plus besoin de parcourir X manuellement pour suivre l'actualite IA et tech
-- **Couverture 24h** — Le bot collecte les tweets toutes les heures pour ne rien manquer
-- **Resumes intelligents** — L'IA filtre, regroupe par theme et resume les tweets pertinents en francais
-- **Notification Discord** — Le resume quotidien est envoye automatiquement sur votre serveur Discord
-- **Syntheses mensuelles** — Agregation des resumes quotidiens en vue d'ensemble mensuelle
-- **Tableau de bord** — Interface web pour configurer, declencher manuellement et consulter l'historique
+Solopilot generalise le pipeline « collecter puis publier » du bot en un **moteur de workflows** : chaque processus metier (relancer une facture, preparer la declaration URSSAF, scanner les signaux d'achat, produire le brief du matin) est un workflow declaratif avec un declencheur, des etapes typees et un historique d'executions.
 
-## Fonctionnalites principales
+| Module | Role | Statut |
+|--------|------|--------|
+| **Cockpit** | Brief quotidien unique, ecran d'accueil | Planifie |
+| **Veille** | Collecte X/Reddit/HN + resume IA | En production |
+| **Acquisition** | Signaux d'intention, content studio, reponses leads | En production |
+| **CRM** | Contacts, opportunites, interactions | Planifie |
+| **Facturation** | Devis, factures, Stripe, relances | Planifie |
+| **Comptabilite** | Suivi CA, plafonds micro, echeances URSSAF | Planifie |
+| **Agenda** | Synchronisation Google Calendar, rappels | Planifie |
 
-- **Collecte horaire de tweets** — Scrape la timeline toutes les heures et stocke les tweets avec deduplication automatique
+Principe : ajouter une capacite metier = ajouter un workflow, pas reecrire la plateforme. L'humain garde la main sur les decisions ; la machine fait le travail repetitif, prepare les brouillons et alerte au bon moment — **jamais d'action en votre nom sans validation**.
+
+## Fonctionnalites
+
+### Veille (en production)
+
+- **Collecte horaire multi-sources** — Scrape X (et Reddit/HN) toutes les heures, stockage avec deduplication automatique
 - **Resume quotidien a 07:30** — Un seul appel IA par jour sur tout le corpus accumule
-- **Filtrage IA** — Identifie les tweets lies a l'IA et la tech grace a GitHub Models
-- **Resume thematique** — Regroupe les actualites par theme et genere un resume en francais (max 2000 caracteres)
-- **Notification Discord** — Envoi automatique ou manuel du resume sur Discord
-- **Synthese mensuelle** — Agregation des resumes quotidiens en vue d'ensemble
-- **Tableau de bord temps reel** — Statut, historique des executions, declenchement manuel
-- **Assistant de configuration** — Interface guidee pour renseigner vos identifiants
+- **Filtrage et resume thematique** — Regroupe l'actualite par theme, resume en francais via GitHub Models (max 2000 caracteres)
+- **Notification Discord** — Envoi automatique ou manuel du resume
+- **Synthese mensuelle** — Agregation des resumes quotidiens
+- **Acquisition** — Signaux d'intention, content studio, brouillons de reponses leads
+- **Tableau de bord** — Statut, historique des executions, declenchement manuel, assistant de configuration
 - **Detection automatique des IDs GraphQL** — S'adapte quand X modifie ses endpoints internes
 - **Planification configurable** — Crons de collecte et publication modifiables depuis l'interface
 
+### A venir (voir feuille de route)
+
+Cockpit (brief unique), Facturation (Stripe), Comptabilite/URSSAF, CRM et Agenda (Google Calendar) — chacun livre comme un module de workflows derriere un flag d'activation.
+
 ## Comment ca fonctionne
+
+Solopilot repose sur un moteur de workflows. Aujourd'hui, le module Veille tourne en deux phases independantes :
 
 ```mermaid
 graph TD
-    A[Cron horaire] -->|Toutes les heures| B[Scraper X]
-    B -->|Tweets bruts| C[Table tweets SQLite]
+    A[Trigger horaire] -->|veille.collect| B[Connecteurs sources X/Reddit/HN]
+    B -->|Items bruts| C[Base SQLite]
     C -->|Deduplication par ID| C
-    D[Cron publication 07:30] -->|Dernier sweep| B
-    D -->|Lecture tweets accumules| C
-    C -->|Corpus complet| E[Filtre IA]
-    E -->|Resume thematique| F[Discord]
-    G[Tableau de bord] -->|Declenchement manuel| B
-    G -->|Configuration| H[Base SQLite]
+    D[Trigger 07:30] -->|veille.digest| B
+    D -->|Lecture corpus accumule| C
+    C -->|Corpus complet| E[Etape ai.summarize]
+    E -->|Resume thematique| F[Connecteur Discord]
+    G[Dashboard / Cockpit] -->|Declenchement manuel| H[Moteur de workflows]
+    H --> B
 ```
 
-Le bot fonctionne en deux phases independantes :
+- **Collecte horaire (`veille.collect`)** — Les connecteurs sources recuperent les nouveaux items et les stockent. Les doublons sont elimines automatiquement.
+- **Publication a 07:30 (`veille.digest`)** — Un dernier sweep, puis tout le corpus est envoye a l'etape IA pour generer un resume, publie sur Discord.
 
-- **Collecte horaire** — Toutes les heures, le scraper recupere les tweets de votre timeline X et les stocke en base. Les doublons sont elimines automatiquement.
-- **Publication a 07:30** — Un dernier sweep est effectue, puis tous les tweets accumules sont envoyes a l'IA pour generer un resume. Le resultat est publie sur Discord.
-
-Cette architecture offre 24 fois plus de couverture qu'une execution unique, pour le meme cout IA.
+Cette architecture offre 24 fois plus de couverture qu'une execution unique, pour le meme cout IA. Les futurs modules (Facturation, Compta, Agenda...) s'ajoutent comme de nouveaux workflows sur le meme moteur.
 
 ## Environnements
 
@@ -144,8 +170,12 @@ docker compose up -d
 
 | Document | Description |
 |----------|-------------|
+| [Vision](docs/vision.md) | Ce que devient Solopilot et pourquoi |
+| [Plan de migration](docs/migration-plan.md) | Bot → Solopilot, phase par phase |
+| [Plan de reimplementation](docs/reimplementation-plan.md) | Architecture workflow, interfaces, modules |
+| [Catalogue des workflows](docs/workflows/catalog.md) | Workflows cibles par module |
+| [ADR-0013 : Plateforme workflow](docs/adr/0013-from-bot-to-solopilot-workflow-platform.md) | Du bot a la plateforme de workflows |
 | [Reference API](docs/api-reference.md) | Endpoints REST du serveur backend |
 | [Integration Discord](docs/discord-integration.md) | Configuration et utilisation des notifications Discord |
-| [ADR-0001 : Collecte horaire](docs/adr/0001-hourly-collect-daily-publish-architecture.md) | Decision d'architecture : separation collecte horaire et publication quotidienne |
 | [CLAUDE.md](CLAUDE.md) | Instructions pour Claude Code (conventions, structure, commandes) |
 | [AGENT.md](AGENT.md) | Reference rapide pour les agents autonomes |
