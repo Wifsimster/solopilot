@@ -29,12 +29,12 @@ ARG BUILD_DATE
 ARG VCS_REF
 
 # Image metadata
-LABEL org.opencontainers.image.title="X AI Weekly Bot" \
-    org.opencontainers.image.description="Weekly AI news bot for X" \
+LABEL org.opencontainers.image.title="Solopilot" \
+    org.opencontainers.image.description="Solopilot — back-office autonome de l'auto-entrepreneur (veille, CRM, facturation, compta, agenda)" \
     org.opencontainers.image.version="${VERSION}" \
     org.opencontainers.image.created="${BUILD_DATE}" \
     org.opencontainers.image.revision="${VCS_REF}" \
-    org.opencontainers.image.source="https://github.com/wifsimster/x-ai-weekly-bot" \
+    org.opencontainers.image.source="https://github.com/wifsimster/solopilot" \
     org.opencontainers.image.vendor="wifsimster" \
     maintainer="wifsimster"
 
