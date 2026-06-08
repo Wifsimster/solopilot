@@ -22,7 +22,12 @@ interface Briefing {
     pendingItems: number;
   };
   acquisition: { status: ModuleStatus; newLeads: number };
-  facturation: { status: ModuleStatus };
+  facturation: {
+    status: ModuleStatus;
+    unpaid: number;
+    overdue: number;
+    overdueAmountCents: number;
+  };
   compta: { status: ModuleStatus };
   agenda: { status: ModuleStatus };
   workflows: { total: number; byStatus: Record<string, number> };
@@ -131,7 +136,25 @@ export function CockpitPage() {
             </CardContent>
           </Card>
 
-          <PlannedCard title="Facturation" hint="Devis, factures, Stripe et relances." />
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="text-base font-semibold">Facturation</div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold tabular-nums">{data.facturation.overdue}</div>
+              <div className="text-sm text-muted-foreground">
+                facture(s) en retard
+                {data.facturation.overdueAmountCents > 0 &&
+                  ` — ${(data.facturation.overdueAmountCents / 100).toFixed(2)} €`}
+              </div>
+              {data.facturation.unpaid > 0 && (
+                <Badge variant="outline" className="mt-2 text-xs">
+                  {data.facturation.unpaid} en attente
+                </Badge>
+              )}
+            </CardContent>
+          </Card>
+
           <PlannedCard title="Comptabilité" hint="Suivi du CA, plafonds micro, échéances URSSAF." />
           <PlannedCard title="Agenda" hint="Synchronisation Google Calendar et rappels." />
         </div>

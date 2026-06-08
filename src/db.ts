@@ -340,6 +340,49 @@ function runWorkflowMigrations(database: Database.Database) {
   );
 }
 
+export interface InvoiceRecord {
+  id: string;
+  product_id: string;
+  number: string;
+  client_name: string;
+  client_email: string | null;
+  amount_cents: number;
+  currency: string;
+  status: 'draft' | 'sent' | 'paid' | 'void';
+  issued_on: string;
+  due_on: string;
+  paid_on: string | null;
+  stripe_id: string | null;
+  created_at: number;
+}
+
+// Facturation module migrations (ADR-0016). Idempotent. Local invoice ledger;
+// Stripe sync is optional and stores its external id in stripe_id.
+function runFacturationMigrations(database: Database.Database) {
+  database.exec(`CREATE TABLE IF NOT EXISTS invoices (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL DEFAULT '${DEFAULT_PRODUCT_ID}' REFERENCES products(id) ON DELETE CASCADE,
+    number TEXT NOT NULL,
+    client_name TEXT NOT NULL,
+    client_email TEXT,
+    amount_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'eur',
+    status TEXT NOT NULL DEFAULT 'draft',
+    issued_on TEXT NOT NULL,
+    due_on TEXT NOT NULL,
+    paid_on TEXT,
+    stripe_id TEXT,
+    created_at INTEGER NOT NULL
+  )`);
+
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_invoices_product_status ON invoices(product_id, status, due_on)`,
+  );
+  database.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_stripe ON invoices(stripe_id) WHERE stripe_id IS NOT NULL`,
+  );
+}
+
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -399,6 +442,7 @@ export function getDb(): Database.Database {
     runAlterMigrations(db);
     runProductMigrations(db);
     runWorkflowMigrations(db);
+    runFacturationMigrations(db);
 
     logger.info('Database initialized', { path: dbPath });
   }

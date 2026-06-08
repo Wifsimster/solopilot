@@ -33,8 +33,8 @@ venir, leads chauds, dernier digest de veille — condensé en un message.
 
 | Workflow | Déclencheur | Étapes | Statut |
 |---|---|---|---|
-| `facturation.sync-stripe` | cron `0 */6 * * *` | `stripe.list` → `persist` (état paiements) | 🆕 |
-| `facturation.relance-impayes` | cron `0 9 * * *` | requête factures échues → `ai.compose` (relance) → `decide` → staging validation | 🆕 |
+| `facturation.sync-stripe` | cron `0 */6 * * *` | `facturation.sync` (Stripe → ledger, no-op sans clé) | ✅ défini (`enabled: false`) |
+| `facturation.relance-impayes` | cron `0 9 * * *` | `facturation.relance` (factures échues → relances FR staged) → `notify.discord` | ✅ défini (`enabled: false`) |
 | `facturation.emettre` | manuel/event | devis accepté → `stripe.invoice` (staging) → `notify` | 🆕 |
 
 > Toute émission/relance est **mise en attente de validation** — jamais envoyée

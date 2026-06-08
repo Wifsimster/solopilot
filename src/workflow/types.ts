@@ -58,8 +58,29 @@ export interface DiscordConnector {
   send(webhookUrl: string, content: string): Promise<{ success: boolean; error?: string }>;
 }
 
+/** Generic invoice shape exchanged with Stripe — kept core-side so modules depend on core, not the reverse. */
+export interface StripeInvoiceData {
+  stripe_id: string;
+  number: string;
+  client_name: string;
+  client_email: string | null;
+  amount_cents: number;
+  currency: string;
+  status: 'draft' | 'sent' | 'paid' | 'void';
+  issued_on: string;
+  due_on: string;
+  paid_on: string | null;
+}
+
+export interface StripeConnector {
+  isConfigured(): boolean;
+  /** Open/recent invoices from Stripe. Resolves to [] when not configured. */
+  listInvoices(): Promise<StripeInvoiceData[]>;
+}
+
 export interface ConnectorRegistry {
   discord: DiscordConnector;
+  stripe: StripeConnector;
 }
 
 export interface StepContext {

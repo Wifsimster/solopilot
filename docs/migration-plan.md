@@ -103,19 +103,24 @@ plusieurs écrans.
 
 ## Phase 3 — Facturation (Stripe)
 
-**But :** le premier domaine administratif à fort ROI. Connecteur Stripe déjà
-disponible dans l'environnement.
+**But :** le premier domaine administratif à fort ROI.
+**Voir [ADR-0016](adr/0016-facturation-stripe.md).**
 
-- [ ] Tables `invoices`, `quotes` (devis), scoping `product_id`.
-- [ ] Connecteur `StripeConnector` (MCP) : lister factures/paiements, créer
-      facture (staging + validation 1-clic).
-- [ ] Workflow `facturation.sync-stripe` (cron) : importe l'état des paiements.
-- [ ] Workflow `facturation.relance-impayes` (cron quotidien) : factures échues
-      → `ai.compose` (brouillon de relance) → mise en attente de validation.
-- [ ] Écran Facturation : devis, factures, encaissements, relances en attente.
+- [x] Table `invoices` (ledger local), scoping `product_id`, migration idempotente.
+- [x] Store : création (auto-numérotation `F-AAAA-NNN`), liste, marquage payé,
+      requête des impayés, résumé pour le cockpit, upsert Stripe idempotent.
+- [x] Connecteur `StripeConnector` optionnel (clé `STRIPE_API_KEY`) : lecture
+      seule, dégradation gracieuse si non configuré.
+- [x] Workflow `facturation.sync-stripe` (cron, `enabled: false`) : importe les
+      factures depuis Stripe (no-op sans clé).
+- [x] Workflow `facturation.relance-impayes` (cron, `enabled: false`) : factures
+      échues → relance déterministe (FR) → mise en attente de validation.
+- [x] API + écran Facturation (factures + relances à valider) ; cockpit branché.
+- [x] Smoke test étendu (ledger, relance, sync gracieux, agrégat cockpit).
+- [ ] Devis, variante IA des relances, `notify.email`, planification (flip différé).
 
-**Critère de sortie :** plus aucune facture impayée oubliée ; relances en un
-clic. ADR-0016 « Facturation ».
+**Critère de sortie :** plus aucune facture impayée oubliée ; relances préparées,
+envoyées sur validation.
 
 ---
 

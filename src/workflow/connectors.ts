@@ -7,9 +7,10 @@
  */
 import type { Config } from '../config.js';
 import { sendDiscordNotification } from '../adapters/discord-notifier.js';
+import { createStripeConnector } from '../connectors/stripe.js';
 import type { ConnectorRegistry } from './types.js';
 
-export function buildConnectors(_config: Config): ConnectorRegistry {
+export function buildConnectors(config: Config): ConnectorRegistry {
   return {
     discord: {
       send: async (webhookUrl: string, content: string) => {
@@ -18,5 +19,6 @@ export function buildConnectors(_config: Config): ConnectorRegistry {
         return { success: result.success, error: result.error };
       },
     },
+    stripe: createStripeConnector(config),
   };
 }

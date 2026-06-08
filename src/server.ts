@@ -73,6 +73,14 @@ import { listWorkflowRuns, getWorkflowRun } from './workflow/run-store.js';
 import { registerSolopilot } from './workflow/bootstrap.js';
 import { buildBriefing } from './modules/cockpit/briefing.js';
 import {
+  createInvoice,
+  listInvoices,
+  markInvoicePaid,
+  listOverdueInvoices,
+  invoiceCreateSchema,
+} from './modules/facturation/store.js';
+import { draftRelance } from './modules/facturation/relance.js';
+import {
   listIntentSignals,
   getIntentSignal,
   updateIntentSignal,
@@ -278,6 +286,42 @@ export function startServer(
   app.get('/api/cockpit', (c) => {
     const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(buildBriefing(activityId));
+  });
+
+  // --- Facturation API — local invoice ledger (read + manual create/mark-paid) ---
+
+  app.get('/api/facturation/invoices', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const status = c.req.query('status') as
+      | 'draft'
+      | 'sent'
+      | 'paid'
+      | 'void'
+      | undefined;
+    return c.json(listInvoices(activityId, status ? { status } : {}));
+  });
+
+  app.post('/api/facturation/invoices', async (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const parsed = invoiceCreateSchema.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) {
+      return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
+    }
+    return c.json(createInvoice(activityId, parsed.data), 201);
+  });
+
+  app.post('/api/facturation/invoices/:id/paid', (c) => {
+    const ok = markInvoicePaid(c.req.param('id'));
+    if (!ok) return c.json({ error: 'Facture introuvable ou déjà payée' }, 404);
+    return c.json({ success: true });
+  });
+
+  // Staged reminders for overdue invoices — preview only, nothing is sent.
+  app.get('/api/facturation/relances', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const today = getTodayDateParis();
+    const drafts = listOverdueInvoices(activityId, today).map((inv) => draftRelance(inv, today));
+    return c.json(drafts);
   });
 
   // --- Workflows API (read-only, available in both setup and operational mode) ---

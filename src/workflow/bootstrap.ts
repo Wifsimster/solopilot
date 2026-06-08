@@ -12,8 +12,10 @@ import { persistStep } from '../steps/persist.js';
 import { aiSummarizeStep } from '../steps/ai.js';
 import { notifyDiscordStep } from '../steps/notify.js';
 import { cockpitAggregateStep } from '../steps/cockpit.js';
+import { facturationRelanceStep, facturationSyncStep } from '../steps/facturation.js';
 import { veilleWorkflows } from '../modules/veille/workflows.js';
 import { cockpitWorkflows } from '../modules/cockpit/workflows.js';
+import { facturationWorkflows } from '../modules/facturation/workflows.js';
 
 let bootstrapped = false;
 
@@ -25,8 +27,10 @@ export function registerSolopilot(): void {
   registerStep(aiSummarizeStep);
   registerStep(notifyDiscordStep);
   registerStep(cockpitAggregateStep);
+  registerStep(facturationRelanceStep);
+  registerStep(facturationSyncStep);
 
-  for (const wf of [...veilleWorkflows, ...cockpitWorkflows]) {
+  for (const wf of [...veilleWorkflows, ...cockpitWorkflows, ...facturationWorkflows]) {
     if (!getWorkflow(wf.id)) registerWorkflow(wf);
   }
 

@@ -11,6 +11,7 @@ import { getLastRun } from '../../run-service.js';
 import { getUnpublishedTweets } from '../../tweet-store.js';
 import { listIntentSignals } from '../../intent-service.js';
 import { listWorkflowRuns } from '../../workflow/run-store.js';
+import { facturationSummary } from '../facturation/store.js';
 import { getTodayDateParis } from '../../date-utils.js';
 import { DEFAULT_PRODUCT_ID } from '../../db.js';
 
@@ -28,7 +29,12 @@ export interface Briefing {
     pendingItems: number;
   };
   acquisition: { status: ModuleStatus; newLeads: number };
-  facturation: { status: ModuleStatus };
+  facturation: {
+    status: ModuleStatus;
+    unpaid: number;
+    overdue: number;
+    overdueAmountCents: number;
+  };
   compta: { status: ModuleStatus };
   agenda: { status: ModuleStatus };
   workflows: { total: number; byStatus: Record<string, number> };
@@ -45,6 +51,8 @@ export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing
     byStatus[run.status] = (byStatus[run.status] ?? 0) + 1;
   }
 
+  const facturation = facturationSummary(activityId);
+
   return {
     activityId,
     date: getTodayDateParis(),
@@ -57,7 +65,12 @@ export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing
       pendingItems,
     },
     acquisition: { status: 'live', newLeads },
-    facturation: { status: 'planned' },
+    facturation: {
+      status: 'live',
+      unpaid: facturation.unpaid,
+      overdue: facturation.overdue,
+      overdueAmountCents: facturation.overdueAmountCents,
+    },
     compta: { status: 'planned' },
     agenda: { status: 'planned' },
     workflows: { total: recentRuns.length, byStatus },
@@ -93,8 +106,19 @@ export function renderBriefingText(b: Briefing): string {
   );
   lines.push('');
 
+  lines.push('**FACTURATION**');
+  if (b.facturation.overdue > 0) {
+    const amount = `${(b.facturation.overdueAmountCents / 100).toFixed(2)} EUR`;
+    lines.push(`• ${b.facturation.overdue} facture(s) impayée(s) en retard (${amount}) à relancer.`);
+  } else if (b.facturation.unpaid > 0) {
+    lines.push(`• ${b.facturation.unpaid} facture(s) en attente de paiement (aucun retard).`);
+  } else {
+    lines.push('_Aucune facture en attente._');
+  }
+  lines.push('');
+
   lines.push('**À VENIR**');
-  lines.push('• Facturation, Comptabilité/URSSAF et Agenda arrivent dans les prochains modules.');
+  lines.push('• Comptabilité/URSSAF et Agenda arrivent dans les prochains modules.');
 
   return lines.join('\n');
 }

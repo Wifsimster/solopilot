@@ -29,6 +29,10 @@ const configSchema = z.object({
       message: 'Must be a Discord webhook URL (https://discord.com/api/webhooks/...)',
     })
     .optional(),
+
+  // Optional: Stripe secret key for the Facturation module. When absent, the
+  // module works as a local invoice ledger and Stripe sync degrades gracefully.
+  STRIPE_API_KEY: z.string().min(1).optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;

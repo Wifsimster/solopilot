@@ -28,6 +28,7 @@ import {
   FileText,
   Workflow,
   Gauge,
+  Receipt,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -66,6 +67,11 @@ const NAV_SECTIONS: NavSection[] = [
       { to: '/leads', label: 'Opportunités', icon: Target },
       { to: '/studio', label: 'Studio', icon: Wand2 },
     ],
+  },
+  {
+    id: 'manage',
+    label: 'Gérer',
+    items: [{ to: '/facturation', label: 'Facturation', icon: Receipt }],
   },
   {
     id: 'configure',
