@@ -44,8 +44,8 @@ venir, leads chauds, dernier digest de veille — condensé en un message.
 
 | Workflow | Déclencheur | Étapes | Statut |
 |---|---|---|---|
-| `compta.seuils` | cron quotidien | calcul CA glissant → `decide` (plafond micro / seuil TVA) → `notify` si approche | 🆕 |
-| `compta.echeance-urssaf` | cron mensuel/trim. | CA de la période → préparer récap → `notify` rappel déclaration | 🆕 |
+| `compta.seuils` | cron `0 8 * * 1` | `compta.seuils` (CA année vs plafond micro / seuil TVA, alerte si ≥80%) → `notify.discord` | ✅ défini (`enabled: false`) |
+| `compta.echeance-urssaf` | cron `0 9 1 * *` | `compta.echeance` (CA période → estimation cotisations) → `notify.discord` | ✅ défini (`enabled: false`) |
 
 > **Rappel et préparation uniquement.** Solopilot ne télédéclare pas et ne
 > remplace pas un expert-comptable.

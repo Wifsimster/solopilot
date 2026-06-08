@@ -13,9 +13,11 @@ import { aiSummarizeStep } from '../steps/ai.js';
 import { notifyDiscordStep } from '../steps/notify.js';
 import { cockpitAggregateStep } from '../steps/cockpit.js';
 import { facturationRelanceStep, facturationSyncStep } from '../steps/facturation.js';
+import { comptaSeuilsStep, comptaEcheanceStep } from '../steps/comptabilite.js';
 import { veilleWorkflows } from '../modules/veille/workflows.js';
 import { cockpitWorkflows } from '../modules/cockpit/workflows.js';
 import { facturationWorkflows } from '../modules/facturation/workflows.js';
+import { comptaWorkflows } from '../modules/comptabilite/workflows.js';
 
 let bootstrapped = false;
 
@@ -29,8 +31,15 @@ export function registerSolopilot(): void {
   registerStep(cockpitAggregateStep);
   registerStep(facturationRelanceStep);
   registerStep(facturationSyncStep);
+  registerStep(comptaSeuilsStep);
+  registerStep(comptaEcheanceStep);
 
-  for (const wf of [...veilleWorkflows, ...cockpitWorkflows, ...facturationWorkflows]) {
+  for (const wf of [
+    ...veilleWorkflows,
+    ...cockpitWorkflows,
+    ...facturationWorkflows,
+    ...comptaWorkflows,
+  ]) {
     if (!getWorkflow(wf.id)) registerWorkflow(wf);
   }
 

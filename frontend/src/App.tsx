@@ -13,6 +13,7 @@ import { SettingsPage } from "@/pages/settings";
 import { SetupPage } from "@/pages/setup";
 import { ProductsPage } from "@/pages/products";
 import { FacturationPage } from "@/pages/facturation";
+import { ComptabilitePage } from "@/pages/comptabilite";
 import { LeadsPage } from "@/pages/leads";
 import { StudioPage } from "@/pages/studio";
 
@@ -32,6 +33,7 @@ export function App() {
                 <Route path="/summaries" element={<SummariesPage />} />
                 <Route path="/products" element={<ProductsPage />} />
                 <Route path="/facturation" element={<FacturationPage />} />
+                <Route path="/comptabilite" element={<ComptabilitePage />} />
                 <Route path="/leads" element={<LeadsPage />} />
                 <Route path="/studio" element={<StudioPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
