@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { NavLink, Link, Outlet } from 'react-router-dom';
 import { useTheme } from '@/components/theme-provider';
 import { useApi } from '@/hooks/use-api';
+import { ProductTour, startProductTour } from '@/components/product-tour';
 import {
   Select,
   SelectTrigger,
@@ -34,6 +35,7 @@ import {
   Monitor,
   Sun,
   Moon,
+  Compass,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -45,6 +47,8 @@ type NavItem = {
   label: string;
   icon: LucideIcon;
   end?: boolean;
+  /** `data-tour` anchor used by the guided product tour. */
+  tourId?: string;
 };
 
 type NavSection = {
@@ -58,37 +62,37 @@ const NAV_SECTIONS: NavSection[] = [
     id: 'monitor',
     label: 'Monitorer',
     items: [
-      { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-      { to: '/cockpit', label: 'Cockpit', icon: Gauge },
-      { to: '/summaries', label: 'Synthèses', icon: FileText },
+      { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, tourId: 'nav-dashboard' },
+      { to: '/cockpit', label: 'Cockpit', icon: Gauge, tourId: 'nav-cockpit' },
+      { to: '/summaries', label: 'Synthèses', icon: FileText, tourId: 'nav-summaries' },
       { to: '/runs', label: 'Historique', icon: History },
-      { to: '/workflows', label: 'Workflows', icon: Workflow },
+      { to: '/workflows', label: 'Workflows', icon: Workflow, tourId: 'nav-workflows' },
     ],
   },
   {
     id: 'engage',
     label: 'Engager',
     items: [
-      { to: '/leads', label: 'Opportunités', icon: Target },
-      { to: '/crm', label: 'CRM', icon: Users },
-      { to: '/studio', label: 'Studio', icon: Wand2 },
+      { to: '/leads', label: 'Opportunités', icon: Target, tourId: 'nav-leads' },
+      { to: '/crm', label: 'CRM', icon: Users, tourId: 'nav-crm' },
+      { to: '/studio', label: 'Studio', icon: Wand2, tourId: 'nav-studio' },
     ],
   },
   {
     id: 'manage',
     label: 'Gérer',
     items: [
-      { to: '/facturation', label: 'Facturation', icon: Receipt },
-      { to: '/comptabilite', label: 'Comptabilité', icon: Calculator },
-      { to: '/agenda', label: 'Agenda', icon: CalendarDays },
+      { to: '/facturation', label: 'Facturation', icon: Receipt, tourId: 'nav-facturation' },
+      { to: '/comptabilite', label: 'Comptabilité', icon: Calculator, tourId: 'nav-comptabilite' },
+      { to: '/agenda', label: 'Agenda', icon: CalendarDays, tourId: 'nav-agenda' },
     ],
   },
   {
     id: 'configure',
     label: 'Configurer',
     items: [
-      { to: '/products', label: 'Produits', icon: Package },
-      { to: '/settings', label: 'Paramètres', icon: SettingsIcon },
+      { to: '/products', label: 'Produits', icon: Package, tourId: 'nav-products' },
+      { to: '/settings', label: 'Paramètres', icon: SettingsIcon, tourId: 'nav-settings' },
     ],
   },
 ];
@@ -212,7 +216,7 @@ function ThemeSegmented() {
 
 function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <nav className="flex flex-col gap-5" aria-label="Navigation principale">
+    <nav className="flex flex-col gap-5" aria-label="Navigation principale" data-tour="sidebar-nav">
       {NAV_SECTIONS.map((section) => (
         <div key={section.id} className="space-y-1">
           <p className="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
@@ -226,6 +230,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                 end={item.end}
                 className={sidebarNavLinkClass}
                 onClick={onNavigate}
+                data-tour={item.tourId}
               >
                 {({ isActive }) => (
                   <>
@@ -278,8 +283,20 @@ export function Layout() {
           <SidebarNav />
         </div>
         <div className="space-y-3 border-t border-border p-3">
-          <ProductSwitcher className="w-full" triggerClassName="h-9 w-full" />
-          <ThemeSegmented />
+          <div data-tour="product-switcher">
+            <ProductSwitcher className="w-full" triggerClassName="h-9 w-full" />
+          </div>
+          <div data-tour="theme-switcher">
+            <ThemeSegmented />
+          </div>
+          <button
+            type="button"
+            onClick={startProductTour}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Compass className="size-[18px] shrink-0" aria-hidden="true" />
+            Visite guidée
+          </button>
           <p className="px-1 text-[11px] text-muted-foreground">
             v{versionInfo?.version || 'dev'}
           </p>
@@ -368,6 +385,17 @@ export function Layout() {
                 </p>
                 <ThemeSegmented />
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  closeDrawer();
+                  startProductTour();
+                }}
+                className="flex min-h-[48px] w-full items-center gap-3 rounded-lg px-3 py-3 text-base text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Compass className="size-5 shrink-0" aria-hidden="true" />
+                Visite guidée
+              </button>
               <p className="px-3 pt-2 text-xs text-muted-foreground">
                 v{versionInfo?.version || 'dev'}
               </p>
@@ -375,6 +403,8 @@ export function Layout() {
           </DrawerBody>
         </DrawerContent>
       </Drawer>
+
+      <ProductTour />
     </div>
   );
 }
