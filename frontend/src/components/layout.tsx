@@ -334,10 +334,12 @@ export function Layout() {
                 <>
                   {' '}
                   (Build{' '}
-                  {new Date(versionInfo.buildDate).toLocaleDateString('fr-FR', {
+                  {new Date(versionInfo.buildDate).toLocaleString('fr-FR', {
                     day: 'numeric',
                     month: 'long',
                     year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
                   })}
                   )
                 </>
