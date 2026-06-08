@@ -15,7 +15,12 @@ npm run dev          # Run with .env loading (scheduler mode)
 npm run dev:once     # Single run (no cron, for testing)
 npm run lint         # ESLint
 npm run format       # Prettier
+npm run cli --       # Solopilot CLI (HTTP API client; also `node dist/cli.js`, bin `solopilot`)
 ```
+
+The `solopilot` CLI (`src/cli.ts` → `dist/cli.js`) drives the HTTP API from the
+command line for agents (cockpit, facturation, comptabilite, CRM, agenda, veille,
+workflows). See `docs/api.md` and the agent skill at `.claude/skills/solopilot/`.
 
 ## Project Structure
 
@@ -23,6 +28,7 @@ npm run format       # Prettier
 - `frontend/` — React 19 SPA (dashboard, settings, setup wizard)
 - `src/scheduler.ts` — Production entry point (web server + both crons)
 - `src/server.ts` — REST API endpoints
+- `src/cli.ts` — Solopilot CLI (HTTP API client for agents; bin `solopilot`, `dist/cli.js`)
 - `src/collect-service.ts` — Hourly tweet collection (no AI)
 - `src/tweet-store.ts` — Tweet storage, dedup, retrieval
 - `src/index.ts` — Publish run (reads accumulated tweets + AI summary)
