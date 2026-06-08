@@ -5,6 +5,7 @@ import { useSelectedProduct } from '@/lib/product-context-hooks';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -27,15 +28,22 @@ import {
   RotateCcw,
   Loader2,
   Wand2,
-  Save,
   Globe,
   Mic,
   Link2,
   ExternalLink,
   Settings2,
+  Save,
+  Search,
+  ArrowDownUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, formatRelativeFr } from '@/lib/utils';
+import {
+  PLATFORM_LIMITS,
+  SOURCE_META,
+  SourceBadge,
+} from '@/components/studio/platform-meta';
 import type {
   ContentDraft,
   ContentDraftStatus,
@@ -46,6 +54,10 @@ import type {
 } from '@/types';
 
 type StatusFilter = ContentDraftStatus;
+
+type SortKey = 'recent' | 'oldest' | 'longest';
+
+type SourceFilter = TargetSource | 'all';
 
 type TabConfig = {
   id: StatusFilter;
@@ -88,15 +100,34 @@ const USED_ON_OPTIONS: { value: string; label: string }[] = [
   { value: 'autre', label: 'Autre' },
 ];
 
-// Character budgets per platform, mirroring the backend generation prompt
-// (src/content-studio.ts → platformConstraints). X enforces a hard 280-char
-// cap; reddit/generic are soft "recommended" ceilings. The live counter uses
-// these to warn before the user pastes something the platform will reject.
-const PLATFORM_LIMITS: Record<TargetSource, number> = {
-  x: 280,
-  reddit: 500,
-  generic: 500,
+const COUNT_OPTIONS = [3, 5, 10];
+
+// Quick presets sit alongside the flexible generator for one-click batches.
+type GeneratePreset = {
+  key: string;
+  label: string;
+  count: number;
+  source: TargetSource;
 };
+
+const GENERATE_PRESETS: GeneratePreset[] = [
+  { key: 'x', label: '10 posts X', count: 10, source: 'x' },
+  { key: 'reddit', label: '10 posts Reddit', count: 10, source: 'reddit' },
+  { key: 'generic', label: '5 posts génériques', count: 5, source: 'generic' },
+];
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'recent', label: 'Plus récents' },
+  { value: 'oldest', label: 'Plus anciens' },
+  { value: 'longest', label: 'Plus longs' },
+];
+
+const SOURCE_FILTER_OPTIONS: { value: SourceFilter; label: string }[] = [
+  { value: 'all', label: 'Toutes les sources' },
+  { value: 'x', label: 'X' },
+  { value: 'reddit', label: 'Reddit' },
+  { value: 'generic', label: 'Générique' },
+];
 
 const VOICE_LABELS: Record<ContentVoice, string> = {
   decontractee: 'Décontractée',
@@ -104,13 +135,6 @@ const VOICE_LABELS: Record<ContentVoice, string> = {
   directe: 'Directe',
   aidante: 'Aidante',
 };
-
-function targetSourceLabel(source: TargetSource | null): string {
-  if (source === 'x') return 'X';
-  if (source === 'reddit') return 'Reddit';
-  if (source === 'generic') return 'Generic';
-  return 'Source ?';
-}
 
 function statusLabel(status: ContentDraftStatus): string {
   if (status === 'pending') return 'En attente';
@@ -256,14 +280,24 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
     await patch({ status: 'pending' }, 'pending', 'Draft restauré.');
   }, [patch]);
 
+  // Subtle left accent border colored by the draft's source. Uses a literal
+  // class from SOURCE_META so Tailwind's compiler emits it (runtime-built
+  // class names like `bg-…`→`border-l-…` are not detected).
+  const accentClass = draft.target_source
+    ? SOURCE_META[draft.target_source].borderClass
+    : 'border-l-muted';
+
   return (
-    <Card className="hover:border-muted-foreground/20 transition-colors">
+    <Card
+      className={cn(
+        'border-l-2 hover:border-muted-foreground/20 transition-colors',
+        accentClass,
+      )}
+    >
       <CardContent className="py-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="brand" className="text-[10px] px-1.5 py-0">
-              {targetSourceLabel(draft.target_source)}
-            </Badge>
+            <SourceBadge source={draft.target_source} />
             {draft.angle && (
               <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                 {draft.angle}
@@ -397,28 +431,39 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
   );
 }
 
+function EmptyState({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+      <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+        <Wand2 className="size-5 text-muted-foreground" />
+      </div>
+      <p className="font-medium">{title}</p>
+      <p className="text-sm text-muted-foreground max-w-xs">{hint}</p>
+    </div>
+  );
+}
+
+function NoResultsState({ onReset }: { onReset: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+      <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+        <Search className="size-5 text-muted-foreground" />
+      </div>
+      <p className="font-medium">Aucun résultat pour ces filtres.</p>
+      <Button variant="outline" size="sm" onClick={onReset}>
+        Réinitialiser les filtres
+      </Button>
+    </div>
+  );
+}
+
 function DraftsList({
   drafts,
-  emptyTitle,
-  emptyHint,
   onMutated,
 }: {
   drafts: ContentDraft[];
-  emptyTitle: string;
-  emptyHint: string;
   onMutated: () => void;
 }) {
-  if (drafts.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-        <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-          <Wand2 className="size-5 text-muted-foreground" />
-        </div>
-        <p className="font-medium">{emptyTitle}</p>
-        <p className="text-sm text-muted-foreground max-w-xs">{emptyHint}</p>
-      </div>
-    );
-  }
   return (
     <div className="space-y-3">
       {drafts.map((d) => (
@@ -428,18 +473,15 @@ function DraftsList({
   );
 }
 
-type GenerateButton = {
-  key: string;
-  label: string;
-  count: number;
-  source: TargetSource;
-};
-
-const GENERATE_BUTTONS: GenerateButton[] = [
-  { key: 'x', label: 'Générer 10 posts X', count: 10, source: 'x' },
-  { key: 'reddit', label: 'Générer 10 posts Reddit', count: 10, source: 'reddit' },
-  { key: 'generic', label: 'Générer 5 posts génériques', count: 5, source: 'generic' },
-];
+/** A small muted stat chip for the summary strip. */
+function StatChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-semibold tabular-nums">{value}</span>
+    </div>
+  );
+}
 
 /**
  * Compact, read-only summary of the product settings that drive generation
@@ -537,7 +579,18 @@ function ProductContextStrip({ product }: { product: ProductRecord }) {
 export function StudioPage() {
   const { selectedProductId } = useSelectedProduct();
   const [activeTab, setActiveTab] = useState<StatusFilter>('pending');
-  const [generating, setGenerating] = useState<TargetSource | null>(null);
+  // Identifies which generate control is in flight ('custom' for the flexible
+  // generator, or a preset key) so only that control shows its spinner.
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
+
+  // Flexible generator controls.
+  const [genSource, setGenSource] = useState<TargetSource>('x');
+  const [genCount, setGenCount] = useState<number>(5);
+
+  // Toolbar (search / filter / sort) — applies to the active tab only.
+  const [search, setSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
+  const [sortKey, setSortKey] = useState<SortKey>('recent');
 
   const productReq = useApi<ProductRecord>(
     `/api/products/${encodeURIComponent(selectedProductId)}`,
@@ -576,6 +629,9 @@ export function StudioPage() {
     [pendingReq.data, editedReq.data, usedReq.data, discardedReq.data],
   );
 
+  const totalGenerated = counts.pending + counts.edited + counts.used + counts.discarded;
+  const usageRate = totalGenerated > 0 ? Math.round((counts.used / totalGenerated) * 100) : 0;
+
   const refetchAll = useCallback(() => {
     pendingReq.refetch();
     editedReq.refetch();
@@ -583,13 +639,21 @@ export function StudioPage() {
     discardedReq.refetch();
   }, [pendingReq, editedReq, usedReq, discardedReq]);
 
+  const resetFilters = useCallback(() => {
+    setSearch('');
+    setSourceFilter('all');
+    setSortKey('recent');
+  }, []);
+
+  const hasActiveFilters = search.trim().length > 0 || sourceFilter !== 'all';
+
   const handleGenerate = useCallback(
-    async (count: number, targetSource: TargetSource) => {
+    async (id: string, count: number, targetSource: TargetSource) => {
       if (!selectedProductId) {
         toast.error('Sélectionne un produit avant de générer.');
         return;
       }
-      setGenerating(targetSource);
+      setGeneratingId(id);
       try {
         const res = await fetch(
           `/api/products/${encodeURIComponent(selectedProductId)}/content/generate-posts`,
@@ -613,11 +677,13 @@ export function StudioPage() {
       } catch {
         toast.error('Erreur réseau lors de la génération.');
       } finally {
-        setGenerating(null);
+        setGeneratingId(null);
       }
     },
     [refetchAll, selectedProductId],
   );
+
+  const generating = generatingId !== null;
 
   const anyLoading =
     (pendingReq.loading && !pendingReq.data) ||
@@ -630,12 +696,49 @@ export function StudioPage() {
   const lang: ContentLanguage = productReq.data?.content_language ?? 'fr';
   const langLabel = lang === 'en' ? 'anglais' : 'français';
 
+  // Filter + sort drafts (count badges stay unfiltered API totals). Reused for
+  // each tab inside the render loop so hidden panels stay self-consistent.
+  const filterAndSort = useCallback(
+    (drafts: ContentDraft[]): ContentDraft[] => {
+      const term = search.trim().toLowerCase();
+      const filtered = drafts.filter((d) => {
+        if (sourceFilter !== 'all' && d.target_source !== sourceFilter) return false;
+        if (term) {
+          const haystack = `${d.edited_text ?? d.text} ${d.angle ?? ''}`.toLowerCase();
+          if (!haystack.includes(term)) return false;
+        }
+        return true;
+      });
+      const sorted = [...filtered];
+      sorted.sort((a, b) => {
+        if (sortKey === 'recent') return b.generated_at - a.generated_at;
+        if (sortKey === 'oldest') return a.generated_at - b.generated_at;
+        const aLen = (a.edited_text ?? a.text).length;
+        const bLen = (b.edited_text ?? b.text).length;
+        return bLen - aLen;
+      });
+      return sorted;
+    },
+    [search, sourceFilter, sortKey],
+  );
+
+  // Active-tab visible count, shown in the toolbar.
+  const activeVisibleCount = filterAndSort(requestsByStatus[activeTab].data ?? []).length;
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Studio de contenu"
         description="Génère des drafts de posts pour ton produit. Tu valides, tu postes."
       />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <StatChip label="En attente" value={String(counts.pending)} />
+        <StatChip label="Éditées" value={String(counts.edited)} />
+        <StatChip label="Utilisées" value={String(counts.used)} />
+        <StatChip label="Total générés" value={String(totalGenerated)} />
+        <StatChip label="Taux d’utilisation" value={`${usageRate} %`} />
+      </div>
 
       <Card>
         <CardHeader className="pb-3">
@@ -647,22 +750,80 @@ export function StudioPage() {
         </CardHeader>
         <CardContent className="pb-5 space-y-4">
           {productReq.data && <ProductContextStrip product={productReq.data} />}
+
+          <div className="flex flex-wrap items-end gap-2">
+            <Select
+              value={genSource}
+              onValueChange={(v) => setGenSource(v as TargetSource)}
+            >
+              <SelectTrigger className="h-9 w-[150px]" aria-label="Plateforme">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(SOURCE_META) as TargetSource[]).map((src) => {
+                  const meta = SOURCE_META[src];
+                  const { Icon } = meta;
+                  return (
+                    <SelectItem key={src} value={src}>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Icon className={cn('size-3.5', meta.textClass)} />
+                        {meta.label}
+                      </span>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+
+            <Select value={String(genCount)} onValueChange={(v) => setGenCount(Number(v))}>
+              <SelectTrigger className="h-9 w-[110px]" aria-label="Nombre de drafts">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {COUNT_OPTIONS.map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n} posts
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Button
+              onClick={() => handleGenerate('custom', genCount, genSource)}
+              disabled={generating}
+              size="sm"
+              className="h-9"
+            >
+              {generatingId === 'custom' ? (
+                <Loader2 className="size-3.5 mr-1 animate-spin" />
+              ) : (
+                <Sparkles className="size-3.5 mr-1" />
+              )}
+              {generatingId === 'custom' ? 'Génération…' : 'Générer'}
+            </Button>
+          </div>
+
           <div className="flex flex-wrap items-center gap-2">
-            {GENERATE_BUTTONS.map((btn) => {
-              const isThisGenerating = generating === btn.source;
+            <span className="text-xs text-muted-foreground">Préréglages :</span>
+            {GENERATE_PRESETS.map((preset) => {
+              const meta = SOURCE_META[preset.source];
+              const { Icon } = meta;
+              const isThisGenerating = generatingId === preset.key;
               return (
                 <Button
-                  key={btn.key}
-                  onClick={() => handleGenerate(btn.count, btn.source)}
-                  disabled={generating !== null}
+                  key={preset.key}
+                  variant="outline"
                   size="sm"
+                  className="h-8"
+                  onClick={() => handleGenerate(preset.key, preset.count, preset.source)}
+                  disabled={generating}
                 >
                   {isThisGenerating ? (
                     <Loader2 className="size-3.5 mr-1 animate-spin" />
                   ) : (
-                    <Sparkles className="size-3.5 mr-1" />
+                    <Icon className={cn('size-3.5 mr-1', meta.textClass)} />
                   )}
-                  {isThisGenerating ? 'Génération…' : btn.label}
+                  {preset.label}
                 </Button>
               );
             })}
@@ -693,24 +854,73 @@ export function StudioPage() {
           </TabsList>
         </div>
 
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher dans les drafts…"
+              className="h-9 pl-8"
+              aria-label="Rechercher dans les drafts"
+            />
+          </div>
+
+          <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as SourceFilter)}>
+            <SelectTrigger className="h-9 w-[170px]" aria-label="Filtrer par source">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SOURCE_FILTER_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
+            <SelectTrigger className="h-9 w-[150px]" aria-label="Trier">
+              <ArrowDownUp className="size-3.5 text-muted-foreground" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {activeVisibleCount} draft{activeVisibleCount > 1 ? 's' : ''}
+          </span>
+        </div>
+
         {TABS.map((tab) => {
           const req = requestsByStatus[tab.id];
           const drafts = req.data ?? [];
+          const visible = filterAndSort(drafts);
+          const loading = anyLoading && !req.data;
           return (
             <TabsContent key={tab.id} value={tab.id} className="mt-4">
-              {anyLoading && !req.data ? (
+              {loading ? (
                 <div className="space-y-3">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <Skeleton key={i} className="h-40 w-full rounded-xl" />
                   ))}
                 </div>
+              ) : drafts.length === 0 ? (
+                <EmptyState title={tab.emptyTitle} hint={tab.emptyHint} />
+              ) : visible.length === 0 ? (
+                hasActiveFilters ? (
+                  <NoResultsState onReset={resetFilters} />
+                ) : (
+                  <EmptyState title={tab.emptyTitle} hint={tab.emptyHint} />
+                )
               ) : (
-                <DraftsList
-                  drafts={drafts}
-                  emptyTitle={tab.emptyTitle}
-                  emptyHint={tab.emptyHint}
-                  onMutated={refetchAll}
-                />
+                <DraftsList drafts={visible} onMutated={refetchAll} />
               )}
             </TabsContent>
           );
