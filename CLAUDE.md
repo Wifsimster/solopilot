@@ -106,4 +106,6 @@ npm run start        # Production start (scheduler)
 - SQLite database lives in `./data/bot.db` (Docker volume at `/app/data`)
 - Docker container runs as non-root user `bot` (uid 1001)
 - Two cron schedules: `COLLECT_CRON_SCHEDULE` (default `0 * * * *`) and `CRON_SCHEDULE` (default `30 7 * * *`)
+- Workflow engine lives in `src/workflow/` (Trigger/Step/Workflow/Run); business modules in `src/modules/<module>/` are folders of workflows. Run one with `npm run workflow -- <id>`.
+- **Veille flip (ADR-0020):** set `WORKFLOW_SCHEDULER=true` to dispatch the veille crons through the engine (behaviour-identical, adds `workflow_runs`). Default off keeps the legacy path.
 - All dates use Europe/Paris timezone for consistency

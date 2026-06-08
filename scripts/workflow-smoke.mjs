@@ -77,18 +77,20 @@ assert(all.length === 4, `all four runs listed (got ${all.length})`);
 console.log('bootstrap (real steps + veille workflows):');
 resetRegistry();
 registerSolopilot();
-for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate', 'facturation.relance', 'facturation.sync', 'compta.seuils', 'compta.echeance', 'crm.followup', 'agenda.sync', 'agenda.rappels']) {
+for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate', 'facturation.relance', 'facturation.sync', 'compta.seuils', 'compta.echeance', 'crm.followup', 'agenda.sync', 'agenda.rappels', 'veille.collect-run', 'veille.publish-run']) {
   assert(getStep(use) !== undefined, `step registered: ${use}`);
 }
 const registered = listWorkflows();
 const veille = registered.filter((w) => w.module === 'veille');
-assert(veille.length === 3, `three veille workflows registered (got ${veille.length})`);
+assert(veille.length === 2, `two veille workflows registered (got ${veille.length})`);
 assert(registered.some((w) => w.id === 'cockpit.daily-briefing'), 'cockpit.daily-briefing registered');
 assert(registered.filter((w) => w.module === 'facturation').length === 2, 'two facturation workflows registered');
 assert(registered.filter((w) => w.module === 'compta').length === 2, 'two compta workflows registered');
 assert(registered.filter((w) => w.module === 'crm').length === 1, 'one crm workflow registered');
 assert(registered.filter((w) => w.module === 'agenda').length === 2, 'two agenda workflows registered');
-assert(registered.every((w) => !w.enabled), 'every workflow ships disabled (no prod impact)');
+// Only the veille workflows are enabled (the flip); every other module ships disabled.
+assert(veille.every((w) => w.enabled), 'veille workflows are enabled (flip-ready)');
+assert(registered.filter((w) => w.module !== 'veille').every((w) => !w.enabled), 'non-veille workflows ship disabled (no prod impact)');
 const unresolved = registered.flatMap((w) => w.steps).filter((s) => getStep(s.use) === undefined);
 assert(unresolved.length === 0, `every step resolves (unresolved: ${unresolved.map((s) => s.use).join(',') || 'none'})`);
 
@@ -161,6 +163,12 @@ assert(brief.crm.status === 'live', 'briefing reports crm live');
 assert(brief.agenda.status === 'live' && brief.agenda.todayCount === 1, 'briefing reports agenda live with today event');
 const text = renderBriefingText(brief);
 assert(['BRIEF DU JOUR', 'FACTURATION', 'COMPTABILITÉ', 'CRM', 'AGENDA'].every((s) => text.includes(s)), 'briefing renders all live sections');
+
+console.log('veille flip (workflows delegate to the legacy services):');
+const collectRun = await runWorkflowById('veille.collect', { config: cfg, trigger: 'cron', guard: false });
+assert(collectRun.status === 'success' && collectRun.trace[0].step === 'veille.collect-run', 'veille.collect delegates and succeeds');
+const digestRun = await runWorkflowById('veille.digest', { config: cfg, trigger: 'cron', guard: false });
+assert(digestRun.status === 'success' && digestRun.trace[0].step === 'veille.publish-run', 'veille.digest delegates and succeeds');
 
 resetRegistry();
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);
