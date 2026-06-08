@@ -35,6 +35,9 @@ interface SearchState {
   loading: boolean;
   open: boolean;
   activeIndex: number;
+  /** Set when the search request itself failed (Reddit unavailable), to avoid
+   * rendering an upstream error as a misleading "no matches" empty state. */
+  searchFailed: boolean;
 }
 
 type SearchAction = {
@@ -52,11 +55,13 @@ const INITIAL_SEARCH_STATE: SearchState = {
   loading: false,
   open: false,
   activeIndex: -1,
+  searchFailed: false,
 };
 
 interface SubredditResultsListProps {
   visibleResults: SubredditSearchResult[];
   showEmpty: boolean;
+  showError: boolean;
   query: string;
   activeIndex: number;
   onPick: (result: SubredditSearchResult) => void;
@@ -67,6 +72,7 @@ interface SubredditResultsListProps {
 function SubredditResultsList({
   visibleResults,
   showEmpty,
+  showError,
   query,
   activeIndex,
   onPick,
@@ -120,6 +126,12 @@ function SubredditResultsList({
           </button>
         </div>
       ))}
+      {showError && (
+        <div className="px-3 py-2 text-xs text-destructive">
+          Recherche Reddit indisponible pour le moment. Tu peux saisir le nom du subreddit
+          directement, puis valider avec Entrée.
+        </div>
+      )}
       {showEmpty && (
         <div className="px-3 py-2 text-xs text-muted-foreground">
           Aucun subreddit trouvé pour «&nbsp;{query}&nbsp;».
@@ -199,6 +211,7 @@ export function SubredditPicker({
       searchAbortRef.current = null;
       s('results', []);
       s('loading', false);
+      s('searchFailed', false);
       s('activeIndex', -1);
       return;
     }
@@ -208,6 +221,7 @@ export function SubredditPicker({
       const controller = new AbortController();
       searchAbortRef.current = controller;
       s('loading', true);
+      s('searchFailed', false);
       fetch(`/api/reddit/search-subreddits?q=${encodeURIComponent(query)}&limit=8`, {
         signal: controller.signal,
       })
@@ -218,11 +232,13 @@ export function SubredditPicker({
         .then((data) => {
           if (controller.signal.aborted) return;
           s('results', data.results ?? []);
+          s('searchFailed', false);
           s('activeIndex', -1);
         })
         .catch((err: unknown) => {
           if (err instanceof DOMException && err.name === 'AbortError') return;
           s('results', []);
+          s('searchFailed', true);
         })
         .finally(() => {
           if (!controller.signal.aborted) s('loading', false);
@@ -341,9 +357,12 @@ export function SubredditPicker({
     },
   }));
 
+  const hasQuery = search.input.trim().length >= 2;
+  const showError = !search.loading && hasQuery && search.searchFailed;
   const showEmpty =
-    !search.loading && search.input.trim().length >= 2 && visibleResults.length === 0;
-  const showDropdown = search.open && !disabled && (visibleResults.length > 0 || showEmpty);
+    !search.loading && hasQuery && !search.searchFailed && visibleResults.length === 0;
+  const showDropdown =
+    search.open && !disabled && (visibleResults.length > 0 || showEmpty || showError);
 
   return (
     <>
@@ -395,6 +414,7 @@ export function SubredditPicker({
           <SubredditResultsList
             visibleResults={visibleResults}
             showEmpty={showEmpty}
+            showError={showError}
             query={search.input.trim()}
             activeIndex={search.activeIndex}
             onPick={addSubredditFromResult}
