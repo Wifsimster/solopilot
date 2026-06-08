@@ -8,6 +8,7 @@ import { DataTable } from '@/components/ui/data-table';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { DealPipeline, type Deal, type Stage } from '@/components/deal-pipeline';
+import { CrmContactDialog } from '@/components/crm-contact-dialog';
 import { useSelectedProduct, withProductId } from '@/lib/product-context-hooks';
 
 interface Contact {
@@ -111,9 +112,12 @@ export function CrmPage() {
       </div>
 
       <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Contacts
-        </h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Contacts
+          </h2>
+          <CrmContactDialog productId={selectedProductId} onCreated={contacts.refetch} />
+        </div>
         {contacts.loading ? (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, i) => (
