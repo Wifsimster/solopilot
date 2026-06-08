@@ -125,6 +125,17 @@ export function CrmPage() {
             columns={contactColumns}
             data={contacts.data ?? []}
             initialSorting={[{ id: 'name', desc: false }]}
+            facetedFilters={[
+              {
+                columnId: 'status',
+                title: 'Statut',
+                options: [
+                  { label: 'Lead', value: 'lead' },
+                  { label: 'Actif', value: 'active' },
+                  { label: 'Inactif', value: 'inactive' },
+                ],
+              },
+            ]}
             emptyMessage="Aucun contact. Les leads de l'Acquisition pourront être promus ici."
           />
         )}
