@@ -166,6 +166,23 @@ docker compose up -d
 - **Frontend :** React 19, React Router 7, Tailwind CSS 4, Radix UI
 - **Infrastructure :** Docker, GitHub Actions, GitHub Container Registry
 
+## Pilotage par un agent IA (CLI)
+
+Solopilot expose un CLI `solopilot` (egalement `npm run cli --` et `node dist/cli.js`, binaire `solopilot`) qui permet a un agent IA — ou a vous-meme — de piloter toute l'API HTTP en ligne de commande : brief cockpit du jour, factures, comptabilite/URSSAF, CRM, agenda, runs de veille, workflows.
+
+```bash
+# Dans le container de prod (recommande)
+docker exec -e ADMIN_PASSWORD=*** solopilot node dist/cli.js cockpit
+
+# A distance, contre l'URL publique
+solopilot cockpit --url https://your-host --password ***
+```
+
+Le CLI s'authentifie en HTTP Basic (`admin:<ADMIN_PASSWORD>`) et propose des raccourcis (`cockpit`, `invoices`, `comptabilite`, `deals`, `agenda`, `workflows`...) ainsi que des verbes generiques (`get`/`post`/`put`/`patch`/`delete`) couvrant l'integralite de l'API.
+
+- **Reference complete :** [docs/api.md](docs/api.md) — endpoints, schemas de requete, exemples curl + CLI.
+- **Skill agent :** [`.claude/skills/solopilot/SKILL.md`](.claude/skills/solopilot/SKILL.md) — recettes et contrat du CLI pour un agent.
+
 ## Documentation complementaire
 
 | Document | Description |
@@ -176,6 +193,7 @@ docker compose up -d
 | [Catalogue des workflows](docs/workflows/catalog.md) | Workflows cibles par module |
 | [ADR-0013 : Plateforme workflow](docs/adr/0013-from-bot-to-solopilot-workflow-platform.md) | Du bot a la plateforme de workflows |
 | [Reference API](docs/api-reference.md) | Endpoints REST du serveur backend |
+| [API & CLI pour agents](docs/api.md) | API HTTP pilotee par le CLI `solopilot` (endpoints, schemas, exemples) |
 | [Integration Discord](docs/discord-integration.md) | Configuration et utilisation des notifications Discord |
 | [CLAUDE.md](CLAUDE.md) | Instructions pour Claude Code (conventions, structure, commandes) |
 | [AGENT.md](AGENT.md) | Reference rapide pour les agents autonomes |

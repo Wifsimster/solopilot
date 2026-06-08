@@ -4,10 +4,15 @@
   "description": "Solopilot — le systeme d'exploitation autonome de l'entreprise d'une personne : veille, acquisition, CRM, facturation, comptabilite et agenda orchestres par des workflows pilotes par IA",
   "type": "module",
   "main": "dist/scheduler.js",
+  "bin": {
+    "solopilot": "dist/cli.js"
+  },
   "engines": {
     "node": ">=24.0.0"
   },
   "scripts": {
+    "cli": "node dist/cli.js",
+    "dev:cli": "node --env-file=.env dist/cli.js",
     "build": "tsc && npm run build:frontend",
     "build:backend": "tsc",
     "build:frontend": "cd frontend && npx vite build",
