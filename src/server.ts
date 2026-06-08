@@ -77,9 +77,11 @@ import {
   listInvoices,
   markInvoicePaid,
   listOverdueInvoices,
+  upsertStripeInvoices,
   invoiceCreateSchema,
 } from './modules/facturation/store.js';
 import { draftRelance } from './modules/facturation/relance.js';
+import { createStripeConnector } from './connectors/stripe.js';
 import {
   comptaStatus,
   urssafDeclaration,
@@ -354,6 +356,33 @@ export function startServer(
     const today = getTodayDateParis();
     const drafts = listOverdueInvoices(activityId, today).map((inv) => draftRelance(inv, today));
     return c.json(drafts);
+  });
+
+  // Stripe connection status — read-only; the ledger works standalone when unset.
+  app.get('/api/facturation/stripe', (c) => {
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const configured = config
+      ? createStripeConnector(buildProductConfig(config, activityId)).isConfigured()
+      : false;
+    return c.json({ configured });
+  });
+
+  // Manual Stripe sync — degradable: a no-op when Stripe is not configured.
+  app.post('/api/facturation/sync', async (c) => {
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    if (!config) return c.json({ synced: 0, skipped: true });
+    const connector = createStripeConnector(buildProductConfig(config, activityId));
+    if (!connector.isConfigured()) return c.json({ synced: 0, skipped: true });
+    try {
+      const invoices = await connector.listInvoices();
+      const synced = upsertStripeInvoices(activityId, invoices);
+      return c.json({ synced, skipped: false });
+    } catch (err) {
+      logger.error('Manual Stripe sync failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return c.json({ error: 'Échec de la synchronisation Stripe' }, 502);
+    }
   });
 
   // --- Comptabilité API — turnover, thresholds and URSSAF estimates (read + config) ---
