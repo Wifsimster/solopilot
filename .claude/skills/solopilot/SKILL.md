@@ -173,6 +173,34 @@ solopilot get workflow-runs -q limit=10
 solopilot get workflow-runs/RUN_ID
 ```
 
+## Running a workflow on demand (second CLI)
+
+The `solopilot` CLI above is an HTTP client. Scheduled jobs are **workflows**,
+and there is a *separate* CLI that runs one immediately, in-process, instead of
+through the API:
+
+```bash
+node dist/workflow/cli.js <workflow-id>
+# in prod: docker exec solopilot node dist/workflow/cli.js <workflow-id>
+# from source: npm run workflow -- <workflow-id>
+```
+
+It is a runner, not a help printer — `--help` is treated as a workflow id and
+errors. Run it with **no id** to print the available ids. Current workflows:
+
+```
+veille.collect          veille.digest           cockpit.daily-briefing
+facturation.relance-impayes  facturation.sync-stripe
+compta.seuils           compta.echeance-urssaf
+crm.followup-stale      agenda.sync             agenda.rappels
+```
+
+For publish/collect prefer the main CLI's `trigger` / `collect` commands (they
+go through the API and the normal run bookkeeping). Use the workflow runner to
+fire the other scheduled jobs manually — e.g. `facturation.relance-impayes` to
+generate overdue reminders, or `agenda.rappels` for event reminders. Exit code
+is `0` on success, `1` on workflow error or unknown id.
+
 ## Anything else
 
 Convenience commands cover the common cases; for anything not listed, use the
