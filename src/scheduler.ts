@@ -10,12 +10,20 @@ import {
 } from './cron-manager.js';
 import { recoverStaleRuns, isAnyRunning, isAnyCollecting } from './run-service.js';
 import { buildMergedConfig } from './config-merge.js';
+import { registerSolopilot } from './workflow/bootstrap.js';
+import { recoverStaleWorkflowRuns } from './workflow/run-store.js';
 
 // Always initialize database and boot the web server
 getDb();
 
+// Register workflow definitions and steps. This is inert: it does not schedule
+// anything (every workflow ships enabled: false) — it only populates the
+// registry so the read-only workflow API can surface them. See ADR-0014.
+registerSolopilot();
+
 // Recover any runs stuck in 'running' state from a previous crash
 recoverStaleRuns();
+recoverStaleWorkflowRuns();
 
 // Graceful shutdown handler
 let shuttingDown = false;

@@ -68,6 +68,18 @@ import {
   type ProductView,
 } from './product-service.js';
 import { DEFAULT_PRODUCT_ID } from './db.js';
+import { listWorkflows, getWorkflow } from './workflow/registry.js';
+import { listWorkflowRuns, getWorkflowRun } from './workflow/run-store.js';
+import { registerSolopilot } from './workflow/bootstrap.js';
+import { buildBriefing } from './modules/cockpit/briefing.js';
+import {
+  createInvoice,
+  listInvoices,
+  markInvoicePaid,
+  listOverdueInvoices,
+  invoiceCreateSchema,
+} from './modules/facturation/store.js';
+import { draftRelance } from './modules/facturation/relance.js';
 import {
   listIntentSignals,
   getIntentSignal,
@@ -191,6 +203,10 @@ export function startServer(
   const app = new Hono();
   const isConfigured = config !== null;
 
+  // Populate the workflow registry so the read-only workflow API can serve it.
+  // Idempotent and inert (workflows ship disabled; nothing is scheduled here).
+  registerSolopilot();
+
   if (process.env.ADMIN_PASSWORD) {
     app.use(
       '*',
@@ -263,6 +279,120 @@ export function startServer(
       configured: !!process.env[cred.key] || !!getSetting(cred.key),
     }));
     return c.json({ configured: isConfigured, credentials });
+  });
+
+  // --- Cockpit API (read-only) — the single daily picture of the activity ---
+
+  app.get('/api/cockpit', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    return c.json(buildBriefing(activityId));
+  });
+
+  // --- Facturation API — local invoice ledger (read + manual create/mark-paid) ---
+
+  app.get('/api/facturation/invoices', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const status = c.req.query('status') as
+      | 'draft'
+      | 'sent'
+      | 'paid'
+      | 'void'
+      | undefined;
+    return c.json(listInvoices(activityId, status ? { status } : {}));
+  });
+
+  app.post('/api/facturation/invoices', async (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const parsed = invoiceCreateSchema.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) {
+      return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
+    }
+    return c.json(createInvoice(activityId, parsed.data), 201);
+  });
+
+  app.post('/api/facturation/invoices/:id/paid', (c) => {
+    const ok = markInvoicePaid(c.req.param('id'));
+    if (!ok) return c.json({ error: 'Facture introuvable ou déjà payée' }, 404);
+    return c.json({ success: true });
+  });
+
+  // Staged reminders for overdue invoices — preview only, nothing is sent.
+  app.get('/api/facturation/relances', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const today = getTodayDateParis();
+    const drafts = listOverdueInvoices(activityId, today).map((inv) => draftRelance(inv, today));
+    return c.json(drafts);
+  });
+
+  // --- Workflows API (read-only, available in both setup and operational mode) ---
+  // Surfaces the workflow registry and the workflow_runs log. Read-only by
+  // design in this phase: the engine runs disabled, so there is nothing to
+  // trigger here yet (ADR-0014). Triggering/enabling lands with the flip.
+
+  const serializeWorkflowRun = (row: ReturnType<typeof getWorkflowRun>) => {
+    if (!row) return null;
+    let trace: unknown = [];
+    try {
+      trace = JSON.parse(row.trace);
+    } catch {
+      trace = [];
+    }
+    return {
+      id: row.id,
+      workflowId: row.workflow_id,
+      activityId: row.product_id,
+      trigger: row.trigger_type,
+      status: row.status,
+      startedAt: row.started_at,
+      finishedAt: row.finished_at,
+      error: row.error_message,
+      trace,
+    };
+  };
+
+  app.get('/api/workflows', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const workflows = listWorkflows().map((wf) => {
+      const [lastRow] = listWorkflowRuns(1, 0, { workflowId: wf.id, activityId });
+      const last = lastRow ? serializeWorkflowRun(lastRow) : null;
+      return {
+        id: wf.id,
+        module: wf.module,
+        label: wf.label,
+        trigger: wf.trigger,
+        version: wf.version,
+        enabled: wf.enabled,
+        lastRun: last
+          ? { id: last.id, status: last.status, startedAt: last.startedAt, finishedAt: last.finishedAt }
+          : null,
+      };
+    });
+    return c.json(workflows);
+  });
+
+  app.get('/api/workflows/:id', (c) => {
+    const wf = getWorkflow(c.req.param('id'));
+    if (!wf) return c.json({ error: 'Workflow introuvable' }, 404);
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const runs = listWorkflowRuns(10, 0, { workflowId: wf.id, activityId }).map(serializeWorkflowRun);
+    return c.json({ ...wf, runs });
+  });
+
+  app.get('/api/workflow-runs', (c) => {
+    const limit = Math.min(Number(c.req.query('limit')) || 20, 100);
+    const offset = Number(c.req.query('offset')) || 0;
+    const workflowId = c.req.query('workflow') || undefined;
+    const activityId = c.req.query('activity') || undefined;
+    const runs = listWorkflowRuns(limit, offset, { workflowId, activityId }).map(serializeWorkflowRun);
+    return c.json(runs);
+  });
+
+  app.get('/api/workflow-runs/:id', (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id)) return c.json({ error: 'Identifiant invalide' }, 400);
+    const run = serializeWorkflowRun(getWorkflowRun(id));
+    if (!run) return c.json({ error: 'Run introuvable' }, 404);
+    return c.json(run);
   });
 
   // --- Products API (available in both setup and operational mode) ---
