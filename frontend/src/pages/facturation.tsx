@@ -1,9 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Bar, BarChart, CartesianGrid, XAxis } from 'recharts';
+import { RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import { useApi } from '@/hooks/use-api';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ui/data-table';
 import {
@@ -14,7 +17,7 @@ import {
 } from '@/components/ui/chart';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
-import { useSelectedProduct } from '@/lib/product-context-hooks';
+import { useSelectedProduct, withProductId } from '@/lib/product-context-hooks';
 
 interface Invoice {
   id: string;
@@ -118,10 +121,35 @@ export function FacturationPage() {
   const { selectedProductId } = useSelectedProduct();
   const invoices = useApi<Invoice[]>('/api/facturation/invoices', { productId: selectedProductId });
   const relances = useApi<Relance[]>('/api/facturation/relances', { productId: selectedProductId });
+  const stripe = useApi<{ configured: boolean }>('/api/facturation/stripe', {
+    productId: selectedProductId,
+  });
+  const [syncing, setSyncing] = useState(false);
 
   const list = useMemo(() => invoices.data ?? [], [invoices.data]);
   const revenue = useMemo(() => monthlyRevenue(list), [list]);
   const drafts = relances.data ?? [];
+
+  async function syncStripe() {
+    setSyncing(true);
+    try {
+      const res = await fetch(withProductId('/api/facturation/sync', selectedProductId), {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+      if (data.skipped) {
+        toast.info('Stripe non configuré — rien à synchroniser.');
+      } else {
+        toast.success(`${data.synced} facture(s) synchronisée(s) depuis Stripe.`);
+        invoices.refetch();
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Échec de la synchronisation Stripe.');
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   if (invoices.error) {
     return (
@@ -138,6 +166,26 @@ export function FacturationPage() {
         title="Facturation"
         description="Ledger local de vos factures. Les relances sont préparées mais jamais envoyées sans votre validation."
       />
+
+      {stripe.data && (
+        <div className="flex flex-wrap items-center gap-3">
+          {stripe.data.configured ? (
+            <>
+              <Badge variant="success" className="text-xs">
+                Stripe connecté
+              </Badge>
+              <Button size="sm" variant="outline" onClick={syncStripe} disabled={syncing}>
+                <RefreshCw className={`mr-2 h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Synchronisation…' : 'Synchroniser depuis Stripe'}
+              </Button>
+            </>
+          ) : (
+            <Badge variant="outline" className="text-xs">
+              Mode ledger local — Stripe non configuré
+            </Badge>
+          )}
+        </div>
+      )}
 
       {drafts.length > 0 && (
         <Card>
