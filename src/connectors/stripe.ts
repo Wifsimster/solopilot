@@ -64,6 +64,53 @@ function mapInvoice(inv: StripeInvoice): StripeInvoiceData {
   };
 }
 
+export interface CheckoutParams {
+  amountCents: number;
+  currency: string;
+  label: string;
+  returnUrl: string;
+}
+
+/**
+ * Create an embedded Checkout Session to collect payment on an invoice. Returns
+ * the session client_secret for the frontend's <EmbeddedCheckout>. Requires
+ * STRIPE_API_KEY; the caller must guard the not-configured case.
+ */
+export async function createStripeCheckoutSession(
+  config: Config,
+  params: CheckoutParams,
+): Promise<{ clientSecret: string }> {
+  const apiKey = config.STRIPE_API_KEY;
+  if (!apiKey) throw new Error('Stripe not configured');
+
+  const body = new URLSearchParams();
+  body.set('ui_mode', 'embedded');
+  body.set('mode', 'payment');
+  body.set('return_url', params.returnUrl);
+  body.set('line_items[0][quantity]', '1');
+  body.set('line_items[0][price_data][currency]', params.currency);
+  body.set('line_items[0][price_data][unit_amount]', String(params.amountCents));
+  body.set('line_items[0][price_data][product_data][name]', params.label);
+
+  const res = await fetch(`${STRIPE_API}/checkout/sessions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body,
+  });
+  if (!res.ok) {
+    throw new Error(`Stripe API error ${res.status}`);
+  }
+  const data = (await res.json()) as { client_secret?: string };
+  if (!data.client_secret) {
+    throw new Error('Stripe returned no client_secret');
+  }
+  logger.info('Stripe checkout session created');
+  return { clientSecret: data.client_secret };
+}
+
 export function createStripeConnector(config: Config): StripeConnector {
   const apiKey = config.STRIPE_API_KEY;
 

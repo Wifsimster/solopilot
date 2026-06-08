@@ -74,6 +74,7 @@ import { registerSolopilot } from './workflow/bootstrap.js';
 import { buildBriefing } from './modules/cockpit/briefing.js';
 import {
   createInvoice,
+  getInvoice,
   listInvoices,
   markInvoicePaid,
   listOverdueInvoices,
@@ -81,7 +82,7 @@ import {
   invoiceCreateSchema,
 } from './modules/facturation/store.js';
 import { draftRelance } from './modules/facturation/relance.js';
-import { createStripeConnector } from './connectors/stripe.js';
+import { createStripeConnector, createStripeCheckoutSession } from './connectors/stripe.js';
 import {
   comptaStatus,
   urssafDeclaration,
@@ -359,12 +360,38 @@ export function startServer(
   });
 
   // Stripe connection status — read-only; the ledger works standalone when unset.
+  // `checkout` is true only when both the secret and publishable keys are set,
+  // which is what the embedded Checkout needs. The publishable key is public.
   app.get('/api/facturation/stripe', (c) => {
     const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
-    const configured = config
-      ? createStripeConnector(buildProductConfig(config, activityId)).isConfigured()
-      : false;
-    return c.json({ configured });
+    const productConfig = config ? buildProductConfig(config, activityId) : null;
+    const configured = productConfig ? createStripeConnector(productConfig).isConfigured() : false;
+    const publishableKey = productConfig?.STRIPE_PUBLISHABLE_KEY ?? null;
+    return c.json({ configured, publishableKey, checkout: configured && !!publishableKey });
+  });
+
+  // Create an embedded Checkout Session to collect payment on an invoice.
+  app.post('/api/facturation/invoices/:id/checkout', async (c) => {
+    if (!config) return c.json({ error: 'Stripe non configuré' }, 400);
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const productConfig = buildProductConfig(config, activityId);
+    if (!productConfig.STRIPE_API_KEY) return c.json({ error: 'Stripe non configuré' }, 400);
+    const invoice = getInvoice(c.req.param('id'));
+    if (!invoice) return c.json({ error: 'Facture introuvable' }, 404);
+    try {
+      const { clientSecret } = await createStripeCheckoutSession(productConfig, {
+        amountCents: invoice.amount_cents,
+        currency: invoice.currency,
+        label: `Facture ${invoice.number}`,
+        returnUrl: `${new URL(c.req.url).origin}/facturation?paid=1`,
+      });
+      return c.json({ clientSecret });
+    } catch (err) {
+      logger.error('Stripe checkout session failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return c.json({ error: 'Échec de la création du paiement Stripe' }, 502);
+    }
   });
 
   // Manual Stripe sync — degradable: a no-op when Stripe is not configured.
