@@ -14,7 +14,6 @@ import { SummariesPage } from "@/pages/summaries";
 import { SettingsPage } from "@/pages/settings";
 import { SetupPage } from "@/pages/setup";
 import { ProductsPage } from "@/pages/products";
-import { ComptabilitePage } from "@/pages/comptabilite";
 import { LeadsPage } from "@/pages/leads";
 import { StudioPage } from "@/pages/studio";
 
@@ -22,6 +21,9 @@ import { StudioPage } from "@/pages/studio";
 // keeps them out of the initial bundle. See ADR-0021.
 const FacturationPage = lazy(() =>
   import("@/pages/facturation").then((m) => ({ default: m.FacturationPage })),
+);
+const ComptabilitePage = lazy(() =>
+  import("@/pages/comptabilite").then((m) => ({ default: m.ComptabilitePage })),
 );
 const AgendaPage = lazy(() =>
   import("@/pages/agenda").then((m) => ({ default: m.AgendaPage })),
@@ -48,7 +50,7 @@ export function App() {
                 <Route path="/summaries" element={<SummariesPage />} />
                 <Route path="/products" element={<ProductsPage />} />
                 <Route path="/facturation" element={<LazyPage><FacturationPage /></LazyPage>} />
-                <Route path="/comptabilite" element={<ComptabilitePage />} />
+                <Route path="/comptabilite" element={<LazyPage><ComptabilitePage /></LazyPage>} />
                 <Route path="/agenda" element={<LazyPage><AgendaPage /></LazyPage>} />
                 <Route path="/leads" element={<LeadsPage />} />
                 <Route path="/crm" element={<LazyPage><CrmPage /></LazyPage>} />
