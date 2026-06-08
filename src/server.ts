@@ -74,12 +74,15 @@ import { registerSolopilot } from './workflow/bootstrap.js';
 import { buildBriefing } from './modules/cockpit/briefing.js';
 import {
   createInvoice,
+  getInvoice,
   listInvoices,
   markInvoicePaid,
   listOverdueInvoices,
+  upsertStripeInvoices,
   invoiceCreateSchema,
 } from './modules/facturation/store.js';
 import { draftRelance } from './modules/facturation/relance.js';
+import { createStripeConnector, createStripeCheckoutSession } from './connectors/stripe.js';
 import {
   comptaStatus,
   urssafDeclaration,
@@ -316,14 +319,14 @@ export function startServer(
   // --- Cockpit API (read-only) — the single daily picture of the activity ---
 
   app.get('/api/cockpit', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(buildBriefing(activityId));
   });
 
   // --- Facturation API — local invoice ledger (read + manual create/mark-paid) ---
 
   app.get('/api/facturation/invoices', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const status = c.req.query('status') as
       | 'draft'
       | 'sent'
@@ -334,7 +337,7 @@ export function startServer(
   });
 
   app.post('/api/facturation/invoices', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = invoiceCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) {
       return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
@@ -350,16 +353,69 @@ export function startServer(
 
   // Staged reminders for overdue invoices — preview only, nothing is sent.
   app.get('/api/facturation/relances', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const today = getTodayDateParis();
     const drafts = listOverdueInvoices(activityId, today).map((inv) => draftRelance(inv, today));
     return c.json(drafts);
   });
 
+  // Stripe connection status — read-only; the ledger works standalone when unset.
+  // `checkout` is true only when both the secret and publishable keys are set,
+  // which is what the embedded Checkout needs. The publishable key is public.
+  app.get('/api/facturation/stripe', (c) => {
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const productConfig = config ? buildProductConfig(config, activityId) : null;
+    const configured = productConfig ? createStripeConnector(productConfig).isConfigured() : false;
+    const publishableKey = productConfig?.STRIPE_PUBLISHABLE_KEY ?? null;
+    return c.json({ configured, publishableKey, checkout: configured && !!publishableKey });
+  });
+
+  // Create an embedded Checkout Session to collect payment on an invoice.
+  app.post('/api/facturation/invoices/:id/checkout', async (c) => {
+    if (!config) return c.json({ error: 'Stripe non configuré' }, 400);
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const productConfig = buildProductConfig(config, activityId);
+    if (!productConfig.STRIPE_API_KEY) return c.json({ error: 'Stripe non configuré' }, 400);
+    const invoice = getInvoice(c.req.param('id'));
+    if (!invoice) return c.json({ error: 'Facture introuvable' }, 404);
+    try {
+      const { clientSecret } = await createStripeCheckoutSession(productConfig, {
+        amountCents: invoice.amount_cents,
+        currency: invoice.currency,
+        label: `Facture ${invoice.number}`,
+        returnUrl: `${new URL(c.req.url).origin}/facturation?paid=1`,
+      });
+      return c.json({ clientSecret });
+    } catch (err) {
+      logger.error('Stripe checkout session failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return c.json({ error: 'Échec de la création du paiement Stripe' }, 502);
+    }
+  });
+
+  // Manual Stripe sync — degradable: a no-op when Stripe is not configured.
+  app.post('/api/facturation/sync', async (c) => {
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    if (!config) return c.json({ synced: 0, skipped: true });
+    const connector = createStripeConnector(buildProductConfig(config, activityId));
+    if (!connector.isConfigured()) return c.json({ synced: 0, skipped: true });
+    try {
+      const invoices = await connector.listInvoices();
+      const synced = upsertStripeInvoices(activityId, invoices);
+      return c.json({ synced, skipped: false });
+    } catch (err) {
+      logger.error('Manual Stripe sync failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return c.json({ error: 'Échec de la synchronisation Stripe' }, 502);
+    }
+  });
+
   // --- Comptabilité API — turnover, thresholds and URSSAF estimates (read + config) ---
 
   app.get('/api/comptabilite', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json({
       status: comptaStatus(activityId),
       urssaf: urssafDeclaration(activityId),
@@ -371,7 +427,7 @@ export function startServer(
   });
 
   app.post('/api/comptabilite/config', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = comptaConfigSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) {
       return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
@@ -381,12 +437,12 @@ export function startServer(
   });
 
   app.get('/api/comptabilite/ledger', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(listLedger(activityId));
   });
 
   app.post('/api/comptabilite/ledger', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = ledgerCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) {
       return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
@@ -397,12 +453,12 @@ export function startServer(
   // --- CRM API — contacts, deals (pipeline) and interactions ---
 
   app.get('/api/crm/contacts', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(listContacts(activityId));
   });
 
   app.post('/api/crm/contacts', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = contactCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
     return c.json(createContact(activityId, parsed.data), 201);
@@ -411,19 +467,19 @@ export function startServer(
   app.get('/api/crm/contacts/:id/interactions', (c) => c.json(listInteractions(c.req.param('id'))));
 
   app.post('/api/crm/interactions', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = interactionCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
     return c.json(addInteraction(activityId, parsed.data), 201);
   });
 
   app.get('/api/crm/deals', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(listDeals(activityId));
   });
 
   app.post('/api/crm/deals', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = dealCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
     return c.json(createDeal(activityId, parsed.data), 201);
@@ -438,14 +494,14 @@ export function startServer(
 
   // Staged follow-ups for stale deals — preview only, nothing is sent.
   app.get('/api/crm/relances', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(listStaleDeals(activityId).map(draftFollowup));
   });
 
   // --- Agenda API — calendar events (read + manual create) ---
 
   app.get('/api/agenda', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json({
       summary: agendaSummary(activityId),
       today: listEventsForDay(activityId),
@@ -454,7 +510,7 @@ export function startServer(
   });
 
   app.post('/api/agenda/events', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = eventCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
     return c.json(createEvent(activityId, parsed.data), 201);
@@ -487,7 +543,7 @@ export function startServer(
   };
 
   app.get('/api/workflows', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const workflows = listWorkflows().map((wf) => {
       const [lastRow] = listWorkflowRuns(1, 0, { workflowId: wf.id, activityId });
       const last = lastRow ? serializeWorkflowRun(lastRow) : null;
@@ -509,7 +565,7 @@ export function startServer(
   app.get('/api/workflows/:id', (c) => {
     const wf = getWorkflow(c.req.param('id'));
     if (!wf) return c.json({ error: 'Workflow introuvable' }, 404);
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const runs = listWorkflowRuns(10, 0, { workflowId: wf.id, activityId }).map(serializeWorkflowRun);
     return c.json({ ...wf, runs });
   });
@@ -518,7 +574,7 @@ export function startServer(
     const limit = Math.min(Number(c.req.query('limit')) || 20, 100);
     const offset = Number(c.req.query('offset')) || 0;
     const workflowId = c.req.query('workflow') || undefined;
-    const activityId = c.req.query('activity') || undefined;
+    const activityId = c.req.query('productId') || c.req.query('activity') || undefined;
     const runs = listWorkflowRuns(limit, offset, { workflowId, activityId }).map(serializeWorkflowRun);
     return c.json(runs);
   });

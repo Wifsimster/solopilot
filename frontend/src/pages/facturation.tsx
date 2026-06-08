@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from 'recharts';
-import { FileText, TrendingUp, Clock, AlertCircle } from 'lucide-react';
+import { FileText, TrendingUp, Clock, AlertCircle, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import { useApi } from '@/hooks/use-api';
 import {
   Card,
@@ -12,6 +13,7 @@ import {
   CardFooter,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable } from '@/components/ui/data-table';
 import {
@@ -23,7 +25,9 @@ import {
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { StatCard } from '@/components/stat-card';
-import { useSelectedProduct } from '@/lib/product-context-hooks';
+import { FacturationInvoiceDialog } from '@/components/facturation-invoice-dialog';
+import { StripeCheckoutDialog } from '@/components/stripe-checkout-dialog';
+import { useSelectedProduct, withProductId } from '@/lib/product-context-hooks';
 
 interface Invoice {
   id: string;
@@ -133,6 +137,13 @@ export function FacturationPage() {
   const { selectedProductId } = useSelectedProduct();
   const invoices = useApi<Invoice[]>('/api/facturation/invoices', { productId: selectedProductId });
   const relances = useApi<Relance[]>('/api/facturation/relances', { productId: selectedProductId });
+  const stripe = useApi<{ configured: boolean; checkout: boolean; publishableKey: string | null }>(
+    '/api/facturation/stripe',
+    { productId: selectedProductId },
+  );
+  const [syncing, setSyncing] = useState(false);
+  const checkout = stripe.data?.checkout ?? false;
+  const publishableKey = stripe.data?.publishableKey ?? null;
 
   const list = useMemo(() => invoices.data ?? [], [invoices.data]);
   const revenue = useMemo(() => monthlyRevenue(list), [list]);
@@ -149,6 +160,76 @@ export function FacturationPage() {
   );
   const overdueCount = drafts.length;
   const currency = list[0]?.currency ?? 'EUR';
+
+  const markPaid = useCallback(
+    async (id: string) => {
+      try {
+        const res = await fetch(`/api/facturation/invoices/${id}/paid`, { method: 'POST' });
+        if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
+        toast.success('Facture marquée payée.');
+        invoices.refetch();
+      } catch {
+        toast.error('Impossible de marquer la facture payée.');
+      }
+    },
+    [invoices],
+  );
+
+  const allColumns = useMemo<ColumnDef<Invoice>[]>(
+    () => [
+      ...columns,
+      {
+        id: 'actions',
+        header: '',
+        cell: ({ row }) => {
+          const inv = row.original;
+          if (inv.status === 'paid' || inv.status === 'void') return null;
+          return (
+            <div className="flex items-center justify-end gap-2">
+              {checkout && publishableKey && (
+                <StripeCheckoutDialog
+                  invoiceId={inv.id}
+                  invoiceLabel={inv.number}
+                  publishableKey={publishableKey}
+                  productId={selectedProductId}
+                />
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={() => markPaid(inv.id)}
+              >
+                Marquer payée
+              </Button>
+            </div>
+          );
+        },
+      },
+    ],
+    [markPaid, checkout, publishableKey, selectedProductId],
+  );
+
+  async function syncStripe() {
+    setSyncing(true);
+    try {
+      const res = await fetch(withProductId('/api/facturation/sync', selectedProductId), {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Erreur HTTP ${res.status}`);
+      if (data.skipped) {
+        toast.info('Stripe non configuré — rien à synchroniser.');
+      } else {
+        toast.success(`${data.synced} facture(s) synchronisée(s) depuis Stripe.`);
+        invoices.refetch();
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Échec de la synchronisation Stripe.');
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   if (invoices.error) {
     return (
@@ -167,6 +248,29 @@ export function FacturationPage() {
         description="Ledger local de vos factures. Les relances sont préparées mais jamais envoyées sans votre validation."
       />
 
+      {/* Actions: invoice creation + Stripe status */}
+      <div className="flex flex-wrap items-center gap-3">
+        {stripe.data &&
+          (stripe.data.configured ? (
+            <>
+              <Badge variant="success" className="text-xs">
+                Stripe connecté
+              </Badge>
+              <Button size="sm" variant="outline" onClick={syncStripe} disabled={syncing}>
+                <RefreshCw className={`mr-2 h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Synchronisation…' : 'Synchroniser depuis Stripe'}
+              </Button>
+            </>
+          ) : (
+            <Badge variant="outline" className="text-xs">
+              Mode ledger local — Stripe non configuré
+            </Badge>
+          ))}
+        <div className="ml-auto">
+          <FacturationInvoiceDialog productId={selectedProductId} onCreated={invoices.refetch} />
+        </div>
+      </div>
+
       {/* KPI row */}
       {invoices.loading ? (
         <div className="grid gap-4 sm:grid-cols-3">
@@ -174,22 +278,24 @@ export function FacturationPage() {
             <Skeleton key={i} className="h-24 w-full rounded-xl" />
           ))}
         </div>
-      ) : list.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <StatCard title="CA encaissé" icon={TrendingUp} tone="success">
-            <span className="tabular-nums">{amount(totalPaid, currency)}</span>
-          </StatCard>
-          <StatCard title="En attente" icon={Clock} tone="warning">
-            <span className="tabular-nums">{amount(totalPending, currency)}</span>
-          </StatCard>
-          <StatCard
-            title="Relances à valider"
-            icon={AlertCircle}
-            tone={overdueCount > 0 ? 'destructive' : 'default'}
-          >
-            {overdueCount}
-          </StatCard>
-        </div>
+      ) : (
+        list.length > 0 && (
+          <div className="grid gap-4 sm:grid-cols-3">
+            <StatCard title="CA encaissé" icon={TrendingUp} tone="success">
+              <span className="tabular-nums">{amount(totalPaid, currency)}</span>
+            </StatCard>
+            <StatCard title="En attente" icon={Clock} tone="warning">
+              <span className="tabular-nums">{amount(totalPending, currency)}</span>
+            </StatCard>
+            <StatCard
+              title="Relances à valider"
+              icon={AlertCircle}
+              tone={overdueCount > 0 ? 'destructive' : 'default'}
+            >
+              {overdueCount}
+            </StatCard>
+          </div>
+        )
       )}
 
       {/* Relance drafts */}
@@ -299,7 +405,7 @@ export function FacturationPage() {
         </Card>
       ) : (
         <DataTable
-          columns={columns}
+          columns={allColumns}
           data={list}
           initialSorting={[{ id: 'issued_on', desc: true }]}
           facetedFilters={[
