@@ -30,6 +30,14 @@ jobs:
       run:
         working-directory: /opt/docker/solopilot
     steps:
+      # The self-hosted runners share the `deploy` user's ~/.docker/config.json.
+      # Another repo's CI can leave an expired ghcr.io `ghs_` token cached there;
+      # Docker then sends it for our pull and gets `denied` instead of falling
+      # back to anonymous. Our image is public, so clear any stale credential
+      # first to guarantee a clean anonymous pull.
+      - name: Clear stale GHCR credentials
+        run: docker logout ghcr.io || true
+
       - name: Pull latest solopilot image
         run: docker compose pull solopilot
 
