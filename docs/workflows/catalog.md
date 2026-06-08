@@ -54,8 +54,8 @@ venir, leads chauds, dernier digest de veille — condensé en un message.
 
 | Workflow | Déclencheur | Étapes | Statut |
 |---|---|---|---|
-| `crm.followup-stale` | cron quotidien | requête deals dormants → `ai.compose` (relance) → staging | 🆕 |
-| `crm.promote-lead` | event (lead qualifié) | lead → créer contact/deal → `persist` | 🆕 |
+| `crm.followup-stale` | cron `0 9 * * 2` | `crm.followup` (opportunités dormantes >14j → relances FR staged) → `notify.discord` | ✅ défini (`enabled: false`) |
+| `crm.promote-lead` | event (lead qualifié) | lead → créer contact/deal → `persist` | 🆕 (attend le bus d'événements) |
 
 ## Agenda (Google Calendar)
 

@@ -30,6 +30,7 @@ import {
   Gauge,
   Receipt,
   Calculator,
+  Users,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -66,6 +67,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Engager',
     items: [
       { to: '/leads', label: 'Opportunités', icon: Target },
+      { to: '/crm', label: 'CRM', icon: Users },
       { to: '/studio', label: 'Studio', icon: Wand2 },
     ],
   },

@@ -136,10 +136,14 @@ Trois modules indépendants, livrables en parallèle ou en séquence.
 - [x] API + écran Comptabilité (jauges plafond/TVA + estimation URSSAF) ; cockpit branché.
 - [x] Smoke test (CA agrégé, plafonds, no-alert, config). **Estimations — pas de télédéclaration.**
 
-### CRM
-- [ ] Tables `contacts`, `deals`, `interactions`. Les leads d'Acquisition se
-      promeuvent en contacts.
-- [ ] Workflow `crm.followup-stale` : relance les opportunités dormantes (brouillon).
+### CRM ✅ (voir [ADR-0018](adr/0018-crm-contacts-deals.md))
+- [x] Tables `contacts`, `deals` (pipeline), `interactions`.
+- [x] Store : CRUD, pipeline par étape, opportunités dormantes (>14j), résumé.
+- [x] Workflow `crm.followup-stale` (`enabled: false`) : relances FR staged des
+      opportunités dormantes.
+- [x] API + écran CRM (pipeline + contacts) ; cockpit branché.
+- [x] Smoke test (pipeline, staleness, relance, clôture).
+- [ ] `crm.promote-lead` (promotion auto des leads) — attend le bus d'événements.
 
 ### Agenda
 - [ ] Connecteur `CalendarConnector` (Google Calendar MCP).

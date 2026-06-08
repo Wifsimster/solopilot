@@ -92,6 +92,20 @@ import {
   getDeclarationPeriod,
 } from './modules/comptabilite/compta.js';
 import {
+  listContacts,
+  createContact,
+  contactCreateSchema,
+  listDeals,
+  createDeal,
+  dealCreateSchema,
+  updateDealStage,
+  listStaleDeals,
+  listInteractions,
+  addInteraction,
+  interactionCreateSchema,
+} from './modules/crm/store.js';
+import { draftFollowup } from './modules/crm/followup.js';
+import {
   listIntentSignals,
   getIntentSignal,
   updateIntentSignal,
@@ -371,6 +385,54 @@ export function startServer(
       return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
     }
     return c.json(addLedgerEntry(activityId, parsed.data), 201);
+  });
+
+  // --- CRM API — contacts, deals (pipeline) and interactions ---
+
+  app.get('/api/crm/contacts', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    return c.json(listContacts(activityId));
+  });
+
+  app.post('/api/crm/contacts', async (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const parsed = contactCreateSchema.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
+    return c.json(createContact(activityId, parsed.data), 201);
+  });
+
+  app.get('/api/crm/contacts/:id/interactions', (c) => c.json(listInteractions(c.req.param('id'))));
+
+  app.post('/api/crm/interactions', async (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const parsed = interactionCreateSchema.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
+    return c.json(addInteraction(activityId, parsed.data), 201);
+  });
+
+  app.get('/api/crm/deals', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    return c.json(listDeals(activityId));
+  });
+
+  app.post('/api/crm/deals', async (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const parsed = dealCreateSchema.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
+    return c.json(createDeal(activityId, parsed.data), 201);
+  });
+
+  app.post('/api/crm/deals/:id/stage', async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { stage?: string };
+    const updated = updateDealStage(c.req.param('id'), body.stage ?? '');
+    if (!updated) return c.json({ error: 'Opportunité introuvable ou étape invalide' }, 400);
+    return c.json(updated);
+  });
+
+  // Staged follow-ups for stale deals — preview only, nothing is sent.
+  app.get('/api/crm/relances', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    return c.json(listStaleDeals(activityId).map(draftFollowup));
   });
 
   // --- Workflows API (read-only, available in both setup and operational mode) ---
