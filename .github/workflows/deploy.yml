@@ -30,8 +30,8 @@ jobs:
       run:
         working-directory: /opt/docker/solopilot
     steps:
-      - name: Pull latest image(s)
-        run: docker compose pull
+      - name: Pull latest solopilot image
+        run: docker compose pull solopilot
 
       - name: Reconcile stack
         run: docker compose up -d
@@ -39,6 +39,33 @@ jobs:
       - name: Show status
         run: docker compose ps
 
+      - name: Wait for solopilot to become healthy
+        # `up -d` returns as soon as the container starts, not when the app
+        # is ready. Without this gate, a container restart-looping on a bad
+        # boot (missing config, DB migration error) would still leave the
+        # workflow green. The HEALTHCHECK in the image polls /healthz with a
+        # 10s start_period; allow ~3 minutes before declaring the deploy
+        # failed.
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 36); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' solopilot 2>/dev/null || echo "missing")
+            echo "[$i/36] solopilot health: $status"
+            case "$status" in
+              healthy)  exit 0 ;;
+              unhealthy)
+                echo "Container reported unhealthy — dumping recent logs:"
+                docker logs --tail=200 solopilot || true
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+          echo "Timed out waiting for solopilot to become healthy"
+          docker logs --tail=200 solopilot || true
+          exit 1
+
       - name: Prune dangling images
+        if: success()
         working-directory: /
         run: docker image prune -f

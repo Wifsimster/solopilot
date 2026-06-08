@@ -225,20 +225,7 @@ jobs:
           draft: false
           prerelease: false
 
-  deploy:
-    name: Deploy to Production
-    runs-on: self-hosted
-    needs: [release]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Deploy
-        run: ./deploy/deploy.sh
+  # Deployment to the homelab is handled by the dedicated `deploy.yml`
+  # workflow, which fires on this workflow's completion (workflow_run).
+  # Keeping it separate makes deploys independently dispatchable and keeps
+  # the publish job free of any self-hosted-runner dependency.
