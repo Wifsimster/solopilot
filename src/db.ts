@@ -308,6 +308,38 @@ function rebuildMonthlySummariesIfLegacyUnique(database: Database.Database) {
   }
 }
 
+export interface WorkflowRunRecord {
+  id: number;
+  workflow_id: string;
+  product_id: string;
+  trigger_type: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  trace: string;
+  error_message: string | null;
+}
+
+// Workflow engine migrations (ADR-0013). Idempotent — generalizes the `runs`
+// table into a workflow-aware execution log without touching it.
+function runWorkflowMigrations(database: Database.Database) {
+  database.exec(`CREATE TABLE IF NOT EXISTS workflow_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workflow_id TEXT NOT NULL,
+    product_id TEXT NOT NULL DEFAULT '${DEFAULT_PRODUCT_ID}',
+    trigger_type TEXT NOT NULL DEFAULT 'manual',
+    status TEXT NOT NULL DEFAULT 'running',
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at TEXT,
+    trace TEXT NOT NULL DEFAULT '[]',
+    error_message TEXT
+  )`);
+
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow ON workflow_runs(workflow_id, product_id, started_at DESC)`,
+  );
+}
+
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -366,6 +398,7 @@ export function getDb(): Database.Database {
 
     runAlterMigrations(db);
     runProductMigrations(db);
+    runWorkflowMigrations(db);
 
     logger.info('Database initialized', { path: dbPath });
   }

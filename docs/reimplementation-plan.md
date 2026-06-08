@@ -55,16 +55,23 @@ export type Step<I = unknown, O = unknown> = (ctx: StepContext, input: I) => Pro
 
 ## 2. Le moteur (in-process, ~300 lignes)
 
-> **État d'avancement.** Le squelette du moteur est déjà en place et compile
-> (tsc strict + eslint) **sans être câblé au scheduler** — donc zéro impact prod :
-> - `src/workflow/types.ts` — les primitives (Workflow, Trigger, Step, StepContext, WorkflowRun).
+> **État d'avancement.** Le moteur est implémenté et **testé de bout en bout**
+> (`npm run test:workflow`, 14 assertions contre SQLite), **sans être câblé au
+> scheduler de prod** — donc zéro impact (tous les workflows sont `enabled: false`) :
+> - `src/workflow/types.ts` — primitives (Workflow, Trigger, Step, StepContext, WorkflowRun).
 > - `src/workflow/registry.ts` — registre in-memory des workflows et étapes.
 > - `src/workflow/engine.ts` — exécuteur séquentiel avec dégradation gracieuse.
-> - `src/modules/veille/workflows.ts` — définitions `veille.collect/digest/monthly`
->   (données pures, `enabled: false`) qui montrent le mapping du bot actuel.
+> - `src/workflow/run-store.ts` — persistance des runs dans `workflow_runs` (migration idempotente dans `db.ts`).
+> - `src/workflow/runner.ts` — contexte + connecteurs + garde de concurrence par `(module, activité)`.
+> - `src/workflow/connectors.ts` — registre de connecteurs (Discord câblé en Phase 1).
+> - `src/workflow/scheduler.ts` — planifie les workflows `cron` **activés** (no-op tant qu'aucun ne l'est).
+> - `src/workflow/bootstrap.ts` — enregistrement idempotent des étapes + workflows.
+> - `src/steps/{fetch,persist,notify}.ts` — étapes `fetch.sources`, `persist`, `notify.discord` déléguant aux services existants.
+> - `src/modules/veille/workflows.ts` — définitions `veille.collect/digest/monthly` (`enabled: false`).
 >
-> Reste à faire en Phase 1 : implémenter/enregistrer les étapes de base, le
-> `runner` (persistance `workflow_runs`) et le `scheduler` qui lit les triggers.
+> Reste à faire pour clore la Phase 1 : implémenter `ai.summarize` (← `ai-filter`),
+> brancher `scheduleWorkflows()` dans `scheduler.ts`, puis basculer `veille.*` en
+> `enabled: true` à comportement constant et retirer les crons hérités.
 
 Pas de file externe, pas de Redis — mono-processus, SQLite, comme le socle actuel.
 

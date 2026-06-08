@@ -48,11 +48,19 @@ export interface Workflow {
 }
 
 /**
- * Placeholder for the connector registry (sources, discord, email, stripe,
- * calendar, ai). Connectors land per-module in later phases; the shape is kept
- * open so steps can be authored against it incrementally without a hard break.
+ * Connector registry — typed access to external systems from inside steps.
+ *
+ * Connectors land per-module across the migration phases. Phase 1 ships the
+ * Discord connector (wrapping the existing notifier); sources, email, stripe,
+ * calendar and ai connectors are added as their modules come online.
  */
-export type ConnectorRegistry = Record<string, unknown>;
+export interface DiscordConnector {
+  send(webhookUrl: string, content: string): Promise<{ success: boolean; error?: string }>;
+}
+
+export interface ConnectorRegistry {
+  discord: DiscordConnector;
+}
 
 export interface StepContext {
   /** Tenancy scope — the activity (formerly product_id). */
@@ -64,15 +72,19 @@ export interface StepContext {
   emit: (event: string, payload: unknown) => void;
 }
 
+/** The merged input bag a step receives: `def.with` overlaid with the previous step's output. */
+export type StepInput = Record<string, unknown>;
+
 /**
- * A step is a typed orchestration unit. The engine passes the previous step's
- * output as the next step's input. A `degradable` step that throws is skipped
- * rather than failing the whole run (ADR-0013, graceful degradation).
+ * A step is an orchestration unit. The engine passes the previous step's output
+ * (merged with the step's static `with`) as a generic input bag; steps narrow
+ * it internally. A `degradable` step that throws is skipped rather than failing
+ * the whole run (ADR-0013, graceful degradation).
  */
-export interface Step<I = unknown, O = unknown> {
+export interface Step<O = unknown> {
   use: string;
   degradable?: boolean;
-  run: (ctx: StepContext, input: I) => Promise<O>;
+  run: (ctx: StepContext, input: StepInput) => Promise<O>;
 }
 
 export type StepStatus = 'ok' | 'skipped' | 'error';
@@ -86,6 +98,8 @@ export interface StepTrace {
 export type RunStatus = 'running' | 'success' | 'error' | 'skipped';
 
 export interface WorkflowRun {
+  /** DB row id, assigned by the run-store once persisted. */
+  id?: number;
   workflowId: string;
   activityId: string;
   trigger: Trigger['kind'];
