@@ -1,6 +1,6 @@
 {
   "name": "solopilot",
-  "version": "1.36.0",
+  "version": "1.37.0",
   "description": "Solopilot — le systeme d'exploitation autonome de l'entreprise d'une personne : veille, acquisition, CRM, facturation, comptabilite et agenda orchestres par des workflows pilotes par IA",
   "type": "module",
   "main": "dist/scheduler.js",
