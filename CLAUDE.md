@@ -52,8 +52,8 @@ frontend/                   # React SPA
 └── vite.config.ts
 
 docs/adr/                   # Architecture Decision Records
-.github/workflows/release.yml  # CI/CD pipeline
-deploy/deploy.sh               # Production deploy script
+.github/workflows/release.yml  # Build + publish image to GHCR (on push to main)
+.github/workflows/deploy.yml   # Homelab deploy — pull & reconcile compose stack (workflow_run)
 Dockerfile                     # Multi-stage build
 compose.yml                    # Docker Compose config
 ```
