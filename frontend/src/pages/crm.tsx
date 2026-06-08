@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { DealPipeline, type Deal, type Stage } from '@/components/deal-pipeline';
 import { CrmContactDialog } from '@/components/crm-contact-dialog';
+import { CrmDealDialog } from '@/components/crm-deal-dialog';
 import { useSelectedProduct, withProductId } from '@/lib/product-context-hooks';
 
 interface Contact {
@@ -97,9 +98,16 @@ export function CrmPage() {
       />
 
       <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Pipeline
-        </h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Pipeline
+          </h2>
+          <CrmDealDialog
+            productId={selectedProductId}
+            contacts={contacts.data ?? []}
+            onCreated={deals.refetch}
+          />
+        </div>
         {deals.loading ? (
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {Array.from({ length: 5 }).map((_, i) => (
