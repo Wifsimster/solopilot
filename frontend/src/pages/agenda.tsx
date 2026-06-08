@@ -7,6 +7,7 @@ import { ErrorState } from '@/components/error-state';
 import { AgendaCalendar, type SxEvent } from '@/components/agenda-calendar';
 import { AgendaEventDialog } from '@/components/agenda-event-dialog';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
+import { CalendarDays } from 'lucide-react';
 
 interface CalendarEvent {
   id: string;
@@ -66,9 +67,10 @@ export function AgendaPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 sm:space-y-8">
       <PageHeader
-        title="Agenda"
+        eyebrow="Agenda"
+        title="Calendrier"
         description="Vos événements. Synchronisez un flux ICS (adresse secrète Google Calendar) ou ajoutez des événements manuellement."
       />
 
@@ -77,11 +79,17 @@ export function AgendaPage() {
       </div>
 
       {loading || !data ? (
-        <Skeleton className="h-[32rem] w-full" />
+        <Skeleton className="h-[32rem] w-full rounded-xl" />
       ) : events.length === 0 ? (
         <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Aucun événement. Configurez un flux ICS pour les importer ou ajoutez-en manuellement.
+          <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+              <CalendarDays className="size-5 text-muted-foreground" />
+            </div>
+            <p className="font-medium">Aucun événement</p>
+            <p className="max-w-sm text-sm text-muted-foreground">
+              Configurez un flux ICS pour importer vos événements Google Calendar, ou ajoutez-en manuellement.
+            </p>
           </CardContent>
         </Card>
       ) : (

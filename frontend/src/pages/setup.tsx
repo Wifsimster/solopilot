@@ -2,10 +2,10 @@ import { Fragment, createElement, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Settings as SettingsIcon, ArrowRight } from "lucide-react";
+import { Settings as SettingsIcon, ArrowRight, CheckCircle2, XCircle, Terminal, BookOpen } from "lucide-react";
 import type { SetupResponse } from "@/types";
 
 // Inline tags allowed in the trusted `howToFind` help strings (defined in the
@@ -27,7 +27,7 @@ function nodeToReact(node: Node, key: number): ReactNode {
     const href = el.getAttribute("href") ?? undefined;
     return createElement(
       "a",
-      { key, href, target: "_blank", rel: "noopener noreferrer", className: "underline" },
+      { key, href, target: "_blank", rel: "noopener noreferrer", className: "underline underline-offset-2 hover:text-foreground transition-colors" },
       ...children,
     );
   }
@@ -42,20 +42,28 @@ function TrustedInline({ html }: { html: string }) {
   return Array.from(doc.body.childNodes).map((node, i) => nodeToReact(node, i));
 }
 
+function InlineCode({ children }: { children: string }) {
+  return (
+    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
+      {children}
+    </code>
+  );
+}
+
 export function SetupPage() {
   const { data: setup, loading } = useApi<SetupResponse>("/api/setup");
 
   if (loading || !setup) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-muted/30">
-        <div className="max-w-2xl w-full mx-auto space-y-6">
-          <div className="text-center space-y-3">
-            <Skeleton className="size-14 mx-auto rounded-full" />
-            <Skeleton className="h-8 w-64 mx-auto" />
-            <Skeleton className="h-4 w-96 mx-auto" />
+      <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4 py-12">
+        <div className="w-full max-w-lg space-y-6">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Skeleton className="size-14 rounded-full" />
+            <Skeleton className="h-8 w-56" />
+            <Skeleton className="h-4 w-72" />
           </div>
           <Skeleton className="h-2 w-full rounded-full" />
-          <Skeleton className="h-64 rounded-lg" />
+          <Skeleton className="h-64 rounded-xl" />
         </div>
       </div>
     );
@@ -64,113 +72,150 @@ export function SetupPage() {
   const { credentials, configured } = setup;
   const configuredCount = credentials.filter((c) => c.configured).length;
   const totalCount = credentials.length;
+  const progressPct = totalCount > 0 ? Math.round((configuredCount / totalCount) * 100) : 0;
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-muted/30">
-      <div className="max-w-2xl w-full mx-auto space-y-6">
-        <div className="text-center space-y-3">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/30 px-4 py-12">
+      <div className="w-full max-w-lg space-y-6">
+
+        {/* Brand mark + heading */}
+        <div className="flex flex-col items-center gap-4 text-center">
           <div
-            className="inline-flex size-14 items-center justify-center rounded-full bg-primary/10 text-primary"
+            className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20"
             aria-hidden="true"
           >
             <SettingsIcon className="size-7" />
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Configuration requise</h1>
-          <p className="text-muted-foreground">
-            Le bot a besoin de quelques variables d'environnement pour fonctionner.{' '}
-            <strong className="text-foreground">{configuredCount}</strong> sur {totalCount} sont configurées.
-          </p>
-        </div>
-
-        <div>
-          <progress
-            className="sr-only"
-            value={configuredCount}
-            max={totalCount}
-            aria-label={`Progression de la configuration : ${configuredCount} sur ${totalCount}`}
-          />
-          <div className="flex gap-1" aria-hidden="true">
-            {credentials.map((cred) => (
-              <div
-                key={cred.key}
-                className={`h-2 flex-1 rounded-full transition-colors ${cred.configured ? 'bg-success' : 'bg-muted-foreground/20'}`}
-              />
-            ))}
+          <div className="space-y-2">
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              Configuration requise
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {configuredCount === totalCount
+                ? "Toutes les variables sont configurées — vous êtes prêt."
+                : <>
+                    <strong className="text-foreground">{configuredCount}</strong> sur{" "}
+                    <strong className="text-foreground">{totalCount}</strong> variables configurées.
+                  </>}
+            </p>
           </div>
         </div>
 
-      <Card>
-        <CardHeader>
-          <div className="font-semibold">Variables d'environnement</div>
-        </CardHeader>
-        <CardContent>
-          <ul className="divide-y">
-            {credentials.map((cred) => (
-              <li key={cred.key} className="flex items-start gap-3 py-3">
-                <Badge variant={cred.configured ? "success" : "error"} className="mt-0.5 shrink-0">
-                  {cred.configured ? "\u2713" : "\u2717"}
-                </Badge>
-                <div className="space-y-1 flex-1">
-                  <p className="font-medium text-sm">{cred.label}</p>
-                  <code className="text-xs text-muted-foreground">{cred.key}</code>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    <TrustedInline html={cred.howToFind} />
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+        {/* Progress bar */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Progression</span>
+            <span className="tabular-nums">{progressPct}%</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-border">
+            <div
+              className="h-2 rounded-full bg-primary transition-all duration-500"
+              style={{ width: `${progressPct}%` }}
+              role="progressbar"
+              aria-valuenow={progressPct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`Progression de la configuration : ${configuredCount} sur ${totalCount}`}
+            />
+          </div>
+        </div>
 
-      {!configured && (
+        {/* Credentials list */}
         <Card>
-          <CardHeader>
-            <div className="font-semibold">Template .env</div>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-base">Variables d'environnement</CardTitle>
+            <CardDescription>
+              Ces secrets sont lus au démarrage — un redémarrage est requis après modification.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground mb-3">
-              Ajoutez les variables manquantes dans votre fichier <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">.env</code> ou dans votre{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">compose.yml</code> :
-            </p>
-            <pre className="rounded-lg border bg-muted p-4 font-mono text-xs overflow-x-auto">
-              {credentials
-                .reduce<string[]>((lines, c) => {
-                  if (!c.configured) {
-                    lines.push(`${c.key}=your-${c.key.toLowerCase().replace(/_/g, "-")}-here`);
-                  }
-                  return lines;
-                }, [])
-                .join("\n")}
-            </pre>
+          <CardContent className="pt-0">
+            <ul className="divide-y divide-border">
+              {credentials.map((cred) => (
+                <li key={cred.key} className="flex items-start gap-3 py-3.5 first:pt-0 last:pb-0">
+                  <span className="mt-0.5 shrink-0" aria-hidden="true">
+                    {cred.configured ? (
+                      <CheckCircle2 className="size-4 text-success" />
+                    ) : (
+                      <XCircle className="size-4 text-muted-foreground" />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium leading-none">{cred.label}</p>
+                      <Badge variant={cred.configured ? "success" : "outline"} className="text-xs">
+                        {cred.configured ? "Configuré" : "Manquant"}
+                      </Badge>
+                    </div>
+                    <p className="font-mono text-xs text-muted-foreground">{cred.key}</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      <TrustedInline html={cred.howToFind} />
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </CardContent>
         </Card>
-      )}
 
-      <Card>
-        <CardHeader>
-          <div className="font-semibold">Comment configurer ?</div>
-        </CardHeader>
-        <CardContent>
-          <ol className="list-decimal list-inside space-y-2 text-sm">
-            <li>
-              Copiez le fichier <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">.env.example</code> en{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">.env</code> et remplissez les valeurs manquantes
-            </li>
-            <li>
-              Ou ajoutez les variables dans la section <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">environment:</code> de votre{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">compose.yml</code>
-            </li>
-            <li>
-              Redémarrez le conteneur : <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">docker compose down && docker compose up -d</code>
-            </li>
-          </ol>
-          <p className="text-xs text-muted-foreground mt-3">
-            Les variables d'environnement sont lues au démarrage du conteneur. Un redémarrage est nécessaire après modification.
-          </p>
-        </CardContent>
-      </Card>
+        {/* .env template — only shown if not fully configured */}
+        {!configured && (
+          <Card>
+            <CardHeader className="pb-4">
+              <div className="flex items-center gap-2">
+                <Terminal className="size-4 text-muted-foreground" aria-hidden="true" />
+                <CardTitle className="text-base">Template .env</CardTitle>
+              </div>
+              <CardDescription>
+                Ajoutez les variables manquantes dans votre <InlineCode>.env</InlineCode>{" "}
+                ou dans la section <InlineCode>environment:</InlineCode> de votre{" "}
+                <InlineCode>compose.yml</InlineCode>.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <pre className="overflow-x-auto rounded-lg border border-border bg-muted p-4 font-mono text-xs leading-relaxed text-foreground">
+                {credentials
+                  .reduce<string[]>((lines, c) => {
+                    if (!c.configured) {
+                      lines.push(`${c.key}=your-${c.key.toLowerCase().replace(/_/g, "-")}-here`);
+                    }
+                    return lines;
+                  }, [])
+                  .join("\n")}
+              </pre>
+            </CardContent>
+          </Card>
+        )}
 
+        {/* How to configure steps */}
+        <Card>
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-2">
+              <BookOpen className="size-4 text-muted-foreground" aria-hidden="true" />
+              <CardTitle className="text-base">Comment configurer ?</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ol className="space-y-3">
+              {[
+                <>Copiez <InlineCode>.env.example</InlineCode> en <InlineCode>.env</InlineCode> et remplissez les valeurs manquantes.</>,
+                <>Ou ajoutez les variables dans la section <InlineCode>environment:</InlineCode> de votre <InlineCode>compose.yml</InlineCode>.</>,
+                <>Redémarrez le conteneur : <InlineCode>docker compose down && docker compose up -d</InlineCode></>,
+              ].map((step, i) => (
+                <li key={i} className="flex items-start gap-3 text-sm">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground tabular-nums">
+                    {i + 1}
+                  </span>
+                  <span className="text-muted-foreground leading-relaxed">{step}</span>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-4 text-xs text-muted-foreground border-t border-border pt-3">
+              Les variables d'environnement sont lues au démarrage. Un redémarrage est nécessaire après modification.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* CTA */}
         {configured ? (
           <Button asChild className="w-full" size="lg">
             <Link to="/">

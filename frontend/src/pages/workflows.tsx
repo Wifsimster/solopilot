@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { formatDateFr } from '@/lib/utils';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
+import { Workflow, Clock, CheckCircle2, XCircle, Circle } from 'lucide-react';
 
 interface WorkflowTrigger {
   kind: 'cron' | 'manual' | 'event' | 'webhook';
@@ -54,39 +55,52 @@ function triggerLabel(trigger: WorkflowTrigger): string {
   }
 }
 
-function statusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
-  if (status === 'success') return 'default';
+function statusVariant(status: string): 'success' | 'destructive' | 'secondary' {
+  if (status === 'success') return 'success';
   if (status === 'error') return 'destructive';
   return 'secondary';
 }
 
+function LastRunIcon({ status }: { status: string }) {
+  if (status === 'success') return <CheckCircle2 className="size-3.5 text-success" aria-hidden="true" />;
+  if (status === 'error') return <XCircle className="size-3.5 text-destructive" aria-hidden="true" />;
+  return <Circle className="size-3.5 text-muted-foreground" aria-hidden="true" />;
+}
+
 function WorkflowRow({ wf }: { wf: WorkflowSummary }) {
   return (
-    <Card>
-      <CardContent className="py-4 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="font-medium truncate">{wf.label}</div>
-            <code className="text-xs text-muted-foreground">{wf.id}</code>
+    <Card className="hover:border-muted-foreground/20 transition-colors">
+      <CardContent className="py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1.5 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-medium text-sm leading-none">{wf.label}</span>
+              <Badge
+                variant={wf.enabled ? 'brand' : 'outline'}
+                className="text-xs shrink-0"
+              >
+                {wf.enabled ? 'Actif' : 'Désactivé'}
+              </Badge>
+            </div>
+            <code className="text-xs text-muted-foreground block">{wf.id}</code>
           </div>
-          <Badge variant={wf.enabled ? 'default' : 'outline'} className="text-xs shrink-0">
-            {wf.enabled ? 'Actif' : 'Désactivé'}
-          </Badge>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="outline" className="font-mono">
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="font-mono text-xs gap-1">
+            <Clock className="size-3" aria-hidden="true" />
             {triggerLabel(wf.trigger)}
           </Badge>
           {wf.lastRun ? (
-            <span className="flex items-center gap-1">
-              Dernier run :
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <LastRunIcon status={wf.lastRun.status} />
               <Badge variant={statusVariant(wf.lastRun.status)} className="text-xs">
                 {wf.lastRun.status}
               </Badge>
-              {formatDateFr(wf.lastRun.startedAt)}
+              <span>{formatDateFr(wf.lastRun.startedAt)}</span>
             </span>
           ) : (
-            <span>Aucun run</span>
+            <span className="text-xs text-muted-foreground">Aucun run</span>
           )}
         </div>
       </CardContent>
@@ -103,7 +117,11 @@ export function WorkflowsPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Workflows" description="Moteur de workflows Solopilot" />
+        <PageHeader
+          eyebrow="Moteur"
+          title="Workflows"
+          description="Moteur de workflows Solopilot"
+        />
         <ErrorState message={error} context="workflows" onRetry={refetch} />
       </div>
     );
@@ -115,29 +133,44 @@ export function WorkflowsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow="Moteur"
         title="Workflows"
         description="Processus métier orchestrés par le moteur. Lecture seule pendant la migration — les workflows sont enregistrés mais désactivés (ADR-0014)."
       />
 
       {loading ? (
         <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full" />
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 w-full rounded-xl" />
           ))}
         </div>
       ) : workflows.length === 0 ? (
         <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            Aucun workflow enregistré.
+          <CardContent className="py-16 flex flex-col items-center gap-4 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full bg-muted" aria-hidden="true">
+              <Workflow className="size-5 text-muted-foreground" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-medium">Aucun workflow enregistré</p>
+              <p className="text-sm text-muted-foreground">
+                Les workflows Solopilot apparaîtront ici une fois déployés.
+              </p>
+            </div>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-8">
           {modules.map((module) => (
             <section key={module} className="space-y-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {MODULE_LABELS[module] ?? module}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {MODULE_LABELS[module] ?? module}
+                </h2>
+                <div className="flex-1 h-px bg-border" aria-hidden="true" />
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {workflows.filter((w) => w.module === module).length}
+                </span>
+              </div>
               <div className="space-y-2">
                 {workflows
                   .filter((w) => w.module === module)

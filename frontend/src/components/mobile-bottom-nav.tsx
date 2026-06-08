@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, FileText, Target, Wand2, MoreHorizontal } from 'lucide-react';
+import { LayoutDashboard, FileText, Target, Wand2, Menu } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MobileBottomNavProps {
@@ -15,7 +15,7 @@ const ITEMS = [
 
 function itemClass({ isActive }: { isActive: boolean }) {
   return cn(
-    'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium transition-colors',
+    'flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition-colors',
     isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
   );
 }
@@ -23,7 +23,7 @@ function itemClass({ isActive }: { isActive: boolean }) {
 export function MobileBottomNav({ onMore }: MobileBottomNavProps) {
   return (
     <nav
-      className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 pb-[env(safe-area-inset-bottom)]"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/90 backdrop-blur-md pb-[env(safe-area-inset-bottom)] md:hidden"
       aria-label="Navigation mobile"
     >
       <div className="flex items-stretch">
@@ -31,11 +31,15 @@ export function MobileBottomNav({ onMore }: MobileBottomNavProps) {
           <NavLink key={item.to} to={item.to} end={item.end} className={itemClass}>
             {({ isActive }) => (
               <>
-                <item.icon
-                  className={cn('size-5', isActive && 'scale-110')}
-                  aria-hidden="true"
-                />
-                <span className="truncate max-w-[64px]">{item.label}</span>
+                <span
+                  className={cn(
+                    'flex h-7 w-12 items-center justify-center rounded-full transition-colors',
+                    isActive && 'bg-accent',
+                  )}
+                >
+                  <item.icon className="size-5" aria-hidden="true" />
+                </span>
+                <span className="max-w-[68px] truncate">{item.label}</span>
               </>
             )}
           </NavLink>
@@ -43,10 +47,12 @@ export function MobileBottomNav({ onMore }: MobileBottomNavProps) {
         <button
           type="button"
           onClick={onMore}
-          className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+          className="flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
           aria-label="Plus d'options"
         >
-          <MoreHorizontal className="size-5" aria-hidden="true" />
+          <span className="flex h-7 w-12 items-center justify-center rounded-full">
+            <Menu className="size-5" aria-hidden="true" />
+          </span>
           <span>Plus</span>
         </button>
       </div>

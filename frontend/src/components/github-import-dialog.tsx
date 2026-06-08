@@ -391,7 +391,7 @@ function UsernameStep({
   onCancel,
 }: UsernameStepProps) {
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
+    <form onSubmit={onSubmit} className="space-y-5">
       <div className="space-y-2">
         <Label htmlFor="github-username">Nom d’utilisateur GitHub</Label>
         <Input
@@ -408,7 +408,7 @@ function UsernameStep({
           {error}
         </p>
       )}
-      <DialogFooter>
+      <DialogFooter className="pt-2 border-t border-border">
         <Button
           type="button"
           variant="outline"
@@ -469,7 +469,7 @@ function ReposStep({
 }: ReposStepProps) {
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3">
         <div className="flex flex-wrap items-center gap-4">
           <label
             htmlFor="gh-include-forks"
@@ -502,13 +502,13 @@ function ReposStep({
           type="button"
           onClick={onToggleAll}
           disabled={loading || importing || selectableRepos.length === 0}
-          className="text-sm text-primary hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+          className="text-sm font-medium text-primary hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
         >
           {allSelected ? 'Désélectionner tout' : 'Sélectionner tout'}
         </button>
       </div>
 
-      <div className="max-h-[50vh] overflow-y-auto rounded-lg border">
+      <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-border">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
@@ -519,7 +519,7 @@ function ReposStep({
             Aucun repo trouvé pour ce username.
           </div>
         ) : (
-          <ul className="divide-y">
+          <ul className="divide-y divide-border">
             {repos.map((repo) => (
               <RepoRow
                 key={repo.id}
@@ -539,12 +539,12 @@ function ReposStep({
         </p>
       )}
 
-      <DialogFooter className="items-center sm:justify-between sm:space-x-0 gap-2">
+      <DialogFooter className="items-center gap-2 border-t border-border pt-4 sm:justify-between sm:space-x-0">
         <span className="text-sm text-muted-foreground">
           {selected.size} produit{selected.size !== 1 ? 's' : ''} sélectionné
           {selected.size !== 1 ? 's' : ''}
         </span>
-        <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-2">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row">
           <Button
             type="button"
             variant="outline"
@@ -586,8 +586,8 @@ function RepoRow({ repo, checked, importing, onToggle }: RepoRowProps) {
   return (
     <li
       className={cn(
-        'flex items-start gap-3 p-3 transition-colors',
-        disabled ? 'opacity-60 bg-muted/30' : 'hover:bg-muted/30',
+        'flex items-start gap-3 px-4 py-3 transition-colors',
+        disabled ? 'opacity-60 bg-muted/20' : 'hover:bg-accent/40',
       )}
     >
       <input

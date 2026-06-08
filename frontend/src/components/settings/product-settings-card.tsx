@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useApi } from '@/hooks/use-api';
@@ -147,19 +147,19 @@ export function ProductSettingsCard() {
   return (
     <Card>
       <CardHeader>
-        <div className="font-semibold">Paramètres du produit</div>
-        <p className="text-sm text-muted-foreground">
+        <CardTitle>Paramètres du produit</CardTitle>
+        <CardDescription>
           Ces paramètres s'appliquent au produit sélectionné.
           {product?.name && (
             <>
               {' '}
-              Actuellement : <strong>{product.name}</strong>{' '}
+              Actuellement : <strong className="text-foreground font-medium">{product.name}</strong>{' '}
               <code className="font-mono text-xs">({product.id})</code>
             </>
           )}
-        </p>
+        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         <CardFlash flash={flash} />
 
         {error && (
@@ -171,18 +171,18 @@ export function ProductSettingsCard() {
         )}
 
         {loading && !product ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-24 w-full" />
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="divide-y divide-border">
             {FIELDS.map((field) => {
               const value = values[field.key] ?? '';
               const saving = savingKey === field.key;
               return (
-                <div key={field.key} className="space-y-2">
+                <div key={field.key} className="space-y-2 py-4 first:pt-0 last:pb-0">
                   <Label htmlFor={`product-setting-${field.key}`}>{field.label}</Label>
                   {field.type === 'textarea' ? (
                     <Textarea

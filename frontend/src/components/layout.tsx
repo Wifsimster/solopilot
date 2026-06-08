@@ -18,7 +18,6 @@ import {
 } from '@/components/ui/drawer';
 import { MobileBottomNav } from '@/components/mobile-bottom-nav';
 import {
-  BrainCircuit,
   History,
   Package,
   Settings as SettingsIcon,
@@ -32,6 +31,9 @@ import {
   Calculator,
   Users,
   CalendarDays,
+  Monitor,
+  Sun,
+  Moon,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -91,21 +93,35 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-function navLinkClass({ isActive }: { isActive: boolean }) {
+function BrandMark({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        'flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-chart-2 text-primary-foreground shadow-xs',
+        className,
+      )}
+      aria-hidden="true"
+    >
+      <Workflow className="size-[18px]" strokeWidth={2.25} />
+    </span>
+  );
+}
+
+function sidebarNavLinkClass({ isActive }: { isActive: boolean }) {
   return cn(
-    'inline-flex items-center gap-1.5 text-sm transition-colors py-1 border-b-2',
+    'group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
     isActive
-      ? 'text-foreground font-medium border-primary'
-      : 'text-muted-foreground border-transparent hover:text-foreground',
+      ? 'bg-accent text-accent-foreground'
+      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
   );
 }
 
 function drawerNavLinkClass({ isActive }: { isActive: boolean }) {
   return cn(
-    'flex items-center gap-3 py-3 px-3 text-base rounded-md transition-colors min-h-[48px]',
+    'flex min-h-[48px] items-center gap-3 rounded-lg px-3 py-3 text-base transition-colors',
     isActive
-      ? 'text-foreground font-medium bg-primary/10'
-      : 'text-muted-foreground hover:text-foreground hover:bg-muted',
+      ? 'bg-accent font-medium text-accent-foreground'
+      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
   );
 }
 
@@ -159,8 +175,81 @@ function ProductSwitcher({
   );
 }
 
-export function Layout() {
+const THEME_OPTIONS = [
+  { value: 'system', label: 'Système', icon: Monitor },
+  { value: 'light', label: 'Clair', icon: Sun },
+  { value: 'dark', label: 'Sombre', icon: Moon },
+] as const;
+
+function ThemeSegmented() {
   const { theme, setTheme } = useTheme();
+  return (
+    <div
+      className="flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1"
+      role="group"
+      aria-label="Thème de l'interface"
+    >
+      {THEME_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => setTheme(opt.value)}
+          aria-pressed={theme === opt.value}
+          aria-label={opt.label}
+          className={cn(
+            'flex flex-1 items-center justify-center rounded-md py-1.5 transition-colors',
+            theme === opt.value
+              ? 'bg-card text-foreground shadow-xs'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <opt.icon className="size-4" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
+  return (
+    <nav className="flex flex-col gap-5" aria-label="Navigation principale">
+      {NAV_SECTIONS.map((section) => (
+        <div key={section.id} className="space-y-1">
+          <p className="px-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            {section.label}
+          </p>
+          <div className="space-y-0.5">
+            {section.items.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={sidebarNavLinkClass}
+                onClick={onNavigate}
+              >
+                {({ isActive }) => (
+                  <>
+                    <span
+                      className={cn(
+                        'absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary transition-opacity',
+                        isActive ? 'opacity-100' : 'opacity-0',
+                      )}
+                      aria-hidden="true"
+                    />
+                    <item.icon className="size-[18px] shrink-0" aria-hidden="true" />
+                    {item.label}
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </div>
+        </div>
+      ))}
+    </nav>
+  );
+}
+
+export function Layout() {
   const { data: versionInfo } = useApi<{ version: string; buildDate: string | null }>(
     '/api/version',
   );
@@ -168,105 +257,78 @@ export function Layout() {
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen bg-background">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:shadow-lg"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground focus:shadow-lg"
       >
         Aller au contenu principal
       </a>
 
-      {/* Header — compact on mobile, full nav on desktop */}
+      {/* Desktop sidebar */}
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-border bg-sidebar md:flex">
+        <div className="flex h-16 items-center gap-2.5 border-b border-border px-5">
+          <BrandMark />
+          <div className="leading-tight">
+            <span className="block text-sm font-semibold tracking-tight">Solopilot</span>
+            <span className="block text-[11px] text-muted-foreground">Back-office autonome</span>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 py-5">
+          <SidebarNav />
+        </div>
+        <div className="space-y-3 border-t border-border p-3">
+          <ProductSwitcher className="w-full" triggerClassName="h-9 w-full" />
+          <ThemeSegmented />
+          <p className="px-1 text-[11px] text-muted-foreground">
+            v{versionInfo?.version || 'dev'}
+          </p>
+        </div>
+      </aside>
+
+      {/* Mobile top bar */}
       <header
-        className="border-b bg-card/80 backdrop-blur-md sticky top-0 z-40"
+        className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-md md:hidden"
         aria-label="En-tête"
       >
-        <div className="container mx-auto flex items-center justify-between gap-3 px-4 h-14">
-          <Link
-            to="/"
-            className="font-bold text-base sm:text-lg flex items-center gap-2 hover:text-primary transition-colors shrink-0"
-          >
-            <BrainCircuit className="size-5 text-primary" />
-            <span className="hidden sm:inline">Solopilot</span>
-            <span className="sm:hidden">Solopilot</span>
+        <div className="flex h-14 items-center justify-between gap-3 px-4">
+          <Link to="/" className="flex items-center gap-2 font-semibold">
+            <BrandMark className="size-7" />
+            <span className="text-base tracking-tight">Solopilot</span>
           </Link>
-
-          {/* Desktop nav */}
-          <nav
-            className="hidden md:flex items-center gap-1 flex-1 ml-4"
-            aria-label="Navigation principale"
-          >
-            {NAV_SECTIONS.map((section, sectionIdx) => (
-              <div key={section.id} className="flex items-center gap-3">
-                {sectionIdx > 0 && (
-                  <span className="h-4 w-px bg-border" aria-hidden="true" />
-                )}
-                {section.items.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.end}
-                    className={navLinkClass}
-                  >
-                    <item.icon className="size-3.5" aria-hidden="true" />
-                    {item.label}
-                  </NavLink>
-                ))}
-              </div>
-            ))}
-          </nav>
-
-          {/* Desktop right cluster */}
-          <div className="hidden md:flex items-center gap-2 shrink-0">
-            <ProductSwitcher />
-            <Select
-              value={theme}
-              onValueChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}
-            >
-              <SelectTrigger className="h-9 w-[100px] text-xs" aria-label="Thème de l'interface">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="system">Système</SelectItem>
-                <SelectItem value="light">Clair</SelectItem>
-                <SelectItem value="dark">Sombre</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Mobile — compact product switcher only */}
-          <div className="md:hidden shrink-0">
-            <ProductSwitcher triggerClassName="h-9 w-[140px] text-xs" />
-          </div>
+          <ProductSwitcher triggerClassName="h-9 w-[140px] text-xs" />
         </div>
       </header>
 
-      <main
-        id="main-content"
-        className="container mx-auto flex-1 px-3 py-4 sm:px-4 sm:py-6 pb-24 md:pb-6"
-      >
-        <Outlet />
-      </main>
+      {/* Content column (offset by sidebar on desktop) */}
+      <div className="flex min-h-screen flex-col md:pl-60">
+        <main
+          id="main-content"
+          className="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-5 pb-24 sm:px-6 sm:py-8 md:pb-8"
+        >
+          <Outlet />
+        </main>
 
-      <footer className="hidden md:block border-t py-4">
-        <div className="container mx-auto px-4">
-          <p className="text-xs text-muted-foreground">
-            Solopilot v{versionInfo?.version || 'dev'}
-            {versionInfo?.buildDate && (
-              <>
-                {' '}
-                (Build{' '}
-                {new Date(versionInfo.buildDate).toLocaleDateString('fr-FR', {
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric',
-                })}
-                )
-              </>
-            )}
-          </p>
-        </div>
-      </footer>
+        <footer className="hidden border-t border-border py-4 md:block">
+          <div className="mx-auto max-w-screen-2xl px-6">
+            <p className="text-xs text-muted-foreground">
+              Solopilot v{versionInfo?.version || 'dev'}
+              {versionInfo?.buildDate && (
+                <>
+                  {' '}
+                  (Build{' '}
+                  {new Date(versionInfo.buildDate).toLocaleDateString('fr-FR', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric',
+                  })}
+                  )
+                </>
+              )}
+            </p>
+          </div>
+        </footer>
+      </div>
 
       {/* Mobile bottom nav + "more" drawer */}
       <MobileBottomNav onMore={() => setDrawerOpen(true)} />
@@ -275,7 +337,7 @@ export function Layout() {
         <DrawerContent className="max-h-[85dvh]">
           <DrawerHeader>
             <DrawerTitle className="flex items-center gap-2">
-              <BrainCircuit className="size-5 text-primary" />
+              <BrandMark className="size-7" />
               Navigation
             </DrawerTitle>
           </DrawerHeader>
@@ -283,7 +345,7 @@ export function Layout() {
             <div className="space-y-5">
               {NAV_SECTIONS.map((section) => (
                 <div key={section.id} className="space-y-1">
-                  <p className="px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <p className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {section.label}
                   </p>
                   {section.items.map((item) => (
@@ -294,29 +356,17 @@ export function Layout() {
                       className={drawerNavLinkClass}
                       onClick={closeDrawer}
                     >
-                      <item.icon className="size-4 shrink-0" aria-hidden="true" />
+                      <item.icon className="size-5 shrink-0" aria-hidden="true" />
                       {item.label}
                     </NavLink>
                   ))}
                 </div>
               ))}
-              <div className="pt-4 border-t space-y-2">
-                <p className="px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="space-y-2 border-t border-border pt-4">
+                <p className="px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Apparence
                 </p>
-                <Select
-                  value={theme}
-                  onValueChange={(v) => setTheme(v as 'light' | 'dark' | 'system')}
-                >
-                  <SelectTrigger className="h-11 w-full text-sm" aria-label="Thème de l'interface">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="system">Système</SelectItem>
-                    <SelectItem value="light">Clair</SelectItem>
-                    <SelectItem value="dark">Sombre</SelectItem>
-                  </SelectContent>
-                </Select>
+                <ThemeSegmented />
               </div>
               <p className="px-3 pt-2 text-xs text-muted-foreground">
                 v{versionInfo?.version || 'dev'}

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { CardFlash, type Flash } from './shared';
 
 interface GraphqlCardProps {
@@ -62,26 +62,30 @@ export function GraphqlCard({ envDefaults, onSaved }: GraphqlCardProps) {
   return (
     <Card>
       <CardHeader>
-        <div className="font-semibold">IDs GraphQL X</div>
-        <p className="text-sm text-muted-foreground">
+        <CardTitle>IDs GraphQL X</CardTitle>
+        <CardDescription>
           Les IDs GraphQL changent quand X déploie une nouvelle version. Utilisez la détection
           automatique ou modifiez-les manuellement si nécessaire.
-        </p>
+        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         <CardFlash flash={flash} />
 
-        <div className="space-y-3">
-          <div>
-            <p className="text-xs text-muted-foreground font-mono">UserByScreenName</p>
-            <code className="rounded bg-muted px-2 py-1 text-sm font-mono">
-              {envDefaults['X_GQL_USER_BY_SCREEN_NAME_ID'] || 'Non détecté'}
+        <div className="grid gap-3 rounded-lg border border-border bg-muted/40 p-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground font-mono">UserByScreenName</p>
+            <code className="block rounded-md bg-muted px-2.5 py-1.5 text-sm font-mono text-foreground break-all">
+              {envDefaults['X_GQL_USER_BY_SCREEN_NAME_ID'] || (
+                <span className="text-muted-foreground italic">Non détecté</span>
+              )}
             </code>
           </div>
-          <div>
-            <p className="text-xs text-muted-foreground font-mono">HomeLatestTimeline</p>
-            <code className="rounded bg-muted px-2 py-1 text-sm font-mono">
-              {envDefaults['X_GQL_HOME_TIMELINE_ID'] || 'Non détecté'}
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground font-mono">HomeLatestTimeline</p>
+            <code className="block rounded-md bg-muted px-2.5 py-1.5 text-sm font-mono text-foreground break-all">
+              {envDefaults['X_GQL_HOME_TIMELINE_ID'] || (
+                <span className="text-muted-foreground italic">Non détecté</span>
+              )}
             </code>
           </div>
         </div>
@@ -101,7 +105,7 @@ export function GraphqlCard({ envDefaults, onSaved }: GraphqlCardProps) {
         </div>
 
         {showManual && (
-          <form onSubmit={handleSave} className="space-y-4 border-t pt-4">
+          <form onSubmit={handleSave} className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
             <div className="space-y-2">
               <Label htmlFor="gql_user">UserByScreenName ID</Label>
               <Input

@@ -192,14 +192,14 @@ function SuggestButton({ suggesting, onClick }: { suggesting: boolean; onClick: 
       type="button"
       variant="outline"
       size="sm"
-      className="h-7 gap-1.5 text-xs"
+      className="h-7 gap-1.5 text-xs shrink-0"
       onClick={onClick}
       disabled={suggesting}
     >
       {suggesting ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
       ) : (
-        <Sparkles className="h-3.5 w-3.5" aria-hidden />
+        <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden />
       )}
       {suggesting ? 'Génération...' : "Proposer avec l'IA"}
     </Button>
@@ -647,9 +647,9 @@ function SourcesSection({ state, set, subredditRef, hnRef }: SourcesSectionProps
   });
 
   return (
-    <div className="space-y-4 rounded-lg border p-4">
+    <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
       <div>
-        <h3 className="text-sm font-semibold">Sources</h3>
+        <h3 className="text-sm font-semibold tracking-tight">Sources</h3>
         <p className="text-xs text-muted-foreground">Active au moins une source pour ce produit.</p>
       </div>
 
@@ -684,7 +684,7 @@ function SourcesSection({ state, set, subredditRef, hnRef }: SourcesSectionProps
         </div>
       </div>
 
-      <div className="border-t" />
+      <div className="border-t border-border" />
 
       {/* Reddit row */}
       <div className="space-y-2">
@@ -718,7 +718,7 @@ function SourcesSection({ state, set, subredditRef, hnRef }: SourcesSectionProps
         </div>
       </div>
 
-      <div className="border-t" />
+      <div className="border-t border-border" />
 
       {/* Hacker News row */}
       <div className="space-y-2">
@@ -799,9 +799,9 @@ function IntentSection({ state, set, intentRef }: IntentSectionProps) {
   });
 
   return (
-    <div className="space-y-4 rounded-lg border p-4">
+    <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
       <div>
-        <h3 className="text-sm font-semibold">Détection d'intention</h3>
+        <h3 className="text-sm font-semibold tracking-tight">Détection d'intention</h3>
         <p className="text-xs text-muted-foreground">
           Repère automatiquement les messages exprimant un besoin lié à ton produit.
         </p>
@@ -848,7 +848,7 @@ function IntentSection({ state, set, intentRef }: IntentSectionProps) {
         </div>
       </div>
 
-      <div className="border-t" />
+      <div className="border-t border-border" />
 
       {/* AI analysis context — applies to lead analysis, independent of matching toggle */}
       <div className="space-y-3">
@@ -987,9 +987,9 @@ function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps)
   });
 
   return (
-    <div className="space-y-4 rounded-lg border p-4">
+    <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
       <div>
-        <h3 className="text-sm font-semibold">Studio de contenu</h3>
+        <h3 className="text-sm font-semibold tracking-tight">Studio de contenu</h3>
         <p className="text-xs text-muted-foreground">
           Configuration utilisée pour générer des drafts de posts marketing.
         </p>
@@ -1212,7 +1212,8 @@ function ProductForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-0">
+      <div className="max-h-[65vh] overflow-y-auto space-y-4 pr-1">
       <div className="space-y-2">
         <Label htmlFor="product-name">Nom</Label>
         <Input
@@ -1284,8 +1285,9 @@ function ProductForm({
           {state.error}
         </p>
       )}
+      </div>
 
-      <DialogFooter>
+      <DialogFooter className="pt-4 mt-2 border-t border-border">
         <Button
           type="button"
           variant="outline"

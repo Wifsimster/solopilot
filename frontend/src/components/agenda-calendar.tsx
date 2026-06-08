@@ -8,6 +8,7 @@ import {
 } from '@schedule-x/calendar';
 import { createEventsServicePlugin } from '@schedule-x/events-service';
 import '@schedule-x/theme-default/dist/index.css';
+import { Card, CardContent } from '@/components/ui/card';
 
 export interface SxEvent {
   id: string;
@@ -40,8 +41,14 @@ export function AgendaCalendar({ events, isDark }: { events: SxEvent[]; isDark: 
   }, [events, eventsService]);
 
   return (
-    <div className="sx-react-calendar-wrapper">
-      <ScheduleXCalendar calendarApp={calendar} />
-    </div>
+    <Card className="overflow-hidden">
+      <CardContent className="p-0 sm:p-0">
+        <div className="w-full overflow-x-auto">
+          <div className="sx-react-calendar-wrapper min-w-[320px]">
+            <ScheduleXCalendar calendarApp={calendar} />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
