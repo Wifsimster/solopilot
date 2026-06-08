@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 import { toast } from 'sonner';
 import { useApi } from '@/hooks/use-api';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DataTable } from '@/components/ui/data-table';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { DealPipeline, type Deal, type Stage } from '@/components/deal-pipeline';
@@ -16,6 +17,38 @@ interface Contact {
   email: string | null;
   status: string;
 }
+
+const contactColumns: ColumnDef<Contact>[] = [
+  {
+    accessorKey: 'name',
+    header: 'Nom',
+    cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+  },
+  {
+    accessorKey: 'company',
+    header: 'Société',
+    cell: ({ row }) => row.original.company || <span className="text-muted-foreground">—</span>,
+  },
+  {
+    accessorKey: 'email',
+    header: 'Email',
+    cell: ({ row }) =>
+      row.original.email ? (
+        <span className="text-muted-foreground">{row.original.email}</span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+  },
+  {
+    accessorKey: 'status',
+    header: 'Statut',
+    cell: ({ row }) => (
+      <Badge variant="outline" className="text-xs">
+        {row.original.status}
+      </Badge>
+    ),
+  },
+];
 
 export function CrmPage() {
   const { selectedProductId } = useSelectedProduct();
@@ -87,30 +120,13 @@ export function CrmPage() {
               <Skeleton key={i} className="h-14 w-full" />
             ))}
           </div>
-        ) : (contacts.data ?? []).length === 0 ? (
-          <Card>
-            <CardContent className="py-10 text-center text-muted-foreground">
-              Aucun contact. Les leads de l'Acquisition pourront être promus ici.
-            </CardContent>
-          </Card>
         ) : (
-          <div className="space-y-2">
-            {(contacts.data ?? []).map((c) => (
-              <Card key={c.id}>
-                <CardContent className="flex items-center justify-between gap-3 py-3">
-                  <div className="min-w-0">
-                    <div className="font-medium truncate">{c.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {[c.company, c.email].filter(Boolean).join(' · ') || '—'}
-                    </div>
-                  </div>
-                  <Badge variant="outline" className="text-xs shrink-0">
-                    {c.status}
-                  </Badge>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <DataTable
+            columns={contactColumns}
+            data={contacts.data ?? []}
+            initialSorting={[{ id: 'name', desc: false }]}
+            emptyMessage="Aucun contact. Les leads de l'Acquisition pourront être promus ici."
+          />
         )}
       </div>
     </div>

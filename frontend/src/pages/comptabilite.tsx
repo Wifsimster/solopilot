@@ -1,10 +1,20 @@
+import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from 'recharts';
 import { useApi } from '@/hooks/use-api';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
+
+const repereConfig = { value: { label: 'Montant' } } satisfies ChartConfig;
+const REPERE_COLORS = ['var(--chart-2)', 'var(--chart-4)', 'var(--chart-1)'];
 
 interface ComptaStatus {
   year: number;
@@ -121,6 +131,39 @@ export function ComptabilitePage() {
               <div className="pt-2 text-xs text-muted-foreground">
                 Estimation. Télédéclaration sur autoentrepreneur.urssaf.fr.
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="sm:col-span-2">
+            <CardHeader className="pb-2">
+              <div className="text-base font-semibold">Repères annuels</div>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={repereConfig} className="aspect-[3/1] w-full">
+                <BarChart
+                  accessibilityLayer
+                  layout="vertical"
+                  data={[
+                    { name: 'CA encaissé', value: Math.round(data.status.caCents / 100) },
+                    { name: 'Seuil TVA', value: Math.round(data.status.tvaThresholdCents / 100) },
+                    { name: 'Plafond micro', value: Math.round(data.status.plafondCents / 100) },
+                  ]}
+                  margin={{ left: 12, right: 12 }}
+                >
+                  <CartesianGrid horizontal={false} />
+                  <XAxis type="number" tickLine={false} axisLine={false} tickFormatter={(v) => `${(Number(v) / 1000).toFixed(0)} k€`} />
+                  <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={96} />
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent formatter={(v) => `${Number(v).toLocaleString('fr-FR')} €`} />}
+                  />
+                  <Bar dataKey="value" radius={4}>
+                    {REPERE_COLORS.map((color, i) => (
+                      <Cell key={i} fill={color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
             </CardContent>
           </Card>
         </div>
