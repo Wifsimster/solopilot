@@ -11,7 +11,9 @@ import { fetchSourcesStep } from '../steps/fetch.js';
 import { persistStep } from '../steps/persist.js';
 import { aiSummarizeStep } from '../steps/ai.js';
 import { notifyDiscordStep } from '../steps/notify.js';
+import { cockpitAggregateStep } from '../steps/cockpit.js';
 import { veilleWorkflows } from '../modules/veille/workflows.js';
+import { cockpitWorkflows } from '../modules/cockpit/workflows.js';
 
 let bootstrapped = false;
 
@@ -22,8 +24,9 @@ export function registerSolopilot(): void {
   registerStep(persistStep);
   registerStep(aiSummarizeStep);
   registerStep(notifyDiscordStep);
+  registerStep(cockpitAggregateStep);
 
-  for (const wf of veilleWorkflows) {
+  for (const wf of [...veilleWorkflows, ...cockpitWorkflows]) {
     if (!getWorkflow(wf.id)) registerWorkflow(wf);
   }
 

@@ -71,6 +71,7 @@ import { DEFAULT_PRODUCT_ID } from './db.js';
 import { listWorkflows, getWorkflow } from './workflow/registry.js';
 import { listWorkflowRuns, getWorkflowRun } from './workflow/run-store.js';
 import { registerSolopilot } from './workflow/bootstrap.js';
+import { buildBriefing } from './modules/cockpit/briefing.js';
 import {
   listIntentSignals,
   getIntentSignal,
@@ -270,6 +271,13 @@ export function startServer(
       configured: !!process.env[cred.key] || !!getSetting(cred.key),
     }));
     return c.json({ configured: isConfigured, credentials });
+  });
+
+  // --- Cockpit API (read-only) — the single daily picture of the activity ---
+
+  app.get('/api/cockpit', (c) => {
+    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    return c.json(buildBriefing(activityId));
   });
 
   // --- Workflows API (read-only, available in both setup and operational mode) ---

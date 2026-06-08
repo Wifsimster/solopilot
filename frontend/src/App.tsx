@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 import { Layout } from "@/components/layout";
 import { ProductProvider } from "@/lib/product-context";
 import { DashboardPage } from "@/pages/dashboard";
+import { CockpitPage } from "@/pages/cockpit";
 import { RunsPage } from "@/pages/runs";
 import { WorkflowsPage } from "@/pages/workflows";
 import { SummariesPage } from "@/pages/summaries";
@@ -24,6 +25,7 @@ export function App() {
               <Route path="/setup" element={<SetupPage />} />
               <Route element={<Layout />}>
                 <Route path="/" element={<DashboardPage />} />
+                <Route path="/cockpit" element={<CockpitPage />} />
                 <Route path="/runs" element={<RunsPage />} />
                 <Route path="/workflows" element={<WorkflowsPage />} />
                 <Route path="/summaries" element={<SummariesPage />} />

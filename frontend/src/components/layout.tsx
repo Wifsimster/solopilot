@@ -27,6 +27,7 @@ import {
   LayoutDashboard,
   FileText,
   Workflow,
+  Gauge,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -52,6 +53,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Monitorer',
     items: [
       { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+      { to: '/cockpit', label: 'Cockpit', icon: Gauge },
       { to: '/summaries', label: 'Synthèses', icon: FileText },
       { to: '/runs', label: 'Historique', icon: History },
       { to: '/workflows', label: 'Workflows', icon: Workflow },

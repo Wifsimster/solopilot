@@ -10,6 +10,7 @@ const { registerStep, registerWorkflow, resetRegistry, getStep, listWorkflows } 
 const { runWorkflowById } = await import('../dist/workflow/runner.js');
 const { getWorkflowRun, listWorkflowRuns } = await import('../dist/workflow/run-store.js');
 const { registerSolopilot } = await import('../dist/workflow/bootstrap.js');
+const { buildBriefing, renderBriefingText } = await import('../dist/modules/cockpit/briefing.js');
 
 let failures = 0;
 const assert = (cond, msg) => {
@@ -68,14 +69,23 @@ assert(all.length === 4, `all four runs listed (got ${all.length})`);
 console.log('bootstrap (real steps + veille workflows):');
 resetRegistry();
 registerSolopilot();
-for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord']) {
+for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate']) {
   assert(getStep(use) !== undefined, `step registered: ${use}`);
 }
-const veille = listWorkflows().filter((w) => w.module === 'veille');
+const registered = listWorkflows();
+const veille = registered.filter((w) => w.module === 'veille');
 assert(veille.length === 3, `three veille workflows registered (got ${veille.length})`);
-assert(veille.every((w) => !w.enabled), 'all veille workflows ship disabled (no prod impact)');
-const unresolved = veille.flatMap((w) => w.steps).filter((s) => getStep(s.use) === undefined);
-assert(unresolved.length === 0, `every veille step resolves (unresolved: ${unresolved.map((s) => s.use).join(',') || 'none'})`);
+assert(registered.some((w) => w.id === 'cockpit.daily-briefing'), 'cockpit.daily-briefing registered');
+assert(registered.every((w) => !w.enabled), 'every workflow ships disabled (no prod impact)');
+const unresolved = registered.flatMap((w) => w.steps).filter((s) => getStep(s.use) === undefined);
+assert(unresolved.length === 0, `every step resolves (unresolved: ${unresolved.map((s) => s.use).join(',') || 'none'})`);
+
+console.log('cockpit briefing:');
+const brief = buildBriefing('default');
+assert(brief.veille.status === 'live' && brief.facturation.status === 'planned', 'briefing reports module statuses');
+assert(typeof brief.veille.pendingItems === 'number', 'briefing counts pending items');
+const text = renderBriefingText(brief);
+assert(text.includes('BRIEF DU JOUR') && text.includes('VEILLE'), 'briefing renders French markdown');
 
 resetRegistry();
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);

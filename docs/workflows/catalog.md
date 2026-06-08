@@ -9,7 +9,7 @@ Légende statut : ✅ existe (à replier sur le moteur) · 🆕 nouveau.
 
 | Workflow | Déclencheur | Étapes | Statut |
 |---|---|---|---|
-| `cockpit.daily-briefing` | cron `30 7 * * *` | agréger modules → `ai.summarize` → `notify.discord`/`notify.email` | 🆕 |
+| `cockpit.daily-briefing` | cron `30 7 * * *` | `cockpit.aggregate` → `notify.discord` | ✅ défini (`enabled: false`) |
 
 Le brief unique du matin : agenda du jour, factures impayées, échéances URSSAF à
 venir, leads chauds, dernier digest de veille — condensé en un message.

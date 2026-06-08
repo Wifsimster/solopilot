@@ -84,16 +84,20 @@ digest Discord à 07:30.
 
 **But :** une page d'accueil unique et un brief matinal agrégé — la valeur
 « go-to » immédiate, avant même d'ajouter de nouveaux domaines.
+**Voir [ADR-0015](adr/0015-cockpit-daily-briefing.md).**
 
-- [ ] Workflow `cockpit.daily-briefing` (cron 07:30) : agrège l'état de tous les
-      modules actifs → `ai.summarize` → `notify`. Remplace/englobe le digest.
-- [ ] Écran Cockpit : agenda du jour, factures impayées, échéances à venir,
-      leads chauds, dernier digest veille — vue unique.
+- [x] Service d'agrégation `buildBriefing(activityId)` (lecture seule : veille,
+      acquisition, santé workflows ; facturation/compta/agenda en `planned`).
+- [x] Rendu markdown FR déterministe `renderBriefingText` (sans appel IA).
+- [x] Workflow `cockpit.daily-briefing` (cron 07:30, `enabled: false`) =
+      `[cockpit.aggregate, notify.discord]`.
+- [x] API `GET /api/cockpit` + écran Cockpit (cartes par module, statuts `À venir`).
+- [x] Smoke test étendu (agrégation + rendu + composabilité du workflow).
 - [ ] Connecteur `notify.email` (en plus de Discord) pour le brief.
-- [ ] Santé des connecteurs affichée dans le cockpit (cookie X, Stripe, Calendar).
+- [ ] Variante IA du brief + planification (fait partie du flip différé).
 
 **Critère de sortie :** un brief quotidien unique remplace la lecture de
-plusieurs écrans. ADR-0015 « Cockpit ».
+plusieurs écrans.
 
 ---
 
