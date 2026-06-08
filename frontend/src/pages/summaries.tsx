@@ -37,10 +37,38 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "long", year: "numeric" });
 }
 
+// Daily AI summaries always open with a boilerplate title line
+// ("📅 VEILLE IA & TECH — <date>"). The date already lives in the card header,
+// so we drop that line to give the preview meaningful content instead.
+function stripLeadingTitle(md: string): string {
+  const lines = md.split("\n");
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === "") i++;
+  const first = lines[i]?.trim() ?? "";
+  if (/📅/.test(first) || /veille\s+ia/i.test(first) || /^#{1,3}\s/.test(first)) {
+    i++;
+  }
+  return lines.slice(i).join("\n").trim();
+}
+
+// The digest groups items under bold uppercase section headers, one per source.
+// Detecting them lets us show at-a-glance source chips on each card.
+const SOURCE_PATTERNS: { key: string; label: string; re: RegExp }[] = [
+  { key: "x", label: "X", re: /X\s*\(TWITTER\)/i },
+  { key: "reddit", label: "Reddit", re: /\bREDDIT\b/i },
+  { key: "hn", label: "Hacker News", re: /HACKER\s+NEWS/i },
+];
+
+function detectSources(md: string | null | undefined): { key: string; label: string }[] {
+  if (!md) return [];
+  return SOURCE_PATTERNS.filter((s) => s.re.test(md)).map(({ key, label }) => ({ key, label }));
+}
+
 export function SummariesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow="Veille"
         title="Synthèses"
         description="Historique des résumés IA quotidiens et mensuels"
       />
@@ -155,6 +183,12 @@ function DailyView() {
             )}
           </div>
         </div>
+        {data && data.total > 0 && (
+          <p className="mt-2 text-xs text-muted-foreground tabular-nums">
+            {data.total} synthèse{data.total !== 1 ? "s" : ""}
+            {hasFilters ? " trouvée" + (data.total !== 1 ? "s" : "") : ""}
+          </p>
+        )}
       </div>
 
       {!data || data.summaries.length === 0 ? (
@@ -345,6 +379,8 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
 
   const notifStatus = sentOverride ? "sent" : run.notification_status;
   const busy = sending || deleting || rerunning;
+  const sources = detectSources(run.summary);
+  const body = stripLeadingTitle(run.summary ?? "");
 
   const handleSendDiscord = async () => {
     dispatch({ type: "send/start" });
@@ -423,6 +459,9 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
             </div>
             <div className="flex items-center gap-1.5 flex-wrap">
               <Badge variant="outline" className="text-xs tabular-nums">#{run.id}</Badge>
+              {sources.map((s) => (
+                <Badge key={s.key} variant="secondary" className="text-xs">{s.label}</Badge>
+              ))}
               {notifStatus === "sent" && (
                 <Badge variant="success" className="gap-1">
                   <Check className="size-3" aria-hidden="true" />
@@ -473,10 +512,10 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
         </div>
       </CardHeader>
       <CardContent>
-        <div className={!expanded ? "max-h-[4.5rem] overflow-hidden relative" : ""}>
-          <MarkdownContent content={run.summary ?? ""} className="text-sm" />
+        <div className={!expanded ? "max-h-[7rem] overflow-hidden relative" : ""}>
+          <MarkdownContent content={expanded ? (run.summary ?? "") : body} className="text-sm" />
           {!expanded && (
-            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-card to-transparent pointer-events-none" />
+            <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-card to-transparent pointer-events-none" />
           )}
         </div>
         <Button
