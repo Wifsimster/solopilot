@@ -316,14 +316,14 @@ export function startServer(
   // --- Cockpit API (read-only) — the single daily picture of the activity ---
 
   app.get('/api/cockpit', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(buildBriefing(activityId));
   });
 
   // --- Facturation API — local invoice ledger (read + manual create/mark-paid) ---
 
   app.get('/api/facturation/invoices', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const status = c.req.query('status') as
       | 'draft'
       | 'sent'
@@ -334,7 +334,7 @@ export function startServer(
   });
 
   app.post('/api/facturation/invoices', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = invoiceCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) {
       return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
@@ -350,7 +350,7 @@ export function startServer(
 
   // Staged reminders for overdue invoices — preview only, nothing is sent.
   app.get('/api/facturation/relances', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const today = getTodayDateParis();
     const drafts = listOverdueInvoices(activityId, today).map((inv) => draftRelance(inv, today));
     return c.json(drafts);
@@ -359,7 +359,7 @@ export function startServer(
   // --- Comptabilité API — turnover, thresholds and URSSAF estimates (read + config) ---
 
   app.get('/api/comptabilite', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json({
       status: comptaStatus(activityId),
       urssaf: urssafDeclaration(activityId),
@@ -371,7 +371,7 @@ export function startServer(
   });
 
   app.post('/api/comptabilite/config', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = comptaConfigSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) {
       return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
@@ -381,12 +381,12 @@ export function startServer(
   });
 
   app.get('/api/comptabilite/ledger', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(listLedger(activityId));
   });
 
   app.post('/api/comptabilite/ledger', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = ledgerCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) {
       return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
@@ -397,12 +397,12 @@ export function startServer(
   // --- CRM API — contacts, deals (pipeline) and interactions ---
 
   app.get('/api/crm/contacts', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(listContacts(activityId));
   });
 
   app.post('/api/crm/contacts', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = contactCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
     return c.json(createContact(activityId, parsed.data), 201);
@@ -411,19 +411,19 @@ export function startServer(
   app.get('/api/crm/contacts/:id/interactions', (c) => c.json(listInteractions(c.req.param('id'))));
 
   app.post('/api/crm/interactions', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = interactionCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
     return c.json(addInteraction(activityId, parsed.data), 201);
   });
 
   app.get('/api/crm/deals', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(listDeals(activityId));
   });
 
   app.post('/api/crm/deals', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = dealCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
     return c.json(createDeal(activityId, parsed.data), 201);
@@ -438,14 +438,14 @@ export function startServer(
 
   // Staged follow-ups for stale deals — preview only, nothing is sent.
   app.get('/api/crm/relances', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(listStaleDeals(activityId).map(draftFollowup));
   });
 
   // --- Agenda API — calendar events (read + manual create) ---
 
   app.get('/api/agenda', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json({
       summary: agendaSummary(activityId),
       today: listEventsForDay(activityId),
@@ -454,7 +454,7 @@ export function startServer(
   });
 
   app.post('/api/agenda/events', async (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const parsed = eventCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
     return c.json(createEvent(activityId, parsed.data), 201);
@@ -487,7 +487,7 @@ export function startServer(
   };
 
   app.get('/api/workflows', (c) => {
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const workflows = listWorkflows().map((wf) => {
       const [lastRow] = listWorkflowRuns(1, 0, { workflowId: wf.id, activityId });
       const last = lastRow ? serializeWorkflowRun(lastRow) : null;
@@ -509,7 +509,7 @@ export function startServer(
   app.get('/api/workflows/:id', (c) => {
     const wf = getWorkflow(c.req.param('id'));
     if (!wf) return c.json({ error: 'Workflow introuvable' }, 404);
-    const activityId = c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const runs = listWorkflowRuns(10, 0, { workflowId: wf.id, activityId }).map(serializeWorkflowRun);
     return c.json({ ...wf, runs });
   });
@@ -518,7 +518,7 @@ export function startServer(
     const limit = Math.min(Number(c.req.query('limit')) || 20, 100);
     const offset = Number(c.req.query('offset')) || 0;
     const workflowId = c.req.query('workflow') || undefined;
-    const activityId = c.req.query('activity') || undefined;
+    const activityId = c.req.query('productId') || c.req.query('activity') || undefined;
     const runs = listWorkflowRuns(limit, offset, { workflowId, activityId }).map(serializeWorkflowRun);
     return c.json(runs);
   });
