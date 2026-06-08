@@ -159,6 +159,17 @@ import {
   suggestIntentKeywordsSchema,
 } from './content-studio.js';
 import {
+  publishDraft,
+  listPublishJobs,
+  listConnections,
+  testConnection,
+  isPublishSupported,
+  PublishBusyError,
+  PublishUnsupportedError,
+  PublishSessionMissingError,
+} from './publish-service.js';
+import { PublishError, type PublishTarget } from './ports.js';
+import {
   fetchGithubRepos,
   bulkImportProducts,
   bulkImportRequestSchema,
@@ -1319,6 +1330,153 @@ export function startServer(
       return c.json({ success: false, message: 'Brouillon introuvable.' }, 404);
     }
     return c.json({ success: true });
+  });
+
+  // --- Auto-publish API (drives platform web UI as the logged-in user) ---
+
+  const PUBLISH_TARGETS: readonly PublishTarget[] = ['x', 'reddit', 'generic'];
+  function isPublishTargetParam(v: string): v is PublishTarget {
+    return (PUBLISH_TARGETS as readonly string[]).includes(v);
+  }
+
+  const publishBodySchema = z
+    .object({
+      confirm: z.literal(true, {
+        errorMap: () => ({ message: 'Confirmation requise pour publier.' }),
+      }),
+      platform_meta: z.record(z.unknown()).optional(),
+    })
+    .strip();
+
+  app.post('/api/content-drafts/:id/publish', async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id < 1) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = publishBodySchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de publication invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const draft = getContentDraft(id);
+    if (!draft) {
+      return c.json({ success: false, message: 'Brouillon introuvable.' }, 404);
+    }
+    if (!isPublishSupported(draft.target_source)) {
+      return c.json(
+        {
+          success: false,
+          message: `Publication automatique indisponible pour « ${draft.target_source ?? '?'} » pour l'instant.`,
+        },
+        400,
+      );
+    }
+    try {
+      const outcome = await publishDraft(id, { meta: parsed.data.platform_meta });
+      const updated = getContentDraft(id);
+      return c.json({
+        success: true,
+        published_url: outcome.published_url,
+        job: outcome.job,
+        draft: updated ? toContentDraftView(updated) : null,
+      });
+    } catch (err) {
+      if (err instanceof PublishBusyError) {
+        return c.json({ success: false, message: err.message }, 409);
+      }
+      if (err instanceof PublishSessionMissingError) {
+        return c.json({ success: false, message: err.message, code: err.state }, 400);
+      }
+      if (err instanceof PublishUnsupportedError) {
+        return c.json({ success: false, message: err.message }, 400);
+      }
+      const updated = getContentDraft(id);
+      const message =
+        err instanceof PublishError
+          ? `Echec de la publication (${err.code}) : ${err.message}`
+          : `Echec de la publication : ${err instanceof Error ? err.message : String(err)}`;
+      logger.warn('Publish endpoint failed', { draftId: id, error: message });
+      return c.json(
+        {
+          success: false,
+          message,
+          code: err instanceof PublishError ? err.code : 'UNKNOWN',
+          draft: updated ? toContentDraftView(updated) : null,
+        },
+        502,
+      );
+    }
+  });
+
+  app.get('/api/content-drafts/:id/publish-jobs', (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id < 1) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    return c.json(listPublishJobs(id));
+  });
+
+  app.get('/api/publish/connections', (c) => {
+    return c.json(listConnections());
+  });
+
+  // Live session check — launches a headless browser, so it's slow and on-demand.
+  app.post('/api/publish/connections/:platform/test', async (c) => {
+    const platform = c.req.param('platform');
+    if (!isPublishTargetParam(platform)) {
+      return c.json({ success: false, message: 'Plateforme inconnue.' }, 400);
+    }
+    try {
+      const state = await testConnection(platform);
+      return c.json({ success: true, platform, state });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn('Connection test failed', { platform, error: message });
+      return c.json({ success: false, message }, 502);
+    }
+  });
+
+  // Save a LinkedIn session by pasting its cookies (li_at required, JSESSIONID
+  // optional) — mirrors the X auth_token/ct0 cookie-paste flow.
+  app.post('/api/publish/connections/linkedin', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const liAt = typeof body.li_at === 'string' ? body.li_at.trim() : '';
+    const jsession = typeof body.jsessionid === 'string' ? body.jsessionid.trim() : '';
+    if (!liAt) {
+      return c.json({ success: false, message: 'Le cookie li_at est requis.' }, 400);
+    }
+    setSetting('LINKEDIN_LI_AT', liAt);
+    if (jsession) {
+      setSetting('LINKEDIN_JSESSIONID', jsession);
+    }
+    // Best-effort live verification; storing succeeds even if the check can't run.
+    let state: string | undefined;
+    try {
+      state = await testConnection('generic');
+    } catch {
+      state = undefined;
+    }
+    return c.json({
+      success: true,
+      message:
+        state === 'connected'
+          ? 'Session LinkedIn enregistrée et vérifiée.'
+          : 'Session LinkedIn enregistrée. La vérification automatique n’a pas confirmé la connexion — teste-la depuis les Connexions.',
+      state,
+    });
   });
 
   // --- GitHub Import API (available in both setup and operational mode) ---

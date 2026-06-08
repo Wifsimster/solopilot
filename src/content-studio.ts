@@ -8,11 +8,26 @@ import { fetchGithubRepoContext } from './github-import.js';
 import { verifySubredditsExist } from './adapters/reddit-reader.js';
 
 export type ContentDraftKind = 'post';
-export type ContentDraftStatus = 'pending' | 'edited' | 'used' | 'discarded';
+export type ContentDraftStatus =
+  | 'pending'
+  | 'edited'
+  | 'used'
+  | 'discarded'
+  | 'publishing'
+  | 'published'
+  | 'failed';
 export type TargetSource = 'x' | 'reddit' | 'generic';
 
 export const CONTENT_DRAFT_KINDS = ['post'] as const;
-export const CONTENT_DRAFT_STATUSES = ['pending', 'edited', 'used', 'discarded'] as const;
+export const CONTENT_DRAFT_STATUSES = [
+  'pending',
+  'edited',
+  'used',
+  'discarded',
+  'publishing',
+  'published',
+  'failed',
+] as const;
 export const TARGET_SOURCES = ['x', 'reddit', 'generic'] as const;
 
 const contentDraftKindSchema = z.enum(CONTENT_DRAFT_KINDS, {
@@ -21,7 +36,7 @@ const contentDraftKindSchema = z.enum(CONTENT_DRAFT_KINDS, {
 
 const contentDraftStatusSchema = z.enum(CONTENT_DRAFT_STATUSES, {
   errorMap: () => ({
-    message: 'Statut invalide (pending, edited, used ou discarded).',
+    message: 'Statut invalide (pending, edited, used, discarded, publishing, published ou failed).',
   }),
 });
 
@@ -91,6 +106,21 @@ export interface ContentDraftView {
   used_on: string | null;
   generated_at: number;
   used_at: number | null;
+  published_url: string | null;
+  published_at: number | null;
+  platform_meta: Record<string, unknown> | null;
+  publish_error: string | null;
+  publish_attempts: number;
+}
+
+function parsePlatformMeta(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 function isContentDraftKind(value: string): value is ContentDraftKind {
@@ -118,8 +148,18 @@ export function toContentDraftView(row: ContentDraftRecord): ContentDraftView {
     used_on: row.used_on,
     generated_at: row.generated_at,
     used_at: row.used_at,
+    published_url: row.published_url ?? null,
+    published_at: row.published_at ?? null,
+    platform_meta: parsePlatformMeta(row.platform_meta ?? null),
+    publish_error: row.publish_error ?? null,
+    publish_attempts: row.publish_attempts ?? 0,
   };
 }
+
+// Columns selected for ContentDraftView. Centralized so the publish columns
+// stay in sync across the read queries.
+const CONTENT_DRAFT_COLUMNS =
+  'id, product_id, kind, target_source, angle, text, edited_text, status, used_on, generated_at, used_at, published_url, published_at, platform_meta, publish_error, publish_attempts';
 
 export function listContentDrafts(filters: ContentDraftListOptions = {}): ContentDraftView[] {
   const db = getDb();
@@ -145,7 +185,7 @@ export function listContentDrafts(filters: ContentDraftListOptions = {}): Conten
 
   const rows = db
     .prepare(
-      `SELECT id, product_id, kind, target_source, angle, text, edited_text, status, used_on, generated_at, used_at
+      `SELECT ${CONTENT_DRAFT_COLUMNS}
        FROM content_drafts
        ${where}
        ORDER BY generated_at DESC
@@ -159,10 +199,7 @@ export function listContentDrafts(filters: ContentDraftListOptions = {}): Conten
 export function getContentDraft(id: number): ContentDraftRecord | undefined {
   const db = getDb();
   return db
-    .prepare(
-      `SELECT id, product_id, kind, target_source, angle, text, edited_text, status, used_on, generated_at, used_at
-       FROM content_drafts WHERE id = ?`,
-    )
+    .prepare(`SELECT ${CONTENT_DRAFT_COLUMNS} FROM content_drafts WHERE id = ?`)
     .get(id) as ContentDraftRecord | undefined;
 }
 

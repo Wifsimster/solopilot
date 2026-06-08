@@ -40,3 +40,68 @@ export function isXUrl(url: string): boolean {
     return false;
   }
 }
+
+// --- Publishing (auto-post) ports (ADR: content auto-publish) ---
+//
+// Publishing drives the platform's real web UI as the logged-in user (no
+// official API, no clipboard). A Publisher is the per-platform browser adapter;
+// the publish-service orchestrates guard/retry/idempotency around it.
+
+/** Platforms a draft can be published to. Mirrors content-studio's TargetSource. */
+export type PublishTarget = 'x' | 'reddit' | 'generic';
+
+/** Whether a stored session can currently act as the logged-in user. */
+export type SessionState = 'connected' | 'expired' | 'missing';
+
+/** Minimal cookie shape used to seed a logged-in browser context. */
+export interface SessionCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path?: string;
+}
+
+/** The credentials needed to drive a platform as the user (cookie-based). */
+export interface PlatformSession {
+  cookies: SessionCookie[];
+}
+
+export interface PublishInput {
+  /** The exact text to post (already the user-approved/edited version). */
+  text: string;
+  /** Platform-specific fields (e.g. reddit subreddit/title, X thread parts). */
+  meta?: Record<string, unknown>;
+  session: PlatformSession;
+}
+
+export interface PublishResult {
+  /** Permalink to the live post. */
+  url: string;
+  /** Platform-native id when extractable. */
+  externalId?: string;
+}
+
+/** Classified failure modes so the orchestrator/UI can react appropriately. */
+export type PublishErrorCode =
+  | 'SESSION_EXPIRED'
+  | 'RATE_LIMITED'
+  | 'CHECKPOINT'
+  | 'SELECTOR_DRIFT'
+  | 'UNKNOWN';
+
+export class PublishError extends Error {
+  readonly code: PublishErrorCode;
+  constructor(code: PublishErrorCode, message: string) {
+    super(message);
+    this.name = 'PublishError';
+    this.code = code;
+  }
+}
+
+export interface Publisher {
+  readonly source: PublishTarget;
+  /** Cheap-ish check that the stored session is still logged in. */
+  checkSession(session: PlatformSession): Promise<SessionState>;
+  /** Drive the web UI to publish, returning the live post URL. Throws PublishError. */
+  publish(input: PublishInput): Promise<PublishResult>;
+}
