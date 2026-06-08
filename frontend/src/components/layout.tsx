@@ -187,8 +187,8 @@ export function Layout() {
             className="font-bold text-base sm:text-lg flex items-center gap-2 hover:text-primary transition-colors shrink-0"
           >
             <BrainCircuit className="size-5 text-primary" />
-            <span className="hidden sm:inline">X AI Weekly Bot</span>
-            <span className="sm:hidden">XAI Bot</span>
+            <span className="hidden sm:inline">Solopilot</span>
+            <span className="sm:hidden">Solopilot</span>
           </Link>
 
           {/* Desktop nav */}
@@ -251,7 +251,7 @@ export function Layout() {
       <footer className="hidden md:block border-t py-4">
         <div className="container mx-auto px-4">
           <p className="text-xs text-muted-foreground">
-            X AI Weekly Bot v{versionInfo?.version || 'dev'}
+            Solopilot v{versionInfo?.version || 'dev'}
             {versionInfo?.buildDate && (
               <>
                 {' '}
