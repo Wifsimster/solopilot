@@ -9,6 +9,7 @@
 import { registerStep, registerWorkflow, getWorkflow } from './registry.js';
 import { fetchSourcesStep } from '../steps/fetch.js';
 import { persistStep } from '../steps/persist.js';
+import { aiSummarizeStep } from '../steps/ai.js';
 import { notifyDiscordStep } from '../steps/notify.js';
 import { veilleWorkflows } from '../modules/veille/workflows.js';
 
@@ -19,6 +20,7 @@ export function registerSolopilot(): void {
 
   registerStep(fetchSourcesStep);
   registerStep(persistStep);
+  registerStep(aiSummarizeStep);
   registerStep(notifyDiscordStep);
 
   for (const wf of veilleWorkflows) {

@@ -6,9 +6,10 @@ import path from 'node:path';
 
 process.env.DB_PATH = path.join(mkdtempSync(path.join(tmpdir(), 'solopilot-')), 'smoke.db');
 
-const { registerStep, registerWorkflow, resetRegistry } = await import('../dist/workflow/registry.js');
+const { registerStep, registerWorkflow, resetRegistry, getStep, listWorkflows } = await import('../dist/workflow/registry.js');
 const { runWorkflowById } = await import('../dist/workflow/runner.js');
 const { getWorkflowRun, listWorkflowRuns } = await import('../dist/workflow/run-store.js');
+const { registerSolopilot } = await import('../dist/workflow/bootstrap.js');
 
 let failures = 0;
 const assert = (cond, msg) => {
@@ -63,6 +64,18 @@ assert(unk.status === 'error' && /Unknown step/.test(unk.error), 'unknown step e
 console.log('concurrency + listing:');
 const all = listWorkflowRuns(50);
 assert(all.length === 4, `all four runs listed (got ${all.length})`);
+
+console.log('bootstrap (real steps + veille workflows):');
+resetRegistry();
+registerSolopilot();
+for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord']) {
+  assert(getStep(use) !== undefined, `step registered: ${use}`);
+}
+const veille = listWorkflows().filter((w) => w.module === 'veille');
+assert(veille.length === 3, `three veille workflows registered (got ${veille.length})`);
+assert(veille.every((w) => !w.enabled), 'all veille workflows ship disabled (no prod impact)');
+const unresolved = veille.flatMap((w) => w.steps).filter((s) => getStep(s.use) === undefined);
+assert(unresolved.length === 0, `every veille step resolves (unresolved: ${unresolved.map((s) => s.use).join(',') || 'none'})`);
 
 resetRegistry();
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);

@@ -54,26 +54,29 @@ d'image) est un checklist d'ops à exécuter délibérément pour ne pas casser 
 ## Phase 1 — Moteur de workflows (le socle)
 
 **But :** extraire le moteur générique et y replier la logique actuelle, à
-comportement constant.
+comportement constant. **Voir [ADR-0014](adr/0014-workflow-engine.md).**
 
-- [ ] `src/workflow/` : `engine.ts`, `runner.ts`, `registry.ts`, `types.ts`.
-- [ ] Catalogue d'étapes de base, par **refactor** de l'existant :
+- [x] `src/workflow/` : `types.ts`, `engine.ts`, `runner.ts`, `registry.ts`,
+      `run-store.ts`, `connectors.ts`, `scheduler.ts`, `bootstrap.ts`.
+- [x] Catalogue d'étapes de base, par **délégation** à l'existant (strangler-fig) :
       `fetch.sources` (← `collect-service`), `ai.summarize` (← `ai-filter`),
-      `persist` (← `tweet-store`), `notify.discord` (← `discord-notifier`).
-- [ ] `workflow_runs` : généraliser la table `runs` (ajout `workflow_id`, trace
-      JSON `steps`), via migration idempotente. Conserver `runs` comme vue de
-      compat le temps que le dashboard bascule.
-- [ ] `cron-manager` → `WorkflowScheduler` : déclencheurs `cron` pilotés par les
-      définitions de workflow. Les deux crons actuels deviennent les triggers de
-      `veille.collect` et `veille.digest`.
-- [ ] Définir `veille.collect`, `veille.digest`, `veille.monthly` qui
-      **reproduisent à l'octet près** le comportement d'aujourd'hui.
-- [ ] Gardes de concurrence généralisées par module (← `publishRunning` /
-      `collectRunning`).
+      `persist` (← collecte), `notify.discord` (← `discord-notifier`).
+- [x] `workflow_runs` : table dédiée + trace JSON, via migration idempotente.
+      `runs` laissée intacte, les deux coexistent pendant la migration.
+- [x] Gardes de concurrence généralisées par `(module, activité)` (←
+      `publishRunning` / `collectRunning`).
+- [x] Définir `veille.collect/digest/monthly` (définitions, `enabled: false`).
+- [x] Smoke test de bout en bout (`npm run test:workflow`, 21 assertions / SQLite).
+- [~] `cron-manager` → `WorkflowScheduler` : `scheduler.ts` écrit mais **non câblé**
+      à l'entrypoint de prod (planifie uniquement les workflows `enabled`).
 - [ ] `dev:once` exécute un workflow nommé plutôt que la publication codée en dur.
+- [ ] **Flip** : implémenter le mark-as-used dans le workflow, brancher
+      `scheduleWorkflows()`, basculer `veille.*` en `enabled: true` à comportement
+      constant, retirer les crons hérités. *(étape qui change le comportement —
+      déliberément différée, après rodage du moteur désactivé.)*
 
 **Critère de sortie :** en prod, aucune différence observable. Mêmes runs, même
-digest Discord à 07:30. ADR-0014 « Workflow engine ».
+digest Discord à 07:30.
 
 ---
 
