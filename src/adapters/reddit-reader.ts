@@ -2,7 +2,11 @@ import { z } from 'zod';
 import type { Item, SourceOpts, SourceReader } from '../ports.js';
 import { logger } from '../logger.js';
 
-const USER_AGENT = 'solopilot/1.0';
+// Reddit asks for a unique, descriptive User-Agent in the form
+// `<platform>:<app id>:<version> (by /u/<username>)` and actively blocks terse
+// library-default agents — a generic UA is a common cause of HTTP 403 on the
+// unauthenticated *.json endpoints.
+const USER_AGENT = 'web:solopilot:1.0 (by /u/solopilot)';
 const FETCH_TIMEOUT_MS = 30_000;
 const SUBREDDIT_PATTERN = /^[A-Za-z0-9_]{2,21}$/;
 
@@ -33,7 +37,10 @@ const subredditSearchChildSchema = z.object({
     title: z.string().optional().default(''),
     public_description: z.string().optional().default(''),
     subscribers: z.number().nullable().optional(),
-    over18: z.boolean().optional().default(false),
+    // Reddit is inconsistent across endpoints: subreddit listings expose `over18`
+    // while the typeahead endpoint uses `over_18`. Accept both.
+    over18: z.boolean().optional(),
+    over_18: z.boolean().optional(),
     icon_img: z.string().optional().default(''),
     community_icon: z.string().optional().default(''),
     subreddit_type: z.string().optional(),
@@ -55,32 +62,26 @@ export interface SubredditSearchResult {
   iconUrl: string | null;
 }
 
-export async function searchSubreddits(
+type SubredditSearchChild = z.infer<typeof subredditSearchChildSchema>;
+
+/**
+ * Fetch and parse a Reddit subreddit listing, returning the raw children.
+ * Returns `[]` on rate limiting (HTTP 429) or unparseable bodies so the caller
+ * can fall back to another endpoint; throws on other non-2xx responses so a hard
+ * block (e.g. HTTP 403) surfaces as an error rather than a silent empty result.
+ */
+async function fetchSubredditChildren(
+  url: string,
+  userAgent: string,
   query: string,
-  options: { limit?: number; userAgent?: string; includeNsfw?: boolean } = {},
-): Promise<SubredditSearchResult[]> {
-  const trimmed = query.trim();
-  if (!trimmed) return [];
-
-  const limit = Math.min(Math.max(options.limit ?? 8, 1), 25);
-  const userAgent = options.userAgent ?? USER_AGENT;
-  const includeNsfw = options.includeNsfw ?? false;
-
-  const params = new URLSearchParams({
-    q: trimmed,
-    limit: String(limit),
-    include_over_18: includeNsfw ? 'on' : 'off',
-    sort: 'relevance',
-  });
-  const url = `https://www.reddit.com/subreddits/search.json?${params.toString()}`;
-
+): Promise<SubredditSearchChild[]> {
   const response = await fetch(url, {
     headers: { 'User-Agent': userAgent, accept: 'application/json' },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
 
   if (response.status === 429) {
-    logger.warn('Reddit: subreddit search rate limited (HTTP 429)', { query: trimmed });
+    logger.warn('Reddit: subreddit search rate limited (HTTP 429)', { query, url });
     return [];
   }
   if (!response.ok) {
@@ -94,15 +95,20 @@ export async function searchSubreddits(
   const parsed = subredditSearchListingSchema.safeParse(json);
   if (!parsed.success) {
     logger.warn('Reddit: failed to parse subreddit search listing', {
-      query: trimmed,
+      query,
+      url,
       errors: parsed.error.issues.map((i) => i.message),
     });
     return [];
   }
+  return parsed.data.data.children;
+}
 
+/** Map raw subreddit children into deduped, public/restricted-only results. */
+function mapSubredditResults(children: SubredditSearchChild[]): SubredditSearchResult[] {
   const results: SubredditSearchResult[] = [];
   const seen = new Set<string>();
-  for (const child of parsed.data.data.children) {
+  for (const child of children) {
     const sub = child.data;
     if (!SUBREDDIT_PATTERN.test(sub.display_name)) continue;
     if (
@@ -124,11 +130,66 @@ export async function searchSubreddits(
       title: sub.title ?? '',
       description: sub.public_description ?? '',
       subscribers: typeof sub.subscribers === 'number' ? sub.subscribers : 0,
-      over18: Boolean(sub.over18),
+      over18: Boolean(sub.over18 ?? sub.over_18),
       iconUrl,
     });
   }
   return results;
+}
+
+export async function searchSubreddits(
+  query: string,
+  options: { limit?: number; userAgent?: string; includeNsfw?: boolean } = {},
+): Promise<SubredditSearchResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const limit = Math.min(Math.max(options.limit ?? 8, 1), 25);
+  const userAgent = options.userAgent ?? USER_AGENT;
+  const includeNsfw = options.includeNsfw ?? false;
+
+  // The typeahead endpoint is what reddit.com's own search box uses and is the
+  // most permissive for unauthenticated prefix queries; the classic search
+  // endpoint is the fallback when typeahead is unavailable or yields nothing.
+  const autocompleteParams = new URLSearchParams({
+    query: trimmed,
+    limit: String(limit),
+    include_over_18: includeNsfw ? 'true' : 'false',
+    include_profiles: 'false',
+    typeahead_active: 'true',
+  });
+  const searchParams = new URLSearchParams({
+    q: trimmed,
+    limit: String(limit),
+    include_over_18: includeNsfw ? 'on' : 'off',
+    sort: 'relevance',
+  });
+  const candidateUrls = [
+    `https://www.reddit.com/api/subreddit_autocomplete_v2.json?${autocompleteParams.toString()}`,
+    `https://www.reddit.com/subreddits/search.json?${searchParams.toString()}`,
+  ];
+
+  let lastError: Error | null = null;
+  for (const url of candidateUrls) {
+    try {
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: only hit the fallback endpoint when the primary fails
+      const children = await fetchSubredditChildren(url, userAgent, trimmed);
+      const mapped = mapSubredditResults(children);
+      if (mapped.length > 0) return mapped;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      logger.warn('Reddit: subreddit search endpoint failed, trying fallback', {
+        query: trimmed,
+        url,
+        error: lastError.message,
+      });
+    }
+  }
+
+  // Every endpoint errored (e.g. a hard block): surface it so the API returns a
+  // proper error instead of masquerading as "no matches".
+  if (lastError) throw lastError;
+  return [];
 }
 
 const subredditAboutSchema = z.object({
