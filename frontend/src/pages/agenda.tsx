@@ -5,6 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { AgendaCalendar, type SxEvent } from '@/components/agenda-calendar';
+import { AgendaEventDialog } from '@/components/agenda-event-dialog';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
 
 interface CalendarEvent {
@@ -70,6 +71,10 @@ export function AgendaPage() {
         title="Agenda"
         description="Vos événements. Synchronisez un flux ICS (adresse secrète Google Calendar) ou ajoutez des événements manuellement."
       />
+
+      <div className="flex justify-end">
+        <AgendaEventDialog productId={selectedProductId} onCreated={refetch} />
+      </div>
 
       {loading || !data ? (
         <Skeleton className="h-[32rem] w-full" />
