@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useApi } from '@/hooks/use-api';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { PageHeader } from '@/components/page-header';
 import {
   Select,
   SelectContent,
@@ -195,11 +196,11 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
   }, [patch]);
 
   return (
-    <Card>
+    <Card className="hover:border-muted-foreground/20 transition-colors">
       <CardContent className="py-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge variant="brand" className="text-[10px] px-1.5 py-0">
               {targetSourceLabel(draft.target_source)}
             </Badge>
             {draft.angle && (
@@ -214,7 +215,7 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
               {statusLabel(draft.status)}
             </Badge>
           </div>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-muted-foreground tabular-nums">
             Générée {formatRelativeFr(draft.generated_at)}
           </span>
         </div>
@@ -227,7 +228,7 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
           aria-label="Texte du draft"
         />
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border">
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
@@ -350,13 +351,13 @@ function DraftsList({
 }) {
   if (drafts.length === 0) {
     return (
-      <Card>
-        <CardContent className="py-10 text-center space-y-2">
-          <Wand2 className="size-8 mx-auto text-muted-foreground opacity-60" />
-          <p className="text-sm font-medium">{emptyTitle}</p>
-          <p className="text-xs text-muted-foreground">{emptyHint}</p>
-        </CardContent>
-      </Card>
+      <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+        <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+          <Wand2 className="size-5 text-muted-foreground" />
+        </div>
+        <p className="font-medium">{emptyTitle}</p>
+        <p className="text-sm text-muted-foreground max-w-xs">{emptyHint}</p>
+      </div>
     );
   }
   return (
@@ -474,17 +475,20 @@ export function StudioPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
-          Studio de contenu
-        </h1>
-        <p className="text-muted-foreground">
-          Génère des drafts de posts pour ton produit. Tu valides, tu postes.
-        </p>
-      </div>
+      <PageHeader
+        title="Studio de contenu"
+        description="Génère des drafts de posts pour ton produit. Tu valides, tu postes."
+      />
 
       <Card>
-        <CardContent className="py-4 space-y-3">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Générer des drafts</CardTitle>
+          <CardDescription>
+            Les drafts sont en français par défaut. Change la langue dans les
+            paramètres du produit.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pb-5">
           <div className="flex flex-wrap items-center gap-2">
             {GENERATE_BUTTONS.map((btn) => (
               <Button
@@ -502,10 +506,6 @@ export function StudioPage() {
               </Button>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">
-            Les drafts sont en français par défaut. Change la langue dans les
-            paramètres du produit.
-          </p>
         </CardContent>
       </Card>
 
@@ -519,26 +519,30 @@ export function StudioPage() {
       )}
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as StatusFilter)}>
-        <TabsList className="h-auto flex-wrap">
-          {TABS.map((tab) => (
-            <TabsTrigger key={tab.id} value={tab.id} className="gap-2">
-              <span>{tab.label}</span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                {counts[tab.id]}
-              </Badge>
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="h-auto flex-nowrap gap-1 w-max">
+            {TABS.map((tab) => (
+              <TabsTrigger key={tab.id} value={tab.id} className="gap-1.5 shrink-0">
+                <span>{tab.label}</span>
+                {counts[tab.id] > 0 && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
+                    {counts[tab.id]}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
         {TABS.map((tab) => {
           const req = requestsByStatus[tab.id];
           const drafts = req.data ?? [];
           return (
-            <TabsContent key={tab.id} value={tab.id} className="space-y-3">
+            <TabsContent key={tab.id} value={tab.id} className="mt-4">
               {anyLoading && !req.data ? (
                 <div className="space-y-3">
                   {Array.from({ length: 3 }).map((_, i) => (
-                    <Skeleton key={i} className="h-40 w-full rounded-lg" />
+                    <Skeleton key={i} className="h-40 w-full rounded-xl" />
                   ))}
                 </div>
               ) : (

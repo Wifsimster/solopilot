@@ -48,13 +48,17 @@ function DealCard({
   return (
     <div
       className={cn(
-        'rounded-md border bg-card p-2 text-xs shadow-sm',
-        dragging && 'opacity-50',
+        'rounded-lg border border-border bg-card px-3 py-2.5 text-xs shadow-xs hover:border-muted-foreground/20 transition-colors',
+        dragging && 'opacity-50 shadow-md rotate-1',
       )}
     >
-      <div className="font-medium">{deal.title}</div>
-      <div className="text-muted-foreground">{contactName}</div>
-      {deal.amount_cents > 0 && <div className="tabular-nums">{euros(deal.amount_cents)}</div>}
+      <div className="font-medium text-foreground leading-snug">{deal.title}</div>
+      <div className="mt-0.5 text-muted-foreground">{contactName}</div>
+      {deal.amount_cents > 0 && (
+        <div className="mt-1.5 tabular-nums font-semibold text-foreground/80">
+          {euros(deal.amount_cents)}
+        </div>
+      )}
     </div>
   );
 }
@@ -88,17 +92,27 @@ function StageColumn({
   const { setNodeRef, isOver } = useDroppable({ id: stage });
   const total = deals.reduce((s, d) => s + d.amount_cents, 0);
   return (
-    <Card ref={setNodeRef} className={cn('transition-colors', isOver && 'ring-2 ring-ring')}>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between text-sm font-semibold">
-          {label}
-          <Badge variant="outline" className="text-xs">
+    <Card
+      ref={setNodeRef}
+      className={cn(
+        'w-[260px] shrink-0 snap-start transition-colors',
+        isOver && 'ring-2 ring-ring bg-accent/40',
+      )}
+    >
+      <CardHeader className="pb-2 px-4 pt-4">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-semibold tracking-tight">{label}</span>
+          <Badge variant={deals.length > 0 ? 'secondary' : 'outline'} className="tabular-nums text-xs">
             {deals.length}
           </Badge>
         </div>
-        {total > 0 && <div className="text-xs text-muted-foreground">{euros(total)}</div>}
+        {total > 0 && (
+          <div className="text-xs tabular-nums text-muted-foreground font-medium">
+            {euros(total)}
+          </div>
+        )}
       </CardHeader>
-      <CardContent className="min-h-16 space-y-2">
+      <CardContent className="min-h-20 space-y-2 px-4 pb-4">
         {deals.map((d) => (
           <DraggableDeal key={d.id} deal={d} contactName={contactName(d.contact_id)} />
         ))}
@@ -146,16 +160,18 @@ export function DealPipeline({
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveId(null)}
     >
-      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {STAGES.map((s) => (
-          <StageColumn
-            key={s.key}
-            stage={s.key}
-            label={s.label}
-            deals={deals.filter((d) => d.stage === s.key)}
-            contactName={contactName}
-          />
-        ))}
+      <div className="overflow-x-auto pb-3 -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="flex gap-3 snap-x snap-mandatory">
+          {STAGES.map((s) => (
+            <StageColumn
+              key={s.key}
+              stage={s.key}
+              label={s.label}
+              deals={deals.filter((d) => d.stage === s.key)}
+              contactName={contactName}
+            />
+          ))}
+        </div>
       </div>
       <DragOverlay>
         {activeDeal ? (

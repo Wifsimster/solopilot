@@ -81,7 +81,7 @@ export function CrmPage() {
 
   if (contacts.error) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-8">
         <PageHeader title="CRM" description="Contacts et opportunités" />
         <ErrorState message={contacts.error} context="crm" onRetry={contacts.refetch} />
       </div>
@@ -89,35 +89,41 @@ export function CrmPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader
         title="CRM"
         description="Glissez une opportunité d'une colonne à l'autre pour la faire avancer. Les relances des affaires dormantes sont préparées pour validation."
       />
 
-      <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Pipeline
-        </h2>
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Pipeline
+          </h2>
+          <div className="h-px flex-1 bg-border" />
+        </div>
         {deals.loading ? (
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="flex gap-3 overflow-x-auto pb-2">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 w-full" />
+              <Skeleton key={i} className="h-32 w-64 shrink-0 rounded-xl" />
             ))}
           </div>
         ) : (
           <DealPipeline deals={board} contactName={contactName} onMove={moveDeal} />
         )}
-      </div>
+      </section>
 
-      <div>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Contacts
-        </h2>
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Contacts
+          </h2>
+          <div className="h-px flex-1 bg-border" />
+        </div>
         {contacts.loading ? (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 w-full" />
+              <Skeleton key={i} className="h-14 w-full rounded-xl" />
             ))}
           </div>
         ) : (
@@ -139,7 +145,7 @@ export function CrmPage() {
             emptyMessage="Aucun contact. Les leads de l'Acquisition pourront être promus ici."
           />
         )}
-      </div>
+      </section>
     </div>
   );
 }

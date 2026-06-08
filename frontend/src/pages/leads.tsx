@@ -2,13 +2,14 @@ import { useCallback, useMemo, useState } from 'react';
 import { useApi } from '@/hooks/use-api';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
 import { formatRelativeFr } from '@/lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { PageHeader } from '@/components/page-header';
 import { AlertCircle, ExternalLink, StickyNote, Loader2, Target } from 'lucide-react';
 import { toast } from 'sonner';
 import type { IntentSignal, IntentSignalStatus } from '@/types';
@@ -37,7 +38,7 @@ const TABS: TabConfig[] = [
     id: 'snoozed',
     label: 'En attente',
     emptyTitle: 'Aucun signal en attente.',
-    emptyHint: 'Snooze une opportunité depuis l’onglet Nouveaux pour la retrouver ici.',
+    emptyHint: "Snooze une opportunité depuis l'onglet Nouveaux pour la retrouver ici.",
   },
   {
     id: 'replied',
@@ -87,11 +88,11 @@ function LeadCard({
   }, [notesDraft, onMutate, signal.id]);
 
   return (
-    <Card>
-      <CardContent className="py-4 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+    <Card className="hover:border-muted-foreground/20 transition-colors">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+            <Badge variant="brand" className="text-[10px] px-1.5 py-0">
               {sourceLabel(signal.source)}
             </Badge>
             <span className="text-sm font-medium">{signal.author || 'Anonyme'}</span>
@@ -114,14 +115,16 @@ function LeadCard({
         </div>
 
         {signal.matched_pattern && (
-          <div>
-            <Badge variant="success" className="text-[11px] font-mono">
+          <div className="pt-0.5">
+            <Badge variant="success" className="font-mono text-[11px]">
               motif : {signal.matched_pattern}
             </Badge>
           </div>
         )}
+      </CardHeader>
 
-        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+      <CardContent className="space-y-3">
+        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground/90">
           {displayedText}
         </p>
         {isLong && (
@@ -135,14 +138,14 @@ function LeadCard({
           </Button>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
           <Button
             variant="ghost"
             size="sm"
-            className="px-0 h-auto text-xs text-muted-foreground hover:text-foreground"
+            className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => setNotesOpen((v) => !v)}
           >
-            <StickyNote className="size-3.5 mr-1" />
+            <StickyNote className="size-3.5 mr-1.5" />
             {notesOpen ? 'Masquer la note' : 'Ajouter une note'}
           </Button>
 
@@ -150,7 +153,7 @@ function LeadCard({
         </div>
 
         {notesOpen && (
-          <div className="space-y-2 pt-1">
+          <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
             <Textarea
               value={notesDraft}
               onChange={(e) => setNotesDraft(e.target.value)}
@@ -204,13 +207,13 @@ function LeadsList({
 }) {
   if (signals.length === 0) {
     return (
-      <Card>
-        <CardContent className="py-10 text-center space-y-2">
-          <Target className="size-8 mx-auto text-muted-foreground opacity-60" />
-          <p className="text-sm font-medium">{emptyTitle}</p>
-          <p className="text-xs text-muted-foreground">{emptyHint}</p>
-        </CardContent>
-      </Card>
+      <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+        <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+          <Target className="size-5 text-muted-foreground" />
+        </div>
+        <p className="font-medium">{emptyTitle}</p>
+        <p className="text-sm text-muted-foreground max-w-xs">{emptyHint}</p>
+      </div>
     );
   }
 
@@ -307,12 +310,10 @@ export function LeadsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Opportunités</h1>
-        <p className="text-muted-foreground">
-          Signaux d'intention détectés sur tes sources
-        </p>
-      </div>
+      <PageHeader
+        title="Opportunités"
+        description="Signaux d'intention détectés sur tes sources"
+      />
 
       {firstError && (
         <Alert variant="destructive">
@@ -327,16 +328,20 @@ export function LeadsPage() {
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as StatusFilter)}
       >
-        <TabsList className="h-auto flex-wrap">
-          {TABS.map((tab) => (
-            <TabsTrigger key={tab.id} value={tab.id} className="gap-2">
-              <span>{tab.label}</span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                {counts[tab.id]}
-              </Badge>
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="h-auto flex-nowrap gap-1 w-max">
+            {TABS.map((tab) => (
+              <TabsTrigger key={tab.id} value={tab.id} className="gap-1.5 shrink-0">
+                <span>{tab.label}</span>
+                {counts[tab.id] > 0 && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
+                    {counts[tab.id]}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
         {TABS.map((tab) => {
           const req = requestsByStatus[tab.id];
@@ -356,11 +361,11 @@ export function LeadsPage() {
                 })
               : signals;
           return (
-            <TabsContent key={tab.id} value={tab.id} className="space-y-3">
+            <TabsContent key={tab.id} value={tab.id} className="mt-4">
               {anyLoading && !req.data ? (
                 <div className="space-y-3">
                   {Array.from({ length: 3 }).map((_, i) => (
-                    <Skeleton key={i} className="h-32 w-full rounded-lg" />
+                    <Skeleton key={i} className="h-36 w-full rounded-xl" />
                   ))}
                 </div>
               ) : (

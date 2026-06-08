@@ -67,9 +67,10 @@ function ReplyVariantCard({
 
   return (
     <div
-      className={`rounded-md border bg-muted/30 p-3 space-y-2 ${
-        reply.used ? 'border-l-4 border-l-emerald-500' : ''
-      }`}
+      className={[
+        'rounded-lg border bg-muted/30 p-3 space-y-2 transition-colors',
+        reply.used ? 'border-l-4 border-l-success bg-success/5' : 'border-border',
+      ].join(' ')}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         {reply.angle ? (
@@ -109,13 +110,9 @@ function ReplyVariantCard({
           Copier
         </Button>
         <Button
-          variant="outline"
+          variant={reply.used ? 'secondary' : 'outline'}
           size="sm"
-          className={`h-7 ${
-            reply.used
-              ? 'border-emerald-500/60 text-emerald-700 dark:text-emerald-400 hover:text-emerald-700'
-              : ''
-          }`}
+          className="h-7"
           onClick={handleToggleUsed}
           disabled={toggling}
         >
@@ -378,7 +375,7 @@ function LeadAiAnalyzed({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Badge
           variant={scoreBadgeVariant(signal.ai_score ?? 0)}
-          className="text-[11px]"
+          className="text-[11px] tabular-nums"
         >
           Score IA : {signal.ai_score}/100
         </Badge>
@@ -390,7 +387,7 @@ function LeadAiAnalyzed({
       </div>
 
       {signal.ai_explanation && (
-        <div className="rounded-md border bg-background px-3 py-2">
+        <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
           <p className="text-xs leading-relaxed whitespace-pre-wrap">
             <span className="font-semibold">Pourquoi : </span>
             {signal.ai_explanation}
@@ -540,16 +537,16 @@ export function LeadAiSection({
   const aiNotYetAnalyzed = !aiAnalyzed && !aiHasError;
 
   return (
-    <div className="rounded-md border bg-muted/40 p-3 space-y-2">
+    <div className="rounded-xl border border-border bg-muted/30 p-3 space-y-2">
       {aiNotYetAnalyzed && (
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
             L'IA peut scorer ce lead et proposer un brouillon de réponse.
           </p>
           <Button
             variant="outline"
             size="sm"
-            className="h-8"
+            className="h-8 shrink-0"
             onClick={handleAnalyze}
             disabled={analyzing}
           >
@@ -578,7 +575,7 @@ export function LeadAiSection({
       )}
 
       {aiHasError && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 space-y-2">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2.5 space-y-2">
           <p className="text-xs text-destructive">
             <span className="font-semibold">Échec de l'analyse : </span>
             {signal.ai_error}
