@@ -411,6 +411,92 @@ function runComptaMigrations(database: Database.Database) {
   );
 }
 
+export interface ContactRecord {
+  id: string;
+  product_id: string;
+  name: string;
+  email: string | null;
+  company: string | null;
+  phone: string | null;
+  status: 'lead' | 'active' | 'inactive';
+  source: string;
+  notes: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface DealRecord {
+  id: string;
+  product_id: string;
+  contact_id: string;
+  title: string;
+  stage: 'nouveau' | 'qualifie' | 'proposition' | 'gagne' | 'perdu';
+  amount_cents: number;
+  created_at: number;
+  updated_at: number;
+  closed_at: number | null;
+}
+
+export interface InteractionRecord {
+  id: string;
+  product_id: string;
+  contact_id: string;
+  kind: string;
+  summary: string;
+  occurred_on: string;
+  created_at: number;
+}
+
+// CRM module migrations (ADR-0018). Idempotent. Contacts, deals (pipeline) and
+// interactions, all scoped by product_id (activity).
+function runCrmMigrations(database: Database.Database) {
+  database.exec(`CREATE TABLE IF NOT EXISTS contacts (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL DEFAULT '${DEFAULT_PRODUCT_ID}' REFERENCES products(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    email TEXT,
+    company TEXT,
+    phone TEXT,
+    status TEXT NOT NULL DEFAULT 'lead',
+    source TEXT NOT NULL DEFAULT 'manual',
+    notes TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
+
+  database.exec(`CREATE TABLE IF NOT EXISTS deals (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL DEFAULT '${DEFAULT_PRODUCT_ID}' REFERENCES products(id) ON DELETE CASCADE,
+    contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    stage TEXT NOT NULL DEFAULT 'nouveau',
+    amount_cents INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    closed_at INTEGER
+  )`);
+
+  database.exec(`CREATE TABLE IF NOT EXISTS interactions (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL DEFAULT '${DEFAULT_PRODUCT_ID}' REFERENCES products(id) ON DELETE CASCADE,
+    contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL DEFAULT 'note',
+    summary TEXT NOT NULL,
+    occurred_on TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`);
+
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_deals_product_stage ON deals(product_id, stage, updated_at)`,
+  );
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_contacts_product ON contacts(product_id, status)`,
+  );
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_interactions_contact ON interactions(contact_id, occurred_on DESC)`,
+  );
+}
+
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -472,6 +558,7 @@ export function getDb(): Database.Database {
     runWorkflowMigrations(db);
     runFacturationMigrations(db);
     runComptaMigrations(db);
+    runCrmMigrations(db);
 
     logger.info('Database initialized', { path: dbPath });
   }

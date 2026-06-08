@@ -35,6 +35,12 @@ interface Briefing {
     approachingPlafond: boolean;
     tvaExceeded: boolean;
   };
+  crm: {
+    status: ModuleStatus;
+    openDeals: number;
+    staleDeals: number;
+    openValueCents: number;
+  };
   agenda: { status: ModuleStatus };
   workflows: { total: number; byStatus: Record<string, number> };
 }
@@ -173,6 +179,24 @@ export function CockpitPage() {
               {(data.compta.approachingPlafond || data.compta.tvaExceeded) && (
                 <Badge variant="destructive" className="mt-2 text-xs">
                   {data.compta.tvaExceeded ? 'Seuil TVA dépassé' : 'Plafond proche'}
+                </Badge>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="text-base font-semibold">CRM</div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold tabular-nums">{data.crm.openDeals}</div>
+              <div className="text-sm text-muted-foreground">
+                opportunité(s) ouverte(s)
+                {data.crm.openValueCents > 0 && ` — ${(data.crm.openValueCents / 100).toFixed(0)} €`}
+              </div>
+              {data.crm.staleDeals > 0 && (
+                <Badge variant="secondary" className="mt-2 text-xs">
+                  {data.crm.staleDeals} à relancer
                 </Badge>
               )}
             </CardContent>

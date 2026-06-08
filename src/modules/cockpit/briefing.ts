@@ -13,6 +13,7 @@ import { listIntentSignals } from '../../intent-service.js';
 import { listWorkflowRuns } from '../../workflow/run-store.js';
 import { facturationSummary } from '../facturation/store.js';
 import { comptaStatus } from '../comptabilite/compta.js';
+import { crmSummary } from '../crm/store.js';
 import { getTodayDateParis } from '../../date-utils.js';
 import { DEFAULT_PRODUCT_ID } from '../../db.js';
 
@@ -43,6 +44,12 @@ export interface Briefing {
     approachingPlafond: boolean;
     tvaExceeded: boolean;
   };
+  crm: {
+    status: ModuleStatus;
+    openDeals: number;
+    staleDeals: number;
+    openValueCents: number;
+  };
   agenda: { status: ModuleStatus };
   workflows: { total: number; byStatus: Record<string, number> };
 }
@@ -60,6 +67,7 @@ export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing
 
   const facturation = facturationSummary(activityId);
   const compta = comptaStatus(activityId);
+  const crm = crmSummary(activityId);
 
   return {
     activityId,
@@ -85,6 +93,12 @@ export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing
       plafondPct: compta.plafondPct,
       approachingPlafond: compta.approachingPlafond,
       tvaExceeded: compta.tvaExceeded,
+    },
+    crm: {
+      status: 'live',
+      openDeals: crm.openDeals,
+      staleDeals: crm.staleDeals,
+      openValueCents: crm.openValueCents,
     },
     agenda: { status: 'planned' },
     workflows: { total: recentRuns.length, byStatus },
@@ -137,6 +151,16 @@ export function renderBriefingText(b: Briefing): string {
     lines.push(`• ⚠️ CA ${ca} — ${b.compta.plafondPct}% du plafond micro${b.compta.tvaExceeded ? ', seuil TVA dépassé' : ''}.`);
   } else {
     lines.push(`• CA encaissé cette année : ${ca} (${b.compta.plafondPct}% du plafond).`);
+  }
+  lines.push('');
+
+  lines.push('**CRM**');
+  if (b.crm.staleDeals > 0) {
+    lines.push(`• ⏰ ${b.crm.staleDeals} opportunité(s) dormante(s) à relancer (sur ${b.crm.openDeals} ouverte(s)).`);
+  } else if (b.crm.openDeals > 0) {
+    lines.push(`• ${b.crm.openDeals} opportunité(s) ouverte(s), aucune dormante.`);
+  } else {
+    lines.push('_Aucune opportunité ouverte._');
   }
   lines.push('');
 

@@ -14,6 +14,8 @@ const { buildBriefing, renderBriefingText } = await import('../dist/modules/cock
 const facturation = await import('../dist/modules/facturation/store.js');
 const { draftRelance } = await import('../dist/modules/facturation/relance.js');
 const compta = await import('../dist/modules/comptabilite/compta.js');
+const crm = await import('../dist/modules/crm/store.js');
+const { draftFollowup } = await import('../dist/modules/crm/followup.js');
 
 let failures = 0;
 const assert = (cond, msg) => {
@@ -72,7 +74,7 @@ assert(all.length === 4, `all four runs listed (got ${all.length})`);
 console.log('bootstrap (real steps + veille workflows):');
 resetRegistry();
 registerSolopilot();
-for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate', 'facturation.relance', 'facturation.sync', 'compta.seuils', 'compta.echeance']) {
+for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate', 'facturation.relance', 'facturation.sync', 'compta.seuils', 'compta.echeance', 'crm.followup']) {
   assert(getStep(use) !== undefined, `step registered: ${use}`);
 }
 const registered = listWorkflows();
@@ -81,6 +83,7 @@ assert(veille.length === 3, `three veille workflows registered (got ${veille.len
 assert(registered.some((w) => w.id === 'cockpit.daily-briefing'), 'cockpit.daily-briefing registered');
 assert(registered.filter((w) => w.module === 'facturation').length === 2, 'two facturation workflows registered');
 assert(registered.filter((w) => w.module === 'compta').length === 2, 'two compta workflows registered');
+assert(registered.filter((w) => w.module === 'crm').length === 1, 'one crm workflow registered');
 assert(registered.every((w) => !w.enabled), 'every workflow ships disabled (no prod impact)');
 const unresolved = registered.flatMap((w) => w.steps).filter((s) => getStep(s.use) === undefined);
 assert(unresolved.length === 0, `every step resolves (unresolved: ${unresolved.map((s) => s.use).join(',') || 'none'})`);
@@ -117,13 +120,31 @@ compta.setComptaConfig('default', { activityType: 'vente' });
 assert(compta.comptaStatus('default').plafondCents === 18870000, 'config switches plafond to vente');
 compta.setComptaConfig('default', { activityType: 'services_bnc' });
 
+console.log('CRM (contacts, pipeline, stale follow-ups):');
+const contact = crm.createContact('default', { name: 'Jane Doe', company: 'Globex' });
+assert(crm.listContacts('default').length === 1, 'contact created and listed');
+const deal = crm.createDeal('default', { contact_id: contact.id, title: 'Refonte site', stage: 'qualifie', amount_cents: 500000 });
+const sum = crm.crmSummary('default');
+assert(sum.openDeals === 1 && sum.openValueCents === 500000, 'crm summary counts open deals and value');
+assert(crm.listStaleDeals('default', Date.now()).length === 0, 'fresh deal is not stale');
+const future = Date.now() + 20 * 86400000;
+const stale = crm.listStaleDeals('default', future);
+assert(stale.length === 1, 'deal becomes stale after the threshold');
+const fdraft = draftFollowup(stale[0]);
+assert(fdraft.message.includes('Jane Doe') && fdraft.message.includes('Refonte site'), 'follow-up draft mentions contact and deal');
+const inter = crm.addInteraction('default', { contact_id: contact.id, summary: 'Appel de cadrage' });
+assert(inter.id !== undefined && crm.getDeal(deal.id).updated_at >= deal.updated_at, 'interaction touches the deal');
+assert(crm.updateDealStage(deal.id, 'gagne').stage === 'gagne', 'deal stage moved to gagne');
+assert(crm.crmSummary('default').openDeals === 0, 'won deal leaves the open pipeline');
+
 console.log('cockpit briefing:');
 const brief = buildBriefing('default');
 assert(brief.veille.status === 'live' && brief.facturation.status === 'live', 'briefing reports facturation live');
 assert(brief.facturation.unpaid === 0, 'briefing reflects ledger state (paid invoice)');
 assert(brief.compta.status === 'live' && brief.compta.caCents === 170000, 'briefing reports compta live with CA');
+assert(brief.crm.status === 'live', 'briefing reports crm live');
 const text = renderBriefingText(brief);
-assert(text.includes('BRIEF DU JOUR') && text.includes('FACTURATION') && text.includes('COMPTABILITÉ'), 'briefing renders all live sections');
+assert(['BRIEF DU JOUR', 'FACTURATION', 'COMPTABILITÉ', 'CRM'].every((s) => text.includes(s)), 'briefing renders all live sections');
 
 resetRegistry();
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);

@@ -15,6 +15,7 @@ import { ProductsPage } from "@/pages/products";
 import { FacturationPage } from "@/pages/facturation";
 import { ComptabilitePage } from "@/pages/comptabilite";
 import { LeadsPage } from "@/pages/leads";
+import { CrmPage } from "@/pages/crm";
 import { StudioPage } from "@/pages/studio";
 
 export function App() {
@@ -35,6 +36,7 @@ export function App() {
                 <Route path="/facturation" element={<FacturationPage />} />
                 <Route path="/comptabilite" element={<ComptabilitePage />} />
                 <Route path="/leads" element={<LeadsPage />} />
+                <Route path="/crm" element={<CrmPage />} />
                 <Route path="/studio" element={<StudioPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>
