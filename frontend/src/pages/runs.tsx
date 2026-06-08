@@ -20,6 +20,7 @@ import { MarkdownContent } from '@/components/markdown-content';
 import { usePagination } from '@/hooks/use-pagination';
 import { formatDateFr } from '@/lib/utils';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
+import { History } from 'lucide-react';
 import type { RunRecord } from '@/types';
 
 function SummaryToggle({ summary }: { summary: string }) {
@@ -29,14 +30,14 @@ function SummaryToggle({ summary }: { summary: string }) {
       <Button
         variant="link"
         size="sm"
-        className="h-auto p-0 text-sm"
+        className="h-auto p-0 text-sm text-primary"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
       >
         {open ? 'Masquer' : 'Voir le résumé'}
       </Button>
       {open && (
-        <div className="mt-2 max-w-md p-3 rounded-md bg-muted">
+        <div className="mt-2 max-w-md rounded-lg border border-border bg-muted/40 p-3">
           <MarkdownContent content={summary} className="text-xs" />
         </div>
       )}
@@ -47,47 +48,55 @@ function SummaryToggle({ summary }: { summary: string }) {
 function RunCard({ run }: { run: RunRecord }) {
   const [open, setOpen] = useState(false);
   return (
-    <Card>
-      <CardContent className="py-4 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <StatusBadge status={run.status} />
-            <span className="text-sm text-muted-foreground tabular-nums">#{run.id}</span>
+    <Card className="hover:border-muted-foreground/20 transition-colors">
+      <CardContent className="py-4 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="space-y-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <StatusBadge status={run.status} />
+              <span className="text-xs text-muted-foreground tabular-nums font-medium">
+                #{run.id}
+              </span>
+            </div>
+            <p className="text-sm font-medium">{formatDateFr(run.started_at)}</p>
           </div>
-          <Badge variant="outline" className="text-xs shrink-0">
+          <Badge variant="outline" className="text-xs shrink-0 tabular-nums">
             {run.tweets_fetched} messages
           </Badge>
         </div>
-        <div className="text-sm">
-          <span className="text-muted-foreground">Début : </span>
-          <span>{formatDateFr(run.started_at)}</span>
-        </div>
+
         {run.trigger_type && (
-          <div className="text-sm">
-            <span className="text-muted-foreground">Déclencheur : </span>
-            <span>{run.trigger_type}</span>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="font-medium">Déclencheur :</span>
+            <Badge variant="secondary" className="text-xs font-mono">
+              {run.trigger_type}
+            </Badge>
           </div>
         )}
+
         {run.summary && (
           <div>
             <Button
               variant="link"
               size="sm"
-              className="h-auto p-0 text-sm"
+              className="h-auto p-0 text-sm text-primary"
               onClick={() => setOpen(!open)}
               aria-expanded={open}
             >
               {open ? 'Masquer le résumé' : 'Voir le résumé'}
             </Button>
             {open && (
-              <div className="mt-2 p-3 rounded-md bg-muted">
+              <div className="mt-2 rounded-lg border border-border bg-muted/40 p-3">
                 <MarkdownContent content={run.summary} className="text-xs" />
               </div>
             )}
           </div>
         )}
+
         {run.error_message && (
-          <p className="text-xs text-destructive line-clamp-2">{run.error_message}</p>
+          <p className="rounded-md bg-destructive/5 border border-destructive/20 px-3 py-2 text-xs text-destructive line-clamp-2">
+            {run.error_message}
+          </p>
         )}
       </CardContent>
     </Card>
@@ -106,12 +115,12 @@ export function RunsPage() {
     return (
       <div className="space-y-6">
         <div className="space-y-2">
-          <Skeleton className="h-9 w-56" />
-          <Skeleton className="h-5 w-48" />
+          <Skeleton className="h-7 w-48" />
+          <Skeleton className="h-5 w-36" />
         </div>
-        <div className="space-y-2">
+        <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full rounded-lg" />
+            <Skeleton key={i} className="h-20 w-full rounded-xl" />
           ))}
         </div>
       </div>
@@ -122,6 +131,7 @@ export function RunsPage() {
     return (
       <div className="space-y-6">
         <PageHeader
+          eyebrow="Veille"
           title="Historique des runs"
           description="Historique complet des exécutions du bot"
         />
@@ -141,6 +151,7 @@ export function RunsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow="Veille"
         title="Historique des runs"
         description={`${total} run${total !== 1 ? 's' : ''} au total`}
       />
@@ -149,8 +160,16 @@ export function RunsPage() {
       <div className="md:hidden space-y-3">
         {runs.length === 0 ? (
           <Card>
-            <CardContent className="py-8 text-center text-muted-foreground">
-              Aucun run enregistré.
+            <CardContent className="py-16 flex flex-col items-center gap-4 text-center">
+              <div className="flex size-12 items-center justify-center rounded-full bg-muted" aria-hidden="true">
+                <History className="size-5 text-muted-foreground" />
+              </div>
+              <div className="space-y-1">
+                <p className="font-medium">Aucun run enregistré</p>
+                <p className="text-sm text-muted-foreground">
+                  Les exécutions du bot apparaîtront ici.
+                </p>
+              </div>
             </CardContent>
           </Card>
         ) : (
@@ -159,40 +178,61 @@ export function RunsPage() {
       </div>
 
       {/* Desktop table view */}
-      <div className="hidden md:block rounded-lg border overflow-hidden">
+      <div className="hidden md:block rounded-xl border border-border overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead className="w-[60px]">#</TableHead>
-              <TableHead>Début</TableHead>
-              <TableHead>Fin</TableHead>
-              <TableHead>Statut</TableHead>
-              <TableHead>Déclencheur</TableHead>
-              <TableHead className="text-right">Messages</TableHead>
-              <TableHead>Résumé</TableHead>
-              <TableHead>Erreur</TableHead>
+              <TableHead className="w-[60px] font-semibold">#</TableHead>
+              <TableHead className="font-semibold">Début</TableHead>
+              <TableHead className="font-semibold">Fin</TableHead>
+              <TableHead className="font-semibold">Statut</TableHead>
+              <TableHead className="font-semibold">Déclencheur</TableHead>
+              <TableHead className="text-right font-semibold">Messages</TableHead>
+              <TableHead className="font-semibold">Résumé</TableHead>
+              <TableHead className="font-semibold">Erreur</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {runs.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                  Aucun run enregistré.
+                <TableCell colSpan={8} className="py-16 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="flex size-10 items-center justify-center rounded-full bg-muted" aria-hidden="true">
+                      <History className="size-4 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm text-muted-foreground">Aucun run enregistré.</p>
+                  </div>
                 </TableCell>
               </TableRow>
             )}
             {runs.map((run) => (
-              <TableRow key={run.id}>
-                <TableCell className="font-medium tabular-nums">{run.id}</TableCell>
+              <TableRow key={run.id} className="hover:bg-muted/30">
+                <TableCell className="font-medium tabular-nums text-muted-foreground">
+                  {run.id}
+                </TableCell>
                 <TableCell className="text-sm">{formatDateFr(run.started_at)}</TableCell>
-                <TableCell className="text-sm">{formatDateFr(run.finished_at)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {formatDateFr(run.finished_at)}
+                </TableCell>
                 <TableCell>
                   <StatusBadge status={run.status} />
                 </TableCell>
-                <TableCell className="text-sm">{run.trigger_type}</TableCell>
-                <TableCell className="text-right tabular-nums">{run.tweets_fetched}</TableCell>
                 <TableCell>
-                  {run.summary ? <SummaryToggle summary={run.summary} /> : '—'}
+                  {run.trigger_type ? (
+                    <Badge variant="secondary" className="text-xs font-mono">
+                      {run.trigger_type}
+                    </Badge>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right tabular-nums font-medium">
+                  {run.tweets_fetched}
+                </TableCell>
+                <TableCell>
+                  {run.summary ? <SummaryToggle summary={run.summary} /> : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   {run.error_message ? (
@@ -200,7 +240,7 @@ export function RunsPage() {
                       {run.error_message.slice(0, 80)}
                     </span>
                   ) : (
-                    '—'
+                    <span className="text-muted-foreground">—</span>
                   )}
                 </TableCell>
               </TableRow>

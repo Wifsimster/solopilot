@@ -6,7 +6,14 @@ import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardFooter,
+} from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Link } from 'react-router-dom';
 import {
@@ -16,6 +23,7 @@ import {
   ArrowRight,
   Play,
   AlertCircle,
+  FileText,
 } from 'lucide-react';
 import { humanizeCron, nextCronDate, formatTimeUntil } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/responsive-dialog';
@@ -94,15 +102,16 @@ export function DashboardPage() {
     return (
       <div className="space-y-6">
         <div className="space-y-2">
-          <Skeleton className="h-9 w-48" />
-          <Skeleton className="h-5 w-72" />
+          <Skeleton className="h-4 w-14" />
+          <Skeleton className="h-7 w-36" />
+          <Skeleton className="h-5 w-64" />
         </div>
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          <Skeleton className="h-24 rounded-lg" />
-          <Skeleton className="h-24 rounded-lg" />
-          <Skeleton className="h-24 rounded-lg" />
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
+          <Skeleton className="h-28 rounded-xl" />
         </div>
-        <Skeleton className="h-64 rounded-lg" />
+        <Skeleton className="h-64 rounded-xl" />
       </div>
     );
   }
@@ -110,7 +119,11 @@ export function DashboardPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Dashboard" description="Supervision du bot X AI Weekly" />
+        <PageHeader
+          eyebrow="Veille"
+          title="Dashboard"
+          description="Supervision du bot X AI Weekly"
+        />
         <ErrorState
           message={error}
           context="Impossible de charger le statut"
@@ -134,6 +147,7 @@ export function DashboardPage() {
       </output>
 
       <PageHeader
+        eyebrow="Veille"
         title="Dashboard"
         description="Supervision du bot X AI Weekly"
         actions={
@@ -142,7 +156,7 @@ export function DashboardPage() {
               <Button
                 disabled={running || triggering}
                 aria-label="Lancer un run maintenant"
-                className="hidden sm:inline-flex"
+                className="hidden sm:inline-flex gap-2"
               >
                 <Play className="size-4" aria-hidden="true" />
                 {running || triggering ? 'Run en cours…' : 'Lancer un run'}
@@ -197,66 +211,76 @@ export function DashboardPage() {
       </div>
 
       {lastRun ? (
-        <Card>
-          <CardContent className="p-5 sm:p-6 space-y-5">
+        <Card className="hover:border-muted-foreground/20 transition-colors">
+          <CardHeader className="pb-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="space-y-1 min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wider text-primary">
                   Dernier run · #{lastRun.id}
                 </p>
-                <p className="text-base font-semibold">{lastRun.started_at}</p>
+                <CardTitle className="text-base">{lastRun.started_at}</CardTitle>
+                <CardDescription>
+                  {lastRun.tweets_fetched} message{lastRun.tweets_fetched !== 1 ? 's' : ''} collecté{lastRun.tweets_fetched !== 1 ? 's' : ''}
+                </CardDescription>
               </div>
-              <div className="flex items-center gap-3">
-                <StatusBadge status={lastRun.status} />
-                <span className="text-sm text-muted-foreground">
-                  {lastRun.tweets_fetched} message{lastRun.tweets_fetched !== 1 ? 's' : ''}
-                </span>
-              </div>
+              <StatusBadge status={lastRun.status} />
             </div>
+          </CardHeader>
 
-            {lastRun.summary && (
-              <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Synthèse de la veille
-                </p>
+          {lastRun.summary && (
+            <CardContent className="pt-0 space-y-2">
+              <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <FileText className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Synthèse de la veille
+                  </p>
+                </div>
                 <MarkdownContent content={lastRun.summary} className="text-sm" />
               </div>
-            )}
+            </CardContent>
+          )}
 
-            {lastRun.error_message && (
+          {lastRun.error_message && (
+            <CardContent className="pt-0">
               <details className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-                <summary className="cursor-pointer font-medium text-destructive text-sm">
+                <summary className="cursor-pointer font-medium text-destructive text-sm select-none">
                   Détail de l'erreur
                 </summary>
-                <pre className="mt-2 rounded bg-background p-3 text-xs overflow-x-auto max-h-96 whitespace-pre-wrap">
+                <pre className="mt-3 rounded-lg bg-background p-3 text-xs overflow-x-auto max-h-96 whitespace-pre-wrap">
                   {lastRun.error_message}
                 </pre>
               </details>
-            )}
+            </CardContent>
+          )}
 
-            <div className="flex flex-wrap gap-2 pt-1 border-t -mx-5 sm:-mx-6 px-5 sm:px-6 -mb-1">
-              <Button asChild variant="ghost" size="sm">
-                <Link to="/summaries" className="gap-1">
-                  Toutes les synthèses
-                  <ArrowRight className="size-3.5" aria-hidden="true" />
-                </Link>
-              </Button>
-              <Button asChild variant="ghost" size="sm">
-                <Link to="/runs" className="gap-1">
-                  Historique complet
-                  <ArrowRight className="size-3.5" aria-hidden="true" />
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
+          <CardFooter className="border-t gap-1 py-3">
+            <Button asChild variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
+              <Link to="/summaries">
+                Toutes les synthèses
+                <ArrowRight className="size-3.5" aria-hidden="true" />
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground">
+              <Link to="/runs">
+                Historique complet
+                <ArrowRight className="size-3.5" aria-hidden="true" />
+              </Link>
+            </Button>
+          </CardFooter>
         </Card>
       ) : (
         <Card>
-          <CardContent className="py-10 text-center space-y-3">
-            <p className="text-muted-foreground">Aucun run enregistré pour le moment.</p>
-            <p className="text-sm text-muted-foreground">
-              Lancez un premier run pour voir apparaître ici votre synthèse IA.
-            </p>
+          <CardContent className="py-16 flex flex-col items-center gap-4 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full bg-muted" aria-hidden="true">
+              <Activity className="size-5 text-muted-foreground" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-medium">Aucun run enregistré</p>
+              <p className="text-sm text-muted-foreground">
+                Lancez un premier run pour voir apparaître ici votre synthèse IA.
+              </p>
+            </div>
           </CardContent>
         </Card>
       )}

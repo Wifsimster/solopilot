@@ -1,6 +1,6 @@
 import { useState, useEffect, useReducer } from "react";
 import { useApi } from "@/hooks/use-api";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,7 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Calendar, TrendingUp, Loader2, Send, Check, X, Search, RotateCcw, Trash2, RefreshCw, MessageSquare, MoreVertical } from "lucide-react";
+import { Calendar, TrendingUp, Loader2, Send, Check, X, Search, RotateCcw, Trash2, RefreshCw, MessageSquare, MoreVertical, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { useSelectedProduct, withProductId } from "@/lib/product-context-hooks";
 import type { RunRecord, MonthlySummaryRecord, AvailableMonth, ConfigResponse } from "@/types";
@@ -114,7 +114,7 @@ function DailyView() {
     return (
       <div className="space-y-4">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-40 w-full rounded-lg" />
+          <Skeleton key={i} className="h-44 w-full rounded-xl" />
         ))}
       </div>
     );
@@ -159,12 +159,23 @@ function DailyView() {
 
       {!data || data.summaries.length === 0 ? (
         <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            {hasFilters
-              ? "Aucun résumé ne correspond aux filtres."
-              : "Aucun résumé quotidien disponible."}
+          <CardContent className="py-16 flex flex-col items-center gap-4 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full bg-muted" aria-hidden="true">
+              <FileText className="size-5 text-muted-foreground" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-medium">
+                {hasFilters ? "Aucun résumé ne correspond aux filtres" : "Aucun résumé disponible"}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {hasFilters
+                  ? "Essayez d'élargir votre recherche."
+                  : "Les résumés quotidiens apparaîtront ici après chaque run."}
+              </p>
+            </div>
             {hasFilters && (
-              <Button variant="ghost" size="sm" className="ml-2" onClick={handleResetFilters}>
+              <Button variant="outline" size="sm" onClick={handleResetFilters}>
+                <RotateCcw className="size-3.5" aria-hidden="true" />
                 Réinitialiser les filtres
               </Button>
             )}
@@ -400,22 +411,38 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
   };
 
   return (
-    <Card>
+    <Card className="hover:border-muted-foreground/20 transition-colors">
       <CardHeader className="pb-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <Calendar className="size-4 text-primary shrink-0" aria-hidden="true" />
-            <span className="font-medium text-sm sm:text-base truncate">{formatDate(run.started_at)}</span>
-            <Badge variant="outline" className="ml-1 shrink-0">#{run.id}</Badge>
-            {notifStatus === "sent" && <Badge variant="success">Discord</Badge>}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Calendar className="size-4 text-primary shrink-0" aria-hidden="true" />
+              <span className="font-semibold text-sm sm:text-base truncate">
+                {formatDate(run.started_at)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Badge variant="outline" className="text-xs tabular-nums">#{run.id}</Badge>
+              {notifStatus === "sent" && (
+                <Badge variant="success" className="gap-1">
+                  <Check className="size-3" aria-hidden="true" />
+                  Discord
+                </Badge>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             {run.tweets_fetched > 0 ? (
               <Sheet>
                 <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-9 px-2 text-xs" aria-label={`Voir les ${run.tweets_fetched} tweets de ce run`}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2.5 text-xs gap-1.5"
+                    aria-label={`Voir les ${run.tweets_fetched} tweets de ce run`}
+                  >
                     <MessageSquare className="size-3.5" aria-hidden="true" />
-                    {run.tweets_fetched}
+                    <span className="tabular-nums">{run.tweets_fetched}</span>
                   </Button>
                 </SheetTrigger>
                 <SheetContent>
@@ -427,7 +454,9 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
                 </SheetContent>
               </Sheet>
             ) : (
-              <Badge variant="secondary" className="text-xs">{run.tweets_fetched} tweets</Badge>
+              <Badge variant="secondary" className="text-xs tabular-nums">
+                {run.tweets_fetched} tweets
+              </Badge>
             )}
             <SummaryActionsMenu
               busy={busy}
@@ -447,13 +476,13 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
         <div className={!expanded ? "max-h-[4.5rem] overflow-hidden relative" : ""}>
           <MarkdownContent content={run.summary ?? ""} className="text-sm" />
           {!expanded && (
-            <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-card to-transparent" />
+            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-card to-transparent pointer-events-none" />
           )}
         </div>
         <Button
           variant="ghost"
           size="sm"
-          className="mt-2 text-primary"
+          className="mt-2 h-auto py-1 text-primary hover:text-primary/80 text-xs font-medium"
           onClick={() => setExpanded(!expanded)}
         >
           {expanded ? "Réduire" : "Lire la suite"}
@@ -516,17 +545,21 @@ function MonthlyView() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <div className="font-semibold flex items-center gap-2">
-            <TrendingUp className="size-4 text-primary" />
-            Générer un résumé mensuel
+          <div className="flex items-center gap-2">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground" aria-hidden="true">
+              <TrendingUp className="size-4" />
+            </div>
+            <CardTitle>Générer un résumé mensuel</CardTitle>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1">
-              <label htmlFor="monthly-year-select" className="text-sm text-muted-foreground">Année</label>
+            <div className="space-y-1.5">
+              <label htmlFor="monthly-year-select" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Année
+              </label>
               <Select value={selectedYear} onValueChange={(v) => { setSelectedYear(v); setSelectedMonth(""); }}>
-                <SelectTrigger id="monthly-year-select" className="w-[120px]">
+                <SelectTrigger id="monthly-year-select" className="w-[120px] h-9">
                   <SelectValue placeholder="Année" />
                 </SelectTrigger>
                 <SelectContent>
@@ -536,11 +569,13 @@ function MonthlyView() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <label htmlFor="monthly-month-select" className="text-sm text-muted-foreground">Mois</label>
+            <div className="space-y-1.5">
+              <label htmlFor="monthly-month-select" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Mois
+              </label>
               <Select value={selectedMonth} onValueChange={setSelectedMonth} disabled={!selectedYear}>
-                <SelectTrigger id="monthly-month-select" className="w-[160px]">
-                  <SelectValue placeholder="Mois" />
+                <SelectTrigger id="monthly-month-select" className="w-[180px] h-9">
+                  <SelectValue placeholder="Sélectionner…" />
                 </SelectTrigger>
                 <SelectContent>
                   {monthsForYear.map((m) => (
@@ -554,8 +589,9 @@ function MonthlyView() {
             <Button
               onClick={handleGenerate}
               disabled={!selectedYear || !selectedMonth || generating}
+              className="h-9"
             >
-              {generating && <Loader2 className="mr-2 size-4 animate-spin" />}
+              {generating && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
               {generating ? "Génération…" : "Générer"}
             </Button>
           </div>
@@ -564,15 +600,31 @@ function MonthlyView() {
 
       {existingSummaries && existingSummaries.length > 0 ? (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold">Résumés mensuels générés</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              Résumés mensuels générés
+            </h2>
+            <div className="flex-1 h-px bg-border" aria-hidden="true" />
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {existingSummaries.length}
+            </span>
+          </div>
           {existingSummaries.map((ms) => (
             <MonthlySummaryCard key={ms.id} summary={ms} />
           ))}
         </div>
       ) : (
         <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            Aucun résumé mensuel généré. Sélectionnez un mois ci-dessus pour en créer un.
+          <CardContent className="py-16 flex flex-col items-center gap-4 text-center">
+            <div className="flex size-12 items-center justify-center rounded-full bg-muted" aria-hidden="true">
+              <TrendingUp className="size-5 text-muted-foreground" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-medium">Aucun résumé mensuel</p>
+              <p className="text-sm text-muted-foreground">
+                Sélectionnez un mois ci-dessus pour générer votre premier résumé mensuel.
+              </p>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -595,18 +647,26 @@ function MonthlySummaryCard({ summary }: { summary: MonthlySummaryRecord }) {
   const runIds = parseRunIds(summary.source_run_ids);
 
   return (
-    <Card className="border-l-2 border-l-primary/40 bg-primary/[0.02]">
-      <CardHeader className="pb-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
-            <TrendingUp className="size-4 text-primary" />
-            <span className="font-semibold text-base sm:text-lg">
-              {MONTH_NAMES[summary.month - 1]} {summary.year}
-            </span>
+    <Card className="hover:border-muted-foreground/20 transition-colors">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground" aria-hidden="true">
+              <TrendingUp className="size-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-base sm:text-lg leading-none">
+                {MONTH_NAMES[summary.month - 1]} {summary.year}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Généré le {formatDate(summary.generated_at)}
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary">{runIds.length} jours</Badge>
-            <Badge variant="outline">{formatDate(summary.generated_at)}</Badge>
+          <div className="flex items-center gap-2 shrink-0">
+            <Badge variant="secondary" className="tabular-nums">
+              {runIds.length} jour{runIds.length !== 1 ? "s" : ""}
+            </Badge>
           </div>
         </div>
       </CardHeader>
@@ -614,13 +674,13 @@ function MonthlySummaryCard({ summary }: { summary: MonthlySummaryRecord }) {
         <div className={!expanded ? "max-h-[6rem] overflow-hidden relative" : ""}>
           <MarkdownContent content={summary.summary ?? ""} className="text-sm" />
           {!expanded && (
-            <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-card to-transparent" />
+            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-card to-transparent pointer-events-none" />
           )}
         </div>
         <Button
           variant="ghost"
           size="sm"
-          className="mt-2 text-primary"
+          className="mt-2 h-auto py-1 text-primary hover:text-primary/80 text-xs font-medium"
           onClick={() => setExpanded(!expanded)}
         >
           {expanded ? "Réduire" : "Lire la suite"}
