@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/chart';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
+import { FacturationInvoiceDialog } from '@/components/facturation-invoice-dialog';
 import { useSelectedProduct, withProductId } from '@/lib/product-context-hooks';
 
 interface Invoice {
@@ -205,6 +206,10 @@ export function FacturationPage() {
         title="Facturation"
         description="Ledger local de vos factures. Les relances sont préparées mais jamais envoyées sans votre validation."
       />
+
+      <div className="flex justify-end">
+        <FacturationInvoiceDialog productId={selectedProductId} onCreated={invoices.refetch} />
+      </div>
 
       {stripe.data && (
         <div className="flex flex-wrap items-center gap-3">
