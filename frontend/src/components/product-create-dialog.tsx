@@ -1205,7 +1205,12 @@ function ProductForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-0">
-      <div className="max-h-[65vh] overflow-y-auto space-y-4 pr-1">
+      <div className="max-h-[72vh] overflow-y-auto space-y-4 pr-1">
+      <GenerateAllButton generating={generating} onClick={() => void generateAll()} />
+
+      <div className="grid gap-x-6 gap-y-4 md:grid-cols-2 md:items-start">
+      {/* Left column — identité, configuration et studio de contenu */}
+      <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="product-name">Nom</Label>
         <Input
@@ -1266,13 +1271,16 @@ function ProductForm({
         />
       </div>
 
-      <GenerateAllButton generating={generating} onClick={() => void generateAll()} />
+      <StudioSection state={state} set={set} valuePropRef={valuePropRef} ctaRef={ctaRef} />
+      </div>
 
+      {/* Right column — sources de collecte et détection d'intention */}
+      <div className="space-y-4">
       <SourcesSection state={state} set={set} subredditRef={subredditRef} hnRef={hnRef} />
 
       <IntentSection state={state} set={set} intentRef={intentRef} />
-
-      <StudioSection state={state} set={set} valuePropRef={valuePropRef} ctaRef={ctaRef} />
+      </div>
+      </div>
 
       {state.error && (
         <p className="text-sm text-destructive" role="alert">
@@ -1316,7 +1324,7 @@ export function ProductCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Éditer le produit' : 'Nouveau produit'}</DialogTitle>
           <DialogDescription>
