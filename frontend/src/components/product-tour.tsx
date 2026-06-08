@@ -105,7 +105,7 @@ function cardPosition(rect: Rect | null, placement: TourStep['placement']) {
 
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const estHeight = 200;
+  const estHeight = 240;
   const centerX = rect.left + rect.width / 2 - CARD_WIDTH / 2;
 
   const fitsRight = rect.left + rect.width + CARD_GAP + CARD_WIDTH <= vw;
@@ -249,27 +249,34 @@ export function ProductTour() {
         <h3 className="pr-6 text-sm font-semibold tracking-tight">{step.title}</h3>
         <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
 
-        <div className="mt-4 flex items-center justify-between gap-2">
+        {/* Meta row: progress + skip */}
+        <div className="mt-4 flex items-center justify-between">
           <span className="text-xs tabular-nums text-muted-foreground">
             {index + 1} / {TOUR_STEPS.length}
           </span>
-          <div className="flex items-center gap-2">
-            {!isFirst && (
-              <Button variant="ghost" size="sm" onClick={prev}>
-                <ChevronLeft className="size-4" />
-                Précédent
-              </Button>
-            )}
-            {!isLast && (
-              <Button variant="ghost" size="sm" onClick={finish}>
-                Passer
-              </Button>
-            )}
-            <Button size="sm" onClick={next}>
-              {isLast ? 'Terminer' : 'Suivant'}
-              {!isLast && <ChevronRight className="size-4" />}
+          {!isLast && (
+            <button
+              type="button"
+              onClick={finish}
+              className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Passer la visite
+            </button>
+          )}
+        </div>
+
+        {/* Navigation row */}
+        <div className="mt-3 flex items-center gap-2">
+          {!isFirst && (
+            <Button variant="outline" size="sm" onClick={prev} className="flex-1">
+              <ChevronLeft className="size-4" />
+              Précédent
             </Button>
-          </div>
+          )}
+          <Button size="sm" onClick={next} className="flex-1">
+            {isLast ? 'Terminer' : 'Suivant'}
+            {!isLast && <ChevronRight className="size-4" />}
+          </Button>
         </div>
       </div>
     </div>,
