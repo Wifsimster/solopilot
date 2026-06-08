@@ -1,9 +1,10 @@
+import { useMemo } from 'react';
 import { useApi } from '@/hooks/use-api';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
+import { AgendaCalendar, type SxEvent } from '@/components/agenda-calendar';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
 
 interface CalendarEvent {
@@ -21,36 +22,38 @@ interface AgendaResponse {
   upcoming: CalendarEvent[];
 }
 
-function formatWhen(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(iso);
-  if (!m) return iso;
-  const date = `${m[3]}/${m[2]}`;
-  return m[4] ? `${date} ${m[4]}h${m[5]}` : date;
-}
+const pad = (n: number) => String(n).padStart(2, '0');
 
-function EventRow({ e }: { e: CalendarEvent }) {
-  return (
-    <Card>
-      <CardContent className="flex items-center justify-between gap-3 py-3">
-        <div className="min-w-0">
-          <div className="font-medium truncate">{e.title}</div>
-          <div className="text-xs text-muted-foreground">
-            {[formatWhen(e.starts_at), e.location].filter(Boolean).join(' · ')}
-          </div>
-        </div>
-        <Badge variant="outline" className="text-xs shrink-0">
-          {e.source === 'ics' ? 'Calendrier' : 'Manuel'}
-        </Badge>
-      </CardContent>
-    </Card>
-  );
+/** Convert our ISO event to Schedule-X's `YYYY-MM-DD[ HH:mm]` date strings. */
+function toSx(e: CalendarEvent): SxEvent {
+  const timed = /T\d{2}:\d{2}/.test(e.starts_at);
+  const fmt = (iso: string) => iso.replace('T', ' ').slice(0, timed ? 16 : 10);
+  const start = fmt(e.starts_at);
+  let end = start;
+  if (e.ends_at && /T\d{2}:\d{2}/.test(e.ends_at) === timed) {
+    end = fmt(e.ends_at);
+  } else if (timed) {
+    const d = new Date(e.starts_at);
+    d.setHours(d.getHours() + 1);
+    end = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  return { id: e.id, title: e.title, start, end };
 }
 
 export function AgendaPage() {
-  const { selectedProduct } = useSelectedProduct();
+  const { selectedProductId } = useSelectedProduct();
   const { data, loading, error, refetch } = useApi<AgendaResponse>('/api/agenda', {
-    productId: selectedProduct,
+    productId: selectedProductId,
   });
+
+  const events = useMemo<SxEvent[]>(() => {
+    if (!data) return [];
+    const byId = new Map<string, CalendarEvent>();
+    for (const e of [...data.today, ...data.upcoming]) byId.set(e.id, e);
+    return [...byId.values()].map(toSx);
+  }, [data]);
+
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
 
   if (error) {
     return (
@@ -69,51 +72,16 @@ export function AgendaPage() {
       />
 
       {loading || !data ? (
-        <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full" />
-          ))}
-        </div>
+        <Skeleton className="h-[32rem] w-full" />
+      ) : events.length === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            Aucun événement. Configurez un flux ICS pour les importer ou ajoutez-en manuellement.
+          </CardContent>
+        </Card>
       ) : (
-        <>
-          <div>
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Aujourd'hui ({data.today.length})
-            </h2>
-            {data.today.length === 0 ? (
-              <Card>
-                <CardContent className="py-6 text-center text-sm text-muted-foreground">
-                  Aucun événement aujourd'hui.
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {data.today.map((e) => (
-                  <EventRow key={e.id} e={e} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              À venir
-            </h2>
-            {data.upcoming.length === 0 ? (
-              <Card>
-                <CardContent className="py-6 text-center text-sm text-muted-foreground">
-                  Aucun événement à venir. Configurez un flux ICS pour les importer.
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {data.upcoming.map((e) => (
-                  <EventRow key={e.id} e={e} />
-                ))}
-              </div>
-            )}
-          </div>
-        </>
+        // key on theme so Schedule-X (which reads isDark at creation) re-themes on toggle.
+        <AgendaCalendar key={isDark ? 'dark' : 'light'} events={events} isDark={isDark} />
       )}
     </div>
   );

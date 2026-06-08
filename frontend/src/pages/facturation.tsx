@@ -1,7 +1,17 @@
+import { useMemo } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
+import { Bar, BarChart, CartesianGrid, XAxis } from 'recharts';
 import { useApi } from '@/hooks/use-api';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DataTable } from '@/components/ui/data-table';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
@@ -29,21 +39,89 @@ function amount(cents: number, currency: string): string {
   return `${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
 }
 
-function statusBadge(status: Invoice['status']) {
-  const map: Record<Invoice['status'], { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-    paid: { label: 'Payée', variant: 'default' },
-    sent: { label: 'Envoyée', variant: 'secondary' },
-    draft: { label: 'Brouillon', variant: 'outline' },
-    void: { label: 'Annulée', variant: 'destructive' },
-  };
-  const { label, variant } = map[status];
-  return <Badge variant={variant} className="text-xs">{label}</Badge>;
+const STATUS_META: Record<
+  Invoice['status'],
+  { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
+> = {
+  paid: { label: 'Payée', variant: 'default' },
+  sent: { label: 'Envoyée', variant: 'secondary' },
+  draft: { label: 'Brouillon', variant: 'outline' },
+  void: { label: 'Annulée', variant: 'destructive' },
+};
+
+const MONTHS_FR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+
+const revenueConfig = {
+  revenue: { label: 'CA encaissé', color: 'var(--chart-2)' },
+} satisfies ChartConfig;
+
+/** Sum paid invoices by calendar month (last 6 months that have data). */
+function monthlyRevenue(invoices: Invoice[]): { month: string; revenue: number }[] {
+  const byMonth = new Map<string, number>();
+  for (const inv of invoices) {
+    if (inv.status !== 'paid') continue;
+    const m = /^(\d{4})-(\d{2})/.exec(inv.issued_on);
+    if (!m) continue;
+    const key = `${m[1]}-${m[2]}`;
+    byMonth.set(key, (byMonth.get(key) ?? 0) + inv.amount_cents);
+  }
+  return [...byMonth.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([key, cents]) => ({
+      month: `${MONTHS_FR[Number(key.slice(5, 7)) - 1]}`,
+      revenue: Math.round(cents / 100),
+    }));
 }
 
+const columns: ColumnDef<Invoice>[] = [
+  {
+    accessorKey: 'number',
+    header: 'Facture',
+    cell: ({ row }) => <span className="font-medium">{row.original.number}</span>,
+  },
+  { accessorKey: 'client_name', header: 'Client' },
+  {
+    accessorKey: 'issued_on',
+    header: 'Émise',
+    cell: ({ row }) => <span className="text-muted-foreground">{row.original.issued_on}</span>,
+  },
+  {
+    accessorKey: 'due_on',
+    header: 'Échéance',
+    cell: ({ row }) => <span className="text-muted-foreground">{row.original.due_on}</span>,
+  },
+  {
+    accessorKey: 'amount_cents',
+    header: 'Montant',
+    cell: ({ row }) => (
+      <span className="font-semibold tabular-nums">
+        {amount(row.original.amount_cents, row.original.currency)}
+      </span>
+    ),
+  },
+  {
+    accessorKey: 'status',
+    header: 'Statut',
+    cell: ({ row }) => {
+      const { label, variant } = STATUS_META[row.original.status];
+      return (
+        <Badge variant={variant} className="text-xs">
+          {label}
+        </Badge>
+      );
+    },
+  },
+];
+
 export function FacturationPage() {
-  const { selectedProduct } = useSelectedProduct();
-  const invoices = useApi<Invoice[]>('/api/facturation/invoices', { productId: selectedProduct });
-  const relances = useApi<Relance[]>('/api/facturation/relances', { productId: selectedProduct });
+  const { selectedProductId } = useSelectedProduct();
+  const invoices = useApi<Invoice[]>('/api/facturation/invoices', { productId: selectedProductId });
+  const relances = useApi<Relance[]>('/api/facturation/relances', { productId: selectedProductId });
+
+  const list = useMemo(() => invoices.data ?? [], [invoices.data]);
+  const revenue = useMemo(() => monthlyRevenue(list), [list]);
+  const drafts = relances.data ?? [];
 
   if (invoices.error) {
     return (
@@ -53,9 +131,6 @@ export function FacturationPage() {
       </div>
     );
   }
-
-  const list = invoices.data ?? [];
-  const drafts = relances.data ?? [];
 
   return (
     <div className="space-y-6">
@@ -69,7 +144,9 @@ export function FacturationPage() {
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between text-base font-semibold">
               Relances à valider
-              <Badge variant="destructive" className="text-xs">{drafts.length}</Badge>
+              <Badge variant="destructive" className="text-xs">
+                {drafts.length}
+              </Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -86,42 +163,40 @@ export function FacturationPage() {
         </Card>
       )}
 
+      {revenue.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="text-base font-semibold">CA encaissé par mois</div>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={revenueConfig} className="aspect-[3/1] w-full">
+              <BarChart accessibilityLayer data={revenue}>
+                <CartesianGrid vertical={false} />
+                <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent formatter={(v) => `${Number(v).toLocaleString('fr-FR')} €`} />}
+                />
+                <Bar dataKey="revenue" fill="var(--color-revenue)" radius={4} />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      )}
+
       {invoices.loading ? (
         <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-16 w-full" />
           ))}
         </div>
-      ) : list.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            Aucune facture. Le module fonctionne en ledger local ; la synchronisation Stripe est
-            optionnelle.
-          </CardContent>
-        </Card>
       ) : (
-        <div className="space-y-2">
-          {list.map((inv) => (
-            <Card key={inv.id}>
-              <CardContent className="flex items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <div className="font-medium truncate">
-                    {inv.number} · {inv.client_name}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Émise le {inv.issued_on} · échéance {inv.due_on}
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="font-semibold tabular-nums">
-                    {amount(inv.amount_cents, inv.currency)}
-                  </span>
-                  {statusBadge(inv.status)}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <DataTable
+          columns={columns}
+          data={list}
+          initialSorting={[{ id: 'issued_on', desc: true }]}
+          emptyMessage="Aucune facture. Le module fonctionne en ledger local ; la synchronisation Stripe est optionnelle."
+        />
       )}
     </div>
   );
