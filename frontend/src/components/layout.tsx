@@ -26,6 +26,7 @@ import {
   Wand2,
   LayoutDashboard,
   FileText,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -53,6 +54,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
       { to: '/summaries', label: 'Synthèses', icon: FileText },
       { to: '/runs', label: 'Historique', icon: History },
+      { to: '/workflows', label: 'Workflows', icon: Workflow },
     ],
   },
   {

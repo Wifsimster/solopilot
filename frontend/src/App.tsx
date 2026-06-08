@@ -6,6 +6,7 @@ import { Layout } from "@/components/layout";
 import { ProductProvider } from "@/lib/product-context";
 import { DashboardPage } from "@/pages/dashboard";
 import { RunsPage } from "@/pages/runs";
+import { WorkflowsPage } from "@/pages/workflows";
 import { SummariesPage } from "@/pages/summaries";
 import { SettingsPage } from "@/pages/settings";
 import { SetupPage } from "@/pages/setup";
@@ -24,6 +25,7 @@ export function App() {
               <Route element={<Layout />}>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/runs" element={<RunsPage />} />
+                <Route path="/workflows" element={<WorkflowsPage />} />
                 <Route path="/summaries" element={<SummariesPage />} />
                 <Route path="/products" element={<ProductsPage />} />
                 <Route path="/leads" element={<LeadsPage />} />
