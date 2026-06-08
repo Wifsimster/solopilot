@@ -1,9 +1,9 @@
-name: x-ai-weekly-bot
+name: solopilot
 
 services:
-  x-ai-weekly-bot:
+  solopilot:
     image: ghcr.io/wifsimster/solopilot:latest
-    container_name: x-ai-weekly-bot
+    container_name: solopilot
     restart: unless-stopped
     ports:
       - "3000:3000"
