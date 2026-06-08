@@ -1,12 +1,13 @@
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { useApi } from '@/hooks/use-api';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
-import { useSelectedProduct } from '@/lib/product-context-hooks';
-
-type Stage = 'nouveau' | 'qualifie' | 'proposition' | 'gagne' | 'perdu';
+import { DealPipeline, type Deal, type Stage } from '@/components/deal-pipeline';
+import { useSelectedProduct, withProductId } from '@/lib/product-context-hooks';
 
 interface Contact {
   id: string;
@@ -16,28 +17,34 @@ interface Contact {
   status: string;
 }
 
-interface Deal {
-  id: string;
-  contact_id: string;
-  title: string;
-  stage: Stage;
-  amount_cents: number;
-}
-
-const STAGES: { key: Stage; label: string }[] = [
-  { key: 'nouveau', label: 'Nouveau' },
-  { key: 'qualifie', label: 'Qualifié' },
-  { key: 'proposition', label: 'Proposition' },
-  { key: 'gagne', label: 'Gagné' },
-  { key: 'perdu', label: 'Perdu' },
-];
-
-const euros = (cents: number) => `${(cents / 100).toFixed(0)} €`;
-
 export function CrmPage() {
-  const { selectedProduct } = useSelectedProduct();
-  const contacts = useApi<Contact[]>('/api/crm/contacts', { productId: selectedProduct });
-  const deals = useApi<Deal[]>('/api/crm/deals', { productId: selectedProduct });
+  const { selectedProductId } = useSelectedProduct();
+  const contacts = useApi<Contact[]>('/api/crm/contacts', { productId: selectedProductId });
+  const deals = useApi<Deal[]>('/api/crm/deals', { productId: selectedProductId });
+
+  // Local copy so the pipeline can move cards optimistically before the API confirms.
+  const [board, setBoard] = useState<Deal[]>([]);
+  useEffect(() => {
+    if (deals.data) setBoard(deals.data);
+  }, [deals.data]);
+
+  const contactName = (id: string) => contacts.data?.find((c) => c.id === id)?.name ?? 'Contact';
+
+  async function moveDeal(dealId: string, stage: Stage) {
+    const previous = board;
+    setBoard((b) => b.map((d) => (d.id === dealId ? { ...d, stage } : d)));
+    try {
+      const res = await fetch(withProductId(`/api/crm/deals/${dealId}/stage`, selectedProductId), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage }),
+      });
+      if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
+    } catch {
+      setBoard(previous);
+      toast.error("Impossible de déplacer l'opportunité.");
+    }
+  }
 
   if (contacts.error) {
     return (
@@ -48,15 +55,11 @@ export function CrmPage() {
     );
   }
 
-  const contactName = (id: string) =>
-    contacts.data?.find((c) => c.id === id)?.name ?? 'Contact';
-  const dealList = deals.data ?? [];
-
   return (
     <div className="space-y-6">
       <PageHeader
         title="CRM"
-        description="Vos contacts et votre pipeline d'opportunités. Les relances des affaires dormantes sont préparées pour validation."
+        description="Glissez une opportunité d'une colonne à l'autre pour la faire avancer. Les relances des affaires dormantes sont préparées pour validation."
       />
 
       <div>
@@ -70,36 +73,7 @@ export function CrmPage() {
             ))}
           </div>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {STAGES.map((stage) => {
-              const inStage = dealList.filter((d) => d.stage === stage.key);
-              const total = inStage.reduce((s, d) => s + d.amount_cents, 0);
-              return (
-                <Card key={stage.key}>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between text-sm font-semibold">
-                      {stage.label}
-                      <Badge variant="outline" className="text-xs">{inStage.length}</Badge>
-                    </div>
-                    {total > 0 && (
-                      <div className="text-xs text-muted-foreground">{euros(total)}</div>
-                    )}
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {inStage.map((d) => (
-                      <div key={d.id} className="rounded-md border p-2 text-xs">
-                        <div className="font-medium">{d.title}</div>
-                        <div className="text-muted-foreground">{contactName(d.contact_id)}</div>
-                        {d.amount_cents > 0 && (
-                          <div className="tabular-nums">{euros(d.amount_cents)}</div>
-                        )}
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+          <DealPipeline deals={board} contactName={contactName} onMove={moveDeal} />
         )}
       </div>
 
@@ -130,7 +104,9 @@ export function CrmPage() {
                       {[c.company, c.email].filter(Boolean).join(' · ') || '—'}
                     </div>
                   </div>
-                  <Badge variant="outline" className="text-xs shrink-0">{c.status}</Badge>
+                  <Badge variant="outline" className="text-xs shrink-0">
+                    {c.status}
+                  </Badge>
                 </CardContent>
               </Card>
             ))}

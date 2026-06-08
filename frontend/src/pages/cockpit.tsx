@@ -52,9 +52,9 @@ interface Briefing {
 }
 
 export function CockpitPage() {
-  const { selectedProduct } = useSelectedProduct();
+  const { selectedProductId } = useSelectedProduct();
   const { data, loading, error, refetch } = useApi<Briefing>('/api/cockpit', {
-    productId: selectedProduct,
+    productId: selectedProductId,
   });
 
   if (error) {

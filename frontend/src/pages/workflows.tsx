@@ -95,9 +95,9 @@ function WorkflowRow({ wf }: { wf: WorkflowSummary }) {
 }
 
 export function WorkflowsPage() {
-  const { selectedProduct } = useSelectedProduct();
+  const { selectedProductId } = useSelectedProduct();
   const { data, loading, error, refetch } = useApi<WorkflowSummary[]>('/api/workflows', {
-    productId: selectedProduct,
+    productId: selectedProductId,
   });
 
   if (error) {

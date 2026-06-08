@@ -49,7 +49,7 @@ function Gauge({ label, value, pct, exceeded }: { label: string; value: string; 
         <div className="text-2xl font-bold tabular-nums">{value}</div>
         <div className="h-2 w-full rounded-full bg-muted">
           <div
-            className={`h-2 rounded-full ${exceeded ? 'bg-destructive' : pct >= 80 ? 'bg-amber-500' : 'bg-primary'}`}
+            className={`h-2 rounded-full ${exceeded ? 'bg-destructive' : pct >= 80 ? 'bg-warning' : 'bg-primary'}`}
             style={{ width: `${clamped}%` }}
           />
         </div>
@@ -59,9 +59,9 @@ function Gauge({ label, value, pct, exceeded }: { label: string; value: string; 
 }
 
 export function ComptabilitePage() {
-  const { selectedProduct } = useSelectedProduct();
+  const { selectedProductId } = useSelectedProduct();
   const { data, loading, error, refetch } = useApi<ComptaResponse>('/api/comptabilite', {
-    productId: selectedProduct,
+    productId: selectedProductId,
   });
 
   if (error) {
