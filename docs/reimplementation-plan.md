@@ -55,6 +55,17 @@ export type Step<I = unknown, O = unknown> = (ctx: StepContext, input: I) => Pro
 
 ## 2. Le moteur (in-process, ~300 lignes)
 
+> **État d'avancement.** Le squelette du moteur est déjà en place et compile
+> (tsc strict + eslint) **sans être câblé au scheduler** — donc zéro impact prod :
+> - `src/workflow/types.ts` — les primitives (Workflow, Trigger, Step, StepContext, WorkflowRun).
+> - `src/workflow/registry.ts` — registre in-memory des workflows et étapes.
+> - `src/workflow/engine.ts` — exécuteur séquentiel avec dégradation gracieuse.
+> - `src/modules/veille/workflows.ts` — définitions `veille.collect/digest/monthly`
+>   (données pures, `enabled: false`) qui montrent le mapping du bot actuel.
+>
+> Reste à faire en Phase 1 : implémenter/enregistrer les étapes de base, le
+> `runner` (persistance `workflow_runs`) et le `scheduler` qui lit les triggers.
+
 Pas de file externe, pas de Redis — mono-processus, SQLite, comme le socle actuel.
 
 - `engine.ts` — résout un `Workflow`, exécute ses `steps` en séquence en passant
