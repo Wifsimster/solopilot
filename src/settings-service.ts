@@ -13,6 +13,10 @@ const CREDENTIAL_KEYS = [
   'X_SESSION_AUTH_TOKEN',
   'X_SESSION_CSRF_TOKEN',
   'DISCORD_WEBHOOK_URL',
+  // LinkedIn auto-publish session cookies (drive the web UI as the logged-in
+  // user). li_at is the auth cookie; JSESSIONID is the CSRF cookie.
+  'LINKEDIN_LI_AT',
+  'LINKEDIN_JSESSIONID',
 ] as const;
 
 export type EditableKey = (typeof EDITABLE_KEYS)[number];

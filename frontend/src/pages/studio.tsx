@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/page-header';
 import {
   Select,
@@ -18,6 +19,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import {
   AlertCircle,
   AlertTriangle,
@@ -36,6 +55,10 @@ import {
   Save,
   Search,
   ArrowDownUp,
+  Send,
+  Plug,
+  RefreshCw,
+  CheckCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, formatRelativeFr } from '@/lib/utils';
@@ -50,10 +73,12 @@ import type {
   ContentLanguage,
   ContentVoice,
   ProductRecord,
+  PublishConnection,
   TargetSource,
 } from '@/types';
 
-type StatusFilter = ContentDraftStatus;
+// The statuses that get their own tab (transient 'publishing'/'failed' do not).
+type StatusFilter = 'pending' | 'edited' | 'used' | 'discarded' | 'published';
 
 type SortKey = 'recent' | 'oldest' | 'longest';
 
@@ -86,12 +111,27 @@ const TABS: TabConfig[] = [
     emptyHint: "Marque un draft comme utilisé après l'avoir posté.",
   },
   {
+    id: 'published',
+    label: 'Publiées',
+    emptyTitle: 'Aucun draft publié.',
+    emptyHint: 'Les posts publiés automatiquement par Solopilot apparaîtront ici.',
+  },
+  {
     id: 'discarded',
     label: 'Jetées',
     emptyTitle: 'Aucun draft jeté.',
     emptyHint: 'Les versions écartées apparaîtront ici.',
   },
 ];
+
+// Platforms that support one-click auto-publish today, and how to label them.
+const PUBLISH_PLATFORM_LABEL: Partial<Record<TargetSource, string>> = {
+  generic: 'LinkedIn',
+};
+
+function publishPlatformLabel(source: TargetSource | null): string | null {
+  return source ? (PUBLISH_PLATFORM_LABEL[source] ?? null) : null;
+}
 
 const USED_ON_OPTIONS: { value: string; label: string }[] = [
   { value: 'x', label: 'X' },
@@ -140,15 +180,18 @@ function statusLabel(status: ContentDraftStatus): string {
   if (status === 'pending') return 'En attente';
   if (status === 'edited') return 'Éditée';
   if (status === 'used') return 'Utilisée';
+  if (status === 'published') return 'Publiée';
+  if (status === 'publishing') return 'Publication…';
+  if (status === 'failed') return 'Échec';
   return 'Jetée';
 }
 
 function statusBadgeVariant(
   status: ContentDraftStatus,
 ): 'secondary' | 'success' | 'warning' | 'destructive' {
-  if (status === 'used') return 'success';
+  if (status === 'used' || status === 'published') return 'success';
   if (status === 'edited') return 'warning';
-  if (status === 'discarded') return 'destructive';
+  if (status === 'discarded' || status === 'failed') return 'destructive';
   return 'secondary';
 }
 
@@ -192,14 +235,22 @@ function CharCount({ length, source }: { length: number; source: TargetSource | 
 
 interface DraftCardProps {
   draft: ContentDraft;
+  connection?: PublishConnection;
   onMutated: () => void;
 }
 
-function DraftCard({ draft, onMutated }: DraftCardProps) {
+function DraftCard({ draft, connection, onMutated }: DraftCardProps) {
   const initialText = draft.edited_text ?? draft.text;
   const [text, setText] = useState(initialText);
   const [usedOn, setUsedOn] = useState<string>(draft.used_on ?? defaultUsedOn(draft.target_source));
   const [busy, setBusy] = useState<ContentDraftStatus | 'save' | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const platformLabel = publishPlatformLabel(draft.target_source);
+  const canAutoPublish = platformLabel !== null; // platform supported by an adapter
+  const isConnected = connection?.status === 'connected';
+  const isPublished = draft.status === 'published';
 
   // Keep textarea in sync if the server-side draft changes (e.g. after refetch)
   // while preserving in-flight user edits. The last saved value lives in a ref
@@ -280,6 +331,34 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
     await patch({ status: 'pending' }, 'pending', 'Draft restauré.');
   }, [patch]);
 
+  const handlePublish = useCallback(async () => {
+    setConfirmOpen(false);
+    // Persist any pending edits first so we publish exactly what's on screen.
+    if (dirty) {
+      await handleSave();
+    }
+    setPublishing(true);
+    try {
+      const res = await fetch(`/api/content-drafts/${draft.id}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) {
+        toast.error(json?.message || `Échec de la publication (HTTP ${res.status}).`);
+        onMutated();
+        return;
+      }
+      toast.success(`Publié sur ${platformLabel ?? 'la plateforme'}.`);
+      onMutated();
+    } catch {
+      toast.error('Erreur réseau lors de la publication.');
+    } finally {
+      setPublishing(false);
+    }
+  }, [dirty, handleSave, draft.id, onMutated, platformLabel]);
+
   // Subtle left accent border colored by the draft's source. Uses a literal
   // class from SOURCE_META so Tailwind's compiler emits it (runtime-built
   // class names like `bg-…`→`border-l-…` are not detected).
@@ -324,6 +403,25 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
           <CharCount length={text.length} source={draft.target_source} />
         </div>
 
+        {draft.publish_error && !isPublished && (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription>
+              Dernière publication échouée : {draft.publish_error}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {canAutoPublish && !isConnected && !isPublished && draft.status !== 'discarded' && (
+          <Alert variant="warning">
+            <AlertTriangle className="size-4" />
+            <AlertDescription>
+              {platformLabel} n’est pas connecté — connecte ta session en haut de la page pour
+              publier automatiquement.
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border">
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -355,7 +453,28 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {draft.status !== 'used' && (
+            {canAutoPublish && !isPublished && draft.status !== 'discarded' && (
+              <Button
+                size="sm"
+                className="h-8"
+                onClick={() => {
+                  if (!isConnected) {
+                    toast.error(`${platformLabel} n'est pas connecté.`);
+                    return;
+                  }
+                  setConfirmOpen(true);
+                }}
+                disabled={publishing || busy !== null || !text.trim()}
+              >
+                {publishing ? (
+                  <Loader2 className="size-3.5 mr-1 animate-spin" />
+                ) : (
+                  <Send className="size-3.5 mr-1" />
+                )}
+                {publishing ? 'Publication…' : `Publier sur ${platformLabel}`}
+              </Button>
+            )}
+            {draft.status !== 'used' && !isPublished && (
               <>
                 <Select value={usedOn} onValueChange={setUsedOn}>
                   <SelectTrigger className="h-8 w-[110px] text-xs" aria-label="Plateforme utilisée">
@@ -385,7 +504,7 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
                 </Button>
               </>
             )}
-            {draft.status !== 'discarded' && draft.status !== 'used' && (
+            {draft.status !== 'discarded' && draft.status !== 'used' && !isPublished && (
               <Button
                 variant="outline"
                 size="sm"
@@ -426,7 +545,49 @@ function DraftCard({ draft, onMutated }: DraftCardProps) {
             {draft.used_at ? ` ${formatRelativeFr(draft.used_at)}` : ''}.
           </p>
         )}
+
+        {isPublished && (
+          <p className="inline-flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <CheckCircle className="size-3.5 text-success" />
+            Publié sur {publishPlatformLabel(draft.target_source) ?? draft.used_on}
+            {draft.published_at ? ` ${formatRelativeFr(draft.published_at)}` : ''}.
+            {draft.published_url && (
+              <a
+                href={draft.published_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-0.5 underline underline-offset-2 hover:text-foreground"
+              >
+                Voir le post <ExternalLink className="size-3" />
+              </a>
+            )}
+          </p>
+        )}
       </CardContent>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Publier sur {platformLabel} ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Solopilot va publier ce post sur ton compte {platformLabel} en pilotant le navigateur
+              comme un humain. Vérifie le texte ci-dessous avant de confirmer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/40 p-3 text-sm">
+              {text}
+            </div>
+            <div className="flex justify-end">
+              <CharCount length={text.length} source={draft.target_source} />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={handlePublish}>Publier maintenant</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
@@ -459,15 +620,22 @@ function NoResultsState({ onReset }: { onReset: () => void }) {
 
 function DraftsList({
   drafts,
+  connectionsBySource,
   onMutated,
 }: {
   drafts: ContentDraft[];
+  connectionsBySource: Partial<Record<TargetSource, PublishConnection>>;
   onMutated: () => void;
 }) {
   return (
     <div className="space-y-3">
       {drafts.map((d) => (
-        <DraftCard key={d.id} draft={d} onMutated={onMutated} />
+        <DraftCard
+          key={d.id}
+          draft={d}
+          connection={d.target_source ? connectionsBySource[d.target_source] : undefined}
+          onMutated={onMutated}
+        />
       ))}
     </div>
   );
@@ -576,6 +744,191 @@ function ProductContextStrip({ product }: { product: ProductRecord }) {
   );
 }
 
+const CONNECTION_STATUS_META: Record<
+  PublishConnection['status'],
+  { label: string; variant: 'success' | 'warning' | 'secondary' | 'destructive' }
+> = {
+  connected: { label: 'Connecté', variant: 'success' },
+  expired: { label: 'Session expirée', variant: 'warning' },
+  missing: { label: 'Non connecté', variant: 'secondary' },
+  unsupported: { label: 'Bientôt', variant: 'secondary' },
+};
+
+/**
+ * Per-platform publish connections: shows session status and lets the user
+ * connect by pasting their logged-in browser cookies (mirrors the X cookie
+ * flow). Only platforms with an auto-publish adapter are listed.
+ */
+function ConnectionsCard({
+  connections,
+  onChanged,
+}: {
+  connections: PublishConnection[];
+  onChanged: () => void;
+}) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [liAt, setLiAt] = useState('');
+  const [jsession, setJsession] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState<string | null>(null);
+
+  const supported = connections.filter((c) => c.supported);
+  if (supported.length === 0) return null;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/publish/connections/linkedin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          li_at: liAt.trim(),
+          jsessionid: jsession.trim() || undefined,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) {
+        toast.error(json?.message || `Erreur HTTP ${res.status}`);
+        return;
+      }
+      toast.success(json?.message || 'Session enregistrée.');
+      setDialogOpen(false);
+      setLiAt('');
+      setJsession('');
+      onChanged();
+    } catch {
+      toast.error('Erreur réseau lors de l’enregistrement.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async (platform: string) => {
+    setTesting(platform);
+    try {
+      const res = await fetch(`/api/publish/connections/${platform}/test`, { method: 'POST' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) {
+        toast.error(json?.message || 'Test de connexion échoué.');
+        return;
+      }
+      if (json?.state === 'connected') {
+        toast.success('Session valide.');
+      } else {
+        toast.error(`Session ${json?.state === 'expired' ? 'expirée' : 'introuvable'}.`);
+      }
+      onChanged();
+    } catch {
+      toast.error('Erreur réseau lors du test.');
+    } finally {
+      setTesting(null);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold">Connexions</CardTitle>
+        <CardDescription>
+          Connecte tes comptes pour publier automatiquement, sans copier-coller. Solopilot pilote le
+          navigateur avec ta session.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {supported.map((conn) => {
+          const meta = CONNECTION_STATUS_META[conn.status];
+          const label = PUBLISH_PLATFORM_LABEL[conn.source] ?? conn.platform;
+          return (
+            <div
+              key={conn.source}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
+            >
+              <div className="flex items-center gap-2">
+                <Plug className="size-4 text-muted-foreground" />
+                <span className="text-sm font-medium">{label}</span>
+                <Badge variant={meta.variant} className="text-[10px] px-1.5 py-0">
+                  {meta.label}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => handleTest(conn.source)}
+                  disabled={testing !== null || conn.status === 'missing'}
+                >
+                  {testing === conn.source ? (
+                    <Loader2 className="size-3.5 mr-1 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-3.5 mr-1" />
+                  )}
+                  Tester
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setDialogOpen(true)}
+                >
+                  {conn.status === 'connected' ? 'Reconnecter' : 'Connecter'}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Connecter LinkedIn</DialogTitle>
+            <DialogDescription>
+              Colle le cookie de session d’un navigateur déjà connecté à LinkedIn. Ouvre
+              linkedin.com (connecté) → Outils de développement → Application → Cookies → copie la
+              valeur de <code>li_at</code> (et éventuellement <code>JSESSIONID</code>).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="li_at">Cookie li_at</Label>
+              <Input
+                id="li_at"
+                value={liAt}
+                onChange={(e) => setLiAt(e.target.value)}
+                placeholder="AQEDA…"
+                autoComplete="off"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="jsessionid">Cookie JSESSIONID (optionnel)</Label>
+              <Input
+                id="jsessionid"
+                value={jsession}
+                onChange={(e) => setJsession(e.target.value)}
+                placeholder='"ajax:…"'
+                autoComplete="off"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Ces identifiants sont stockés comme des secrets et masqués dans l’API.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
+              Annuler
+            </Button>
+            <Button onClick={handleSave} disabled={saving || !liAt.trim()}>
+              {saving ? <Loader2 className="size-3.5 mr-1 animate-spin" /> : null}
+              Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
 export function StudioPage() {
   const { selectedProductId } = useSelectedProduct();
   const [activeTab, setActiveTab] = useState<StatusFilter>('pending');
@@ -608,15 +961,28 @@ export function StudioPage() {
   const discardedReq = useApi<ContentDraft[]>('/api/content-drafts?status=discarded&kind=post', {
     productId: selectedProductId,
   });
+  const publishedReq = useApi<ContentDraft[]>('/api/content-drafts?status=published&kind=post', {
+    productId: selectedProductId,
+  });
+
+  const connectionsReq = useApi<PublishConnection[]>('/api/publish/connections');
+  const connectionsBySource = useMemo<Partial<Record<TargetSource, PublishConnection>>>(() => {
+    const map: Partial<Record<TargetSource, PublishConnection>> = {};
+    for (const conn of connectionsReq.data ?? []) {
+      map[conn.source] = conn;
+    }
+    return map;
+  }, [connectionsReq.data]);
 
   const requestsByStatus = useMemo(
     () => ({
       pending: pendingReq,
       edited: editedReq,
       used: usedReq,
+      published: publishedReq,
       discarded: discardedReq,
     }),
-    [pendingReq, editedReq, usedReq, discardedReq],
+    [pendingReq, editedReq, usedReq, publishedReq, discardedReq],
   );
 
   const counts = useMemo<Record<StatusFilter, number>>(
@@ -624,20 +990,27 @@ export function StudioPage() {
       pending: pendingReq.data?.length ?? 0,
       edited: editedReq.data?.length ?? 0,
       used: usedReq.data?.length ?? 0,
+      published: publishedReq.data?.length ?? 0,
       discarded: discardedReq.data?.length ?? 0,
     }),
-    [pendingReq.data, editedReq.data, usedReq.data, discardedReq.data],
+    [pendingReq.data, editedReq.data, usedReq.data, publishedReq.data, discardedReq.data],
   );
 
-  const totalGenerated = counts.pending + counts.edited + counts.used + counts.discarded;
-  const usageRate = totalGenerated > 0 ? Math.round((counts.used / totalGenerated) * 100) : 0;
+  const totalGenerated =
+    counts.pending + counts.edited + counts.used + counts.published + counts.discarded;
+  const usageRate =
+    totalGenerated > 0
+      ? Math.round(((counts.used + counts.published) / totalGenerated) * 100)
+      : 0;
 
   const refetchAll = useCallback(() => {
     pendingReq.refetch();
     editedReq.refetch();
     usedReq.refetch();
+    publishedReq.refetch();
     discardedReq.refetch();
-  }, [pendingReq, editedReq, usedReq, discardedReq]);
+    connectionsReq.refetch();
+  }, [pendingReq, editedReq, usedReq, publishedReq, discardedReq, connectionsReq]);
 
   const resetFilters = useCallback(() => {
     setSearch('');
@@ -689,9 +1062,11 @@ export function StudioPage() {
     (pendingReq.loading && !pendingReq.data) ||
     (editedReq.loading && !editedReq.data) ||
     (usedReq.loading && !usedReq.data) ||
+    (publishedReq.loading && !publishedReq.data) ||
     (discardedReq.loading && !discardedReq.data);
 
-  const firstError = pendingReq.error || editedReq.error || usedReq.error || discardedReq.error;
+  const firstError =
+    pendingReq.error || editedReq.error || usedReq.error || publishedReq.error || discardedReq.error;
 
   const lang: ContentLanguage = productReq.data?.content_language ?? 'fr';
   const langLabel = lang === 'en' ? 'anglais' : 'français';
@@ -735,10 +1110,15 @@ export function StudioPage() {
       <div className="flex flex-wrap items-center gap-2">
         <StatChip label="En attente" value={String(counts.pending)} />
         <StatChip label="Éditées" value={String(counts.edited)} />
+        <StatChip label="Publiées" value={String(counts.published)} />
         <StatChip label="Utilisées" value={String(counts.used)} />
         <StatChip label="Total générés" value={String(totalGenerated)} />
         <StatChip label="Taux d’utilisation" value={`${usageRate} %`} />
       </div>
+
+      {connectionsReq.data && (
+        <ConnectionsCard connections={connectionsReq.data} onChanged={connectionsReq.refetch} />
+      )}
 
       <Card>
         <CardHeader className="pb-3">
@@ -920,7 +1300,11 @@ export function StudioPage() {
                   <EmptyState title={tab.emptyTitle} hint={tab.emptyHint} />
                 )
               ) : (
-                <DraftsList drafts={visible} onMutated={refetchAll} />
+                <DraftsList
+                  drafts={visible}
+                  connectionsBySource={connectionsBySource}
+                  onMutated={refetchAll}
+                />
               )}
             </TabsContent>
           );

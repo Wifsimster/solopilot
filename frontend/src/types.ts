@@ -124,7 +124,14 @@ export interface ProductRecord {
   archived_at: number | null;
 }
 
-export type ContentDraftStatus = 'pending' | 'edited' | 'used' | 'discarded';
+export type ContentDraftStatus =
+  | 'pending'
+  | 'edited'
+  | 'used'
+  | 'discarded'
+  | 'publishing'
+  | 'published'
+  | 'failed';
 
 export type TargetSource = 'x' | 'reddit' | 'generic';
 
@@ -140,6 +147,34 @@ export interface ContentDraft {
   used_on: string | null;
   generated_at: number;
   used_at: number | null;
+  published_url: string | null;
+  published_at: number | null;
+  platform_meta: Record<string, unknown> | null;
+  publish_error: string | null;
+  publish_attempts: number;
+}
+
+export type ConnectionStatus = 'connected' | 'expired' | 'missing' | 'unsupported';
+
+export interface PublishConnection {
+  source: TargetSource;
+  platform: string;
+  supported: boolean;
+  status: ConnectionStatus;
+}
+
+export interface PublishJob {
+  id: number;
+  draft_id: number;
+  product_id: string;
+  target_source: string;
+  status: string;
+  attempt_count: number;
+  published_url: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: number;
+  finished_at: number | null;
 }
 
 export type IntentSignalStatus = 'new' | 'snoozed' | 'dismissed' | 'replied';

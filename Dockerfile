@@ -52,6 +52,14 @@ RUN apk add --no-cache python3 make g++ && \
     npm ci --omit=dev && \
     apk del python3 make g++
 
+# Install Chromium for browser-driven auto-publish (content studio → "Publier").
+# The app drives this system binary via playwright-core; CHROMIUM_PATH points at
+# it so Playwright never downloads its own (glibc) browser on Alpine.
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates \
+    ttf-freefont font-noto font-noto-emoji
+ENV CHROMIUM_PATH=/usr/bin/chromium-browser
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
 # Copy built artifacts (backend + frontend)
 COPY --from=builder /app/dist ./dist
 

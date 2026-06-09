@@ -76,6 +76,28 @@ export interface ContentDraftRecord {
   used_on: string | null;
   generated_at: number;
   used_at: number | null;
+  // Auto-publish result columns (content auto-publish feature).
+  published_url: string | null;
+  published_at: number | null;
+  platform_meta: string | null; // JSON: platform-specific fields (subreddit, title…)
+  publish_error: string | null;
+  publish_attempts: number;
+}
+
+export interface PublishJobRecord {
+  id: number;
+  draft_id: number;
+  product_id: string;
+  target_source: string;
+  status: string; // queued | running | published | failed
+  scheduled_for: number | null;
+  attempt_count: number;
+  published_url: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  idempotency_key: string | null;
+  created_at: number;
+  finished_at: number | null;
 }
 
 export interface IntentSignalRecord {
@@ -205,6 +227,14 @@ function runProductMigrations(database: Database.Database) {
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_content_drafts_product_status ON content_drafts(product_id, status, generated_at DESC)`,
   );
+
+  // Auto-publish result columns on content_drafts (denormalized for cheap list
+  // rendering; the publish_jobs table below is the per-attempt audit log).
+  addColumnIfMissing(database, 'content_drafts', 'published_url', `TEXT`);
+  addColumnIfMissing(database, 'content_drafts', 'published_at', `INTEGER`);
+  addColumnIfMissing(database, 'content_drafts', 'platform_meta', `TEXT`);
+  addColumnIfMissing(database, 'content_drafts', 'publish_error', `TEXT`);
+  addColumnIfMissing(database, 'content_drafts', 'publish_attempts', `INTEGER NOT NULL DEFAULT 0`);
 
   database.exec(`CREATE TABLE IF NOT EXISTS intent_signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -338,6 +368,50 @@ function runWorkflowMigrations(database: Database.Database) {
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow ON workflow_runs(workflow_id, product_id, started_at DESC)`,
   );
+}
+
+// Content auto-publish migrations. Idempotent. One row per publish attempt for
+// retry/audit; idempotency_key prevents double-posting the same draft text.
+function runPublishMigrations(database: Database.Database) {
+  database.exec(`CREATE TABLE IF NOT EXISTS publish_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    draft_id INTEGER NOT NULL REFERENCES content_drafts(id) ON DELETE CASCADE,
+    product_id TEXT NOT NULL DEFAULT '${DEFAULT_PRODUCT_ID}' REFERENCES products(id) ON DELETE CASCADE,
+    target_source TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    scheduled_for INTEGER,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    published_url TEXT,
+    error_code TEXT,
+    error_message TEXT,
+    idempotency_key TEXT,
+    created_at INTEGER NOT NULL,
+    finished_at INTEGER
+  )`);
+
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_publish_jobs_draft ON publish_jobs(draft_id, created_at DESC)`,
+  );
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_publish_jobs_status ON publish_jobs(status, scheduled_for)`,
+  );
+  database.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_publish_jobs_idem ON publish_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL`,
+  );
+
+  // Recover drafts orphaned in 'publishing' by a crash mid-publish: return them
+  // to an editable state so they reappear in the UI with a retry path. Safe to
+  // run at every boot — a no-op when nothing is stuck.
+  database.exec(
+    `UPDATE content_drafts SET status = 'edited', publish_error = 'Publication interrompue (redémarrage).' WHERE status = 'publishing'`,
+  );
+
+  // Likewise mark any 'running' job rows from a previous process as failed.
+  database
+    .prepare(
+      `UPDATE publish_jobs SET status = 'failed', error_code = 'INTERRUPTED', error_message = ?, finished_at = ? WHERE status = 'running'`,
+    )
+    .run('Publication interrompue (redémarrage).', Date.now());
 }
 
 export interface InvoiceRecord {
@@ -590,6 +664,7 @@ export function getDb(): Database.Database {
 
     runAlterMigrations(db);
     runProductMigrations(db);
+    runPublishMigrations(db);
     runWorkflowMigrations(db);
     runFacturationMigrations(db);
     runComptaMigrations(db);
