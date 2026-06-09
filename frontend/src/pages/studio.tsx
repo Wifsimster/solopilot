@@ -80,7 +80,7 @@ import type {
 } from '@/types';
 
 // The statuses that get their own tab (transient 'publishing'/'failed' do not).
-type StatusFilter = 'pending' | 'edited' | 'used' | 'discarded' | 'published';
+type StatusFilter = 'pending' | 'edited' | 'scheduled' | 'used' | 'discarded' | 'published';
 
 type SortKey = 'recent' | 'oldest' | 'longest';
 
@@ -111,6 +111,12 @@ const TABS: TabConfig[] = [
     label: 'Utilisées',
     emptyTitle: 'Aucun draft utilisé pour le moment.',
     emptyHint: "Marque un draft comme utilisé après l'avoir posté.",
+  },
+  {
+    id: 'scheduled',
+    label: 'Programmées',
+    emptyTitle: 'Aucun draft programmé.',
+    emptyHint: 'Programme une publication depuis « Publier plus tard ».',
   },
   {
     id: 'published',
@@ -186,6 +192,7 @@ function statusLabel(status: ContentDraftStatus): string {
   if (status === 'used') return 'Utilisée';
   if (status === 'published') return 'Publiée';
   if (status === 'publishing') return 'Publication…';
+  if (status === 'scheduled') return 'Programmée';
   if (status === 'failed') return 'Échec';
   return 'Jetée';
 }
@@ -194,7 +201,7 @@ function statusBadgeVariant(
   status: ContentDraftStatus,
 ): 'secondary' | 'success' | 'warning' | 'destructive' {
   if (status === 'used' || status === 'published') return 'success';
-  if (status === 'edited') return 'warning';
+  if (status === 'edited' || status === 'scheduled') return 'warning';
   if (status === 'discarded' || status === 'failed') return 'destructive';
   return 'secondary';
 }
@@ -251,9 +258,11 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
   const [busy, setBusy] = useState<ContentDraftStatus | 'save' | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState('');
 
   const isReddit = draft.target_source === 'reddit';
   const isX = draft.target_source === 'x';
+  const isScheduled = draft.status === 'scheduled';
   // For X, prefer a natively-generated thread (platform_meta.thread) when the
   // text is unedited; otherwise fall back to splitting the (edited) text at 280.
   const thread = ((): string[] => {
@@ -362,6 +371,12 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
     await patch({ status: 'pending' }, 'pending', 'Draft restauré.');
   }, [patch]);
 
+  const buildPlatformMeta = useCallback((): Record<string, unknown> | undefined => {
+    if (isReddit) return { subreddit: subreddit.trim().replace(/^r\//i, ''), title: title.trim() };
+    if (isX) return { thread };
+    return undefined;
+  }, [isReddit, isX, subreddit, title, thread]);
+
   const handlePublish = useCallback(async () => {
     setConfirmOpen(false);
     // Persist any pending edits first so we publish exactly what's on screen.
@@ -370,11 +385,7 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
     }
     setPublishing(true);
     try {
-      const platform_meta = isReddit
-        ? { subreddit: subreddit.trim().replace(/^r\//i, ''), title: title.trim() }
-        : isX
-          ? { thread }
-          : undefined;
+      const platform_meta = buildPlatformMeta();
       const res = await fetch(`/api/content-drafts/${draft.id}/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -393,7 +404,54 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
     } finally {
       setPublishing(false);
     }
-  }, [dirty, handleSave, draft.id, onMutated, platformLabel, isReddit, subreddit, title, isX, thread]);
+  }, [dirty, handleSave, draft.id, onMutated, platformLabel, buildPlatformMeta]);
+
+  const handleSchedule = useCallback(async () => {
+    const ts = scheduleAt ? new Date(scheduleAt).getTime() : NaN;
+    if (!Number.isFinite(ts) || ts <= Date.now()) {
+      toast.error('Choisis une date future.');
+      return;
+    }
+    setConfirmOpen(false);
+    if (dirty) await handleSave();
+    setPublishing(true);
+    try {
+      const res = await fetch(`/api/content-drafts/${draft.id}/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduled_for: ts, platform_meta: buildPlatformMeta() }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) {
+        toast.error(json?.message || `Erreur HTTP ${res.status}`);
+        return;
+      }
+      toast.success('Publication programmée.');
+      onMutated();
+    } catch {
+      toast.error('Erreur réseau lors de la programmation.');
+    } finally {
+      setPublishing(false);
+    }
+  }, [scheduleAt, dirty, handleSave, draft.id, onMutated, buildPlatformMeta]);
+
+  const handleUnschedule = useCallback(async () => {
+    setPublishing(true);
+    try {
+      const res = await fetch(`/api/content-drafts/${draft.id}/unschedule`, { method: 'POST' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) {
+        toast.error(json?.message || `Erreur HTTP ${res.status}`);
+        return;
+      }
+      toast.success('Programmation annulée.');
+      onMutated();
+    } catch {
+      toast.error('Erreur réseau.');
+    } finally {
+      setPublishing(false);
+    }
+  }, [draft.id, onMutated]);
 
   // Subtle left accent border colored by the draft's source. Uses a literal
   // class from SOURCE_META so Tailwind's compiler emits it (runtime-built
@@ -510,7 +568,19 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
                 {publishing ? 'Publication…' : `Publier sur ${platformLabel}`}
               </Button>
             )}
-            {draft.status !== 'used' && !isPublished && (
+            {isScheduled && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8"
+                onClick={handleUnschedule}
+                disabled={publishing}
+              >
+                <XCircle className="size-3.5 mr-1" />
+                Annuler la programmation
+              </Button>
+            )}
+            {draft.status !== 'used' && !isPublished && !isScheduled && (
               <>
                 <Select value={usedOn} onValueChange={setUsedOn}>
                   <SelectTrigger className="h-8 w-[110px] text-xs" aria-label="Plateforme utilisée">
@@ -540,7 +610,7 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
                 </Button>
               </>
             )}
-            {draft.status !== 'discarded' && draft.status !== 'used' && !isPublished && (
+            {draft.status !== 'discarded' && draft.status !== 'used' && !isPublished && !isScheduled && (
               <Button
                 variant="outline"
                 size="sm"
@@ -579,6 +649,18 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
           <p className="text-xs text-muted-foreground">
             Posté sur {draft.used_on}
             {draft.used_at ? ` ${formatRelativeFr(draft.used_at)}` : ''}.
+          </p>
+        )}
+
+        {isScheduled && draft.scheduled_for && (
+          <p className="inline-flex items-center gap-1.5 text-xs text-warning">
+            <Send className="size-3.5" />
+            Programmé pour le{' '}
+            {new Date(draft.scheduled_for).toLocaleString('fr-FR', {
+              dateStyle: 'medium',
+              timeStyle: 'short',
+            })}
+            .
           </p>
         )}
 
@@ -673,9 +755,24 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
                 </div>
               </>
             )}
+            <div className="space-y-1.5 border-t border-border pt-3">
+              <Label htmlFor={`sched-${draft.id}`}>Programmer plus tard (optionnel)</Label>
+              <Input
+                id={`sched-${draft.id}`}
+                type="datetime-local"
+                value={scheduleAt}
+                onChange={(e) => setScheduleAt(e.target.value)}
+              />
+            </div>
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Annuler</AlertDialogCancel>
+            {scheduleAt && (
+              <Button variant="outline" onClick={handleSchedule} disabled={!redditReady}>
+                <Send className="size-3.5 mr-1" />
+                Programmer
+              </Button>
+            )}
             <AlertDialogAction onClick={handlePublish} disabled={!redditReady}>
               Publier maintenant
             </AlertDialogAction>
@@ -1162,6 +1259,9 @@ export function StudioPage() {
   const publishedReq = useApi<ContentDraft[]>('/api/content-drafts?status=published&kind=post', {
     productId: selectedProductId,
   });
+  const scheduledReq = useApi<ContentDraft[]>('/api/content-drafts?status=scheduled&kind=post', {
+    productId: selectedProductId,
+  });
 
   const connectionsReq = useApi<PublishConnection[]>('/api/publish/connections');
   const connectionsBySource = useMemo<Partial<Record<TargetSource, PublishConnection>>>(() => {
@@ -1176,26 +1276,40 @@ export function StudioPage() {
     () => ({
       pending: pendingReq,
       edited: editedReq,
+      scheduled: scheduledReq,
       used: usedReq,
       published: publishedReq,
       discarded: discardedReq,
     }),
-    [pendingReq, editedReq, usedReq, publishedReq, discardedReq],
+    [pendingReq, editedReq, scheduledReq, usedReq, publishedReq, discardedReq],
   );
 
   const counts = useMemo<Record<StatusFilter, number>>(
     () => ({
       pending: pendingReq.data?.length ?? 0,
       edited: editedReq.data?.length ?? 0,
+      scheduled: scheduledReq.data?.length ?? 0,
       used: usedReq.data?.length ?? 0,
       published: publishedReq.data?.length ?? 0,
       discarded: discardedReq.data?.length ?? 0,
     }),
-    [pendingReq.data, editedReq.data, usedReq.data, publishedReq.data, discardedReq.data],
+    [
+      pendingReq.data,
+      editedReq.data,
+      scheduledReq.data,
+      usedReq.data,
+      publishedReq.data,
+      discardedReq.data,
+    ],
   );
 
   const totalGenerated =
-    counts.pending + counts.edited + counts.used + counts.published + counts.discarded;
+    counts.pending +
+    counts.edited +
+    counts.scheduled +
+    counts.used +
+    counts.published +
+    counts.discarded;
   const usageRate =
     totalGenerated > 0
       ? Math.round(((counts.used + counts.published) / totalGenerated) * 100)
@@ -1204,11 +1318,12 @@ export function StudioPage() {
   const refetchAll = useCallback(() => {
     pendingReq.refetch();
     editedReq.refetch();
+    scheduledReq.refetch();
     usedReq.refetch();
     publishedReq.refetch();
     discardedReq.refetch();
     connectionsReq.refetch();
-  }, [pendingReq, editedReq, usedReq, publishedReq, discardedReq, connectionsReq]);
+  }, [pendingReq, editedReq, scheduledReq, usedReq, publishedReq, discardedReq, connectionsReq]);
 
   const resetFilters = useCallback(() => {
     setSearch('');
@@ -1289,12 +1404,18 @@ export function StudioPage() {
   const anyLoading =
     (pendingReq.loading && !pendingReq.data) ||
     (editedReq.loading && !editedReq.data) ||
+    (scheduledReq.loading && !scheduledReq.data) ||
     (usedReq.loading && !usedReq.data) ||
     (publishedReq.loading && !publishedReq.data) ||
     (discardedReq.loading && !discardedReq.data);
 
   const firstError =
-    pendingReq.error || editedReq.error || usedReq.error || publishedReq.error || discardedReq.error;
+    pendingReq.error ||
+    editedReq.error ||
+    scheduledReq.error ||
+    usedReq.error ||
+    publishedReq.error ||
+    discardedReq.error;
 
   const lang: ContentLanguage = productReq.data?.content_language ?? 'fr';
   const langLabel = lang === 'en' ? 'anglais' : 'français';

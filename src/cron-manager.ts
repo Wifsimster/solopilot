@@ -4,7 +4,7 @@ import { triggerRun, triggerCollect } from './run-service.js';
 import { getSettingsMap, getProductSettingsMap, getSetting } from './settings-service.js';
 import { listProducts } from './product-service.js';
 import { runWorkflowById } from './workflow/runner.js';
-import { runConnectionCanary } from './publish-service.js';
+import { runConnectionCanary, publishDueScheduledJobs } from './publish-service.js';
 import { sendDiscordNotification } from './adapters/discord-notifier.js';
 import type { Config } from './config.js';
 
@@ -142,6 +142,22 @@ export function scheduleCanaryCron(schedule: string): boolean {
       `⚠️ Sessions de publication expirées : ${platforms}. Reconnecte-les dans Solopilot → Studio → Connexions pour continuer à publier automatiquement.`,
       0,
     );
+  });
+}
+
+/**
+ * Drain the scheduled-publish queue: every tick, publish any draft whose
+ * scheduled time has arrived. Defaults to once a minute.
+ */
+export function schedulePublishQueueCron(schedule: string): boolean {
+  return scheduleNamedCron('publish-queue', schedule, async () => {
+    try {
+      await publishDueScheduledJobs();
+    } catch (err) {
+      logger.error('Publish queue drain failed', {
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
   });
 }
 

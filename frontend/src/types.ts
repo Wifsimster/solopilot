@@ -129,6 +129,7 @@ export type ContentDraftStatus =
   | 'edited'
   | 'used'
   | 'discarded'
+  | 'scheduled'
   | 'publishing'
   | 'published'
   | 'failed';
@@ -152,6 +153,7 @@ export interface ContentDraft {
   platform_meta: Record<string, unknown> | null;
   publish_error: string | null;
   publish_attempts: number;
+  scheduled_for: number | null;
 }
 
 export type ConnectionStatus = 'connected' | 'expired' | 'missing' | 'unsupported';

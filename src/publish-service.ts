@@ -386,7 +386,7 @@ export async function publishDraft(
       `UPDATE content_drafts
          SET status = 'published', published_url = ?, published_at = ?, used_on = ?, used_at = ?,
              platform_meta = COALESCE(?, platform_meta), publish_error = NULL,
-             publish_attempts = publish_attempts + 1
+             publish_attempts = publish_attempts + 1, scheduled_for = NULL
        WHERE id = ?`,
     ).run(result.url, finishedAt, PLATFORM_LABEL[source], finishedAt, meta, draftId);
     db.prepare(
@@ -400,7 +400,7 @@ export async function publishDraft(
     const code = err instanceof PublishError ? err.code : 'UNKNOWN';
     const message = err instanceof Error ? err.message : String(err);
     db.prepare(
-      `UPDATE content_drafts SET status = ?, publish_error = ?, publish_attempts = publish_attempts + 1 WHERE id = ?`,
+      `UPDATE content_drafts SET status = ?, publish_error = ?, publish_attempts = publish_attempts + 1, scheduled_for = NULL WHERE id = ?`,
     ).run(restoreStatus, message, draftId);
     db.prepare(
       `UPDATE publish_jobs SET status = 'failed', error_code = ?, error_message = ?, finished_at = ? WHERE id = ?`,
@@ -409,5 +409,111 @@ export async function publishDraft(
     throw err;
   } finally {
     publishInFlight = false;
+  }
+}
+
+// --- Scheduling ("Publier plus tard") --------------------------------------
+
+export class PublishScheduleError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PublishScheduleError';
+  }
+}
+
+function parseMetaRecord(raw: string | null): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  try {
+    const p = JSON.parse(raw);
+    return p && typeof p === 'object' ? (p as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Queue a draft for publication at a future time. Reuses the publish_jobs row. */
+export function scheduleDraft(
+  draftId: number,
+  scheduledFor: number,
+  opts: { meta?: Record<string, unknown> } = {},
+): PublishJobView {
+  const draft = getContentDraft(draftId);
+  if (!draft) throw new Error('Brouillon introuvable.');
+  const source = draft.target_source;
+  if (!isPublishSupported(source)) throw new PublishUnsupportedError(source);
+  if (!Number.isFinite(scheduledFor) || scheduledFor <= Date.now()) {
+    throw new PublishScheduleError('La date de publication doit être dans le futur.');
+  }
+
+  const db = getDb();
+  const text = draft.edited_text ?? draft.text;
+  const key = idempotencyKey(draftId, text);
+  const productId = draft.product_id || DEFAULT_PRODUCT_ID;
+
+  const jobRow = db
+    .prepare(
+      `INSERT INTO publish_jobs
+         (draft_id, product_id, target_source, status, scheduled_for, attempt_count, idempotency_key, created_at)
+       VALUES (?, ?, ?, 'queued', ?, 0, ?, ?)
+       ON CONFLICT(idempotency_key) WHERE idempotency_key IS NOT NULL DO UPDATE SET
+         status = 'queued', scheduled_for = excluded.scheduled_for,
+         error_code = NULL, error_message = NULL, published_url = NULL, finished_at = NULL
+       RETURNING id`,
+    )
+    .get(draftId, productId, source, scheduledFor, key, Date.now()) as { id: number };
+
+  const meta = opts.meta ? JSON.stringify(opts.meta) : null;
+  db.prepare(
+    `UPDATE content_drafts SET status = 'scheduled', scheduled_for = ?,
+       platform_meta = COALESCE(?, platform_meta), publish_error = NULL WHERE id = ?`,
+  ).run(scheduledFor, meta, draftId);
+
+  logger.info('Draft scheduled', { draftId, jobId: jobRow.id, scheduledFor, source });
+  const job = db.prepare(`SELECT * FROM publish_jobs WHERE id = ?`).get(jobRow.id) as PublishJobRecord;
+  return toPublishJobView(job);
+}
+
+/** Cancel a pending schedule, returning the draft to an editable state. */
+export function cancelSchedule(draftId: number): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM publish_jobs WHERE draft_id = ? AND status = 'queued'`).run(draftId);
+  db.prepare(
+    `UPDATE content_drafts SET status = 'edited', scheduled_for = NULL WHERE id = ? AND status = 'scheduled'`,
+  ).run(draftId);
+  logger.info('Draft schedule cancelled', { draftId });
+}
+
+/**
+ * Publish every scheduled job whose time has come. Called by a 1-minute cron.
+ * Rate-limited/busy jobs are left queued to retry on the next tick; real
+ * failures are recorded by publishDraft (and won't be re-picked).
+ */
+export async function publishDueScheduledJobs(): Promise<void> {
+  const db = getDb();
+  const due = db
+    .prepare(
+      `SELECT draft_id FROM publish_jobs
+       WHERE status = 'queued' AND scheduled_for IS NOT NULL AND scheduled_for <= ?
+       ORDER BY scheduled_for ASC`,
+    )
+    .all(Date.now()) as { draft_id: number }[];
+  if (due.length === 0) return;
+  logger.info('Draining scheduled publish jobs', { count: due.length });
+
+  for (const { draft_id } of due) {
+    const draft = getContentDraft(draft_id);
+    if (!draft) continue;
+    try {
+      await publishDraft(draft_id, { meta: parseMetaRecord(draft.platform_meta) });
+    } catch (err) {
+      if (err instanceof PublishBusyError || err instanceof PublishRateLimitError) {
+        logger.info('Scheduled job deferred', { draftId: draft_id, reason: err.name });
+        continue; // stays queued; retried next tick
+      }
+      logger.warn('Scheduled publish failed', {
+        draftId: draft_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
