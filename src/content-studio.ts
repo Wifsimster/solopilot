@@ -114,6 +114,12 @@ export interface ContentDraftView {
   publish_error: string | null;
   publish_attempts: number;
   scheduled_for: number | null;
+  metrics: {
+    likes: number | null;
+    comments: number | null;
+    reposts: number | null;
+    fetched_at: number;
+  } | null;
 }
 
 function parsePlatformMeta(raw: string | null): Record<string, unknown> | null {
@@ -157,6 +163,7 @@ export function toContentDraftView(row: ContentDraftRecord): ContentDraftView {
     publish_error: row.publish_error ?? null,
     publish_attempts: row.publish_attempts ?? 0,
     scheduled_for: row.scheduled_for ?? null,
+    metrics: null,
   };
 }
 
@@ -197,7 +204,32 @@ export function listContentDrafts(filters: ContentDraftListOptions = {}): Conten
     )
     .all(...params) as ContentDraftRecord[];
 
-  return rows.map(toContentDraftView);
+  const views = rows.map(toContentDraftView);
+  // Enrich with the latest engagement snapshot (feedback loop). Queried inline
+  // (not via content-metrics) to avoid a circular import; kept out of
+  // toContentDraftView so getContentDraft's raw record shape is untouched.
+  if (views.length > 0) {
+    const placeholders = views.map(() => '?').join(',');
+    const metricRows = db
+      .prepare(
+        `SELECT draft_id, likes, comments, reposts, fetched_at FROM post_metrics WHERE draft_id IN (${placeholders})`,
+      )
+      .all(...views.map((v) => v.id)) as {
+      draft_id: number;
+      likes: number | null;
+      comments: number | null;
+      reposts: number | null;
+      fetched_at: number;
+    }[];
+    const byId = new Map(metricRows.map((m) => [m.draft_id, m]));
+    for (const v of views) {
+      const m = byId.get(v.id);
+      v.metrics = m
+        ? { likes: m.likes, comments: m.comments, reposts: m.reposts, fetched_at: m.fetched_at }
+        : null;
+    }
+  }
+  return views;
 }
 
 export function getContentDraft(id: number): ContentDraftRecord | undefined {

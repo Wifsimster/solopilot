@@ -101,6 +101,16 @@ export interface PublishJobRecord {
   finished_at: number | null;
 }
 
+export interface PostMetricsRecord {
+  draft_id: number;
+  product_id: string;
+  target_source: string;
+  likes: number | null;
+  comments: number | null;
+  reposts: number | null;
+  fetched_at: number;
+}
+
 export interface IntentSignalRecord {
   id: number;
   item_id: string;
@@ -399,6 +409,21 @@ function runPublishMigrations(database: Database.Database) {
   );
   database.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_publish_jobs_idem ON publish_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL`,
+  );
+
+  // Engagement metrics for published posts (latest snapshot per draft), scraped
+  // back from the live post to close the feedback loop. One row per draft.
+  database.exec(`CREATE TABLE IF NOT EXISTS post_metrics (
+    draft_id INTEGER PRIMARY KEY REFERENCES content_drafts(id) ON DELETE CASCADE,
+    product_id TEXT NOT NULL DEFAULT '${DEFAULT_PRODUCT_ID}' REFERENCES products(id) ON DELETE CASCADE,
+    target_source TEXT NOT NULL,
+    likes INTEGER,
+    comments INTEGER,
+    reposts INTEGER,
+    fetched_at INTEGER NOT NULL
+  )`);
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_post_metrics_product ON post_metrics(product_id, fetched_at DESC)`,
   );
 
   // Recover drafts orphaned in 'publishing' by a crash mid-publish: return them

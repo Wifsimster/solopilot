@@ -8,6 +8,7 @@ import {
   scheduleCollectCron,
   scheduleCanaryCron,
   schedulePublishQueueCron,
+  scheduleMetricsCron,
   stopAll as stopAllCrons,
 } from './cron-manager.js';
 import { recoverStaleRuns, isAnyRunning, isAnyCollecting } from './run-service.js';
@@ -90,6 +91,9 @@ if (configResult.success) {
 
   // Drain the scheduled-publish queue every minute ("Publier plus tard").
   schedulePublishQueueCron(dbOverrides['PUBLISH_QUEUE_CRON'] || '* * * * *');
+
+  // Refresh published-post engagement metrics every 6h (feedback loop).
+  scheduleMetricsCron(dbOverrides['PUBLISH_METRICS_CRON'] || '0 */6 * * *');
 } else {
   logger.warn('X AI Daily Bot started in setup mode — missing credentials', {
     missing: configResult.missing.map((m) => m.key),

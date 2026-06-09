@@ -175,6 +175,7 @@ import {
   PublishScheduleError,
 } from './publish-service.js';
 import { PublishError, type PublishTarget } from './ports.js';
+import { getAnglePerformance, refreshPublishedMetrics } from './content-metrics.js';
 import {
   fetchGithubRepos,
   bulkImportProducts,
@@ -1569,6 +1570,25 @@ export function startServer(
 
   app.get('/api/publish/connections', (c) => {
     return c.json(listConnections());
+  });
+
+  // --- Feedback loop: engagement metrics + angle performance ---
+
+  app.get('/api/content/angle-performance', (c) => {
+    const productId = resolveProductId(c.req.query('productId'));
+    return c.json(getAnglePerformance(productId));
+  });
+
+  app.post('/api/content/metrics/refresh', async (c) => {
+    const productId = resolveProductId(c.req.query('productId'));
+    try {
+      const result = await refreshPublishedMetrics(productId);
+      return c.json({ success: true, ...result });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn('Metrics refresh failed', { error: message });
+      return c.json({ success: false, message }, 502);
+    }
   });
 
   // Live session check — launches a headless browser, so it's slow and on-demand.

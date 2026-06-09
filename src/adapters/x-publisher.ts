@@ -2,6 +2,7 @@ import type { Browser, BrowserContext, Locator, Page } from 'playwright-core';
 import {
   PublishError,
   type PlatformSession,
+  type PostMetrics,
   type PublishInput,
   type PublishResult,
   type PublishTarget,
@@ -35,6 +36,14 @@ const SELECTORS = {
   ],
   // Login form / redirect markers (unauthenticated sessions land here).
   loginFallbacks: ['[data-testid="loginButton"]', '[autocomplete="username"]'],
+  // Engagement counts on a live tweet's action bar. X exposes an aggregate
+  // aria-label on a [role="group"] container ("12 replies, 3 reposts, 45 likes",
+  // localized fr "réponses/reposts/J'aime") and per-action testids whose visible
+  // text or aria-label carries a leading count.
+  metricsGroup: '[role="group"]',
+  metricLike: '[data-testid="like"]',
+  metricReply: '[data-testid="reply"]',
+  metricRetweet: '[data-testid="retweet"]',
 } as const;
 
 // Explicit timeouts (ms). Kept generous because the composer + GraphQL can be slow.
@@ -174,6 +183,48 @@ export class XPublisher implements Publisher {
         error: publishError.message,
       });
       throw publishError;
+    } finally {
+      await this.safeClose(browser);
+    }
+  }
+
+  /**
+   * Best-effort scrape of a live tweet's public engagement counts. NEVER throws:
+   * any failure (auth wall, selector drift, navigation error) yields {} so the
+   * metrics refresher can simply skip this post. X usually requires a logged-in
+   * session to render counts, so a session without cookies short-circuits to {}.
+   */
+  async fetchMetrics(url: string, session: PlatformSession): Promise<PostMetrics> {
+    if (!session.cookies || session.cookies.length === 0) return {};
+
+    let browser: Browser | undefined;
+    try {
+      const launched = await this.launch();
+      browser = launched.browser;
+      const { context } = launched;
+      await this.seedSession(context, session);
+      const page = await context.newPage();
+      page.setDefaultTimeout(ACTION_TIMEOUT);
+
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
+      // Let the action bar counts hydrate before reading them.
+      await this.sleep(this.jitter(800, 1500));
+
+      // 1) Prefer the aggregate aria-label on the [role="group"] action bar.
+      const fromGroup = await this.parseMetricsFromGroup(page);
+      if (
+        fromGroup.likes !== undefined ||
+        fromGroup.comments !== undefined ||
+        fromGroup.reposts !== undefined
+      ) {
+        return fromGroup;
+      }
+
+      // 2) Fallback: read each action button's text / own aria-label.
+      return await this.parseMetricsFromButtons(page);
+    } catch (error) {
+      logger.warn('X fetchMetrics failed', { error: errMsg(error) });
+      return {};
     } finally {
       await this.safeClose(browser);
     }
@@ -530,6 +581,130 @@ export class XPublisher implements Publisher {
       await this.sleep(150);
     }
     return undefined;
+  }
+
+  // -------------------------------------------------------------------------
+  // Metrics parsing
+  // -------------------------------------------------------------------------
+
+  /**
+   * Reads the aggregate aria-label from the action-bar [role="group"] and pulls
+   * out per-keyword counts (English + French). Returns {} when no labelled group
+   * with recognizable counts is found.
+   */
+  private async parseMetricsFromGroup(page: Page): Promise<PostMetrics> {
+    const groups = page.locator(SELECTORS.metricsGroup);
+    const count = await groups.count().catch(() => 0);
+    for (let i = 0; i < count; i += 1) {
+      const label = await groups
+        .nth(i)
+        .getAttribute('aria-label')
+        .catch(() => null);
+      if (!label) continue;
+      const parsed = this.parseAggregateLabel(label);
+      if (
+        parsed.likes !== undefined ||
+        parsed.comments !== undefined ||
+        parsed.reposts !== undefined
+      ) {
+        return parsed;
+      }
+    }
+    return {};
+  }
+
+  /**
+   * Parses an aggregate engagement label like "12 replies, 3 reposts, 45 likes"
+   * (or fr "12 réponses, 3 reposts, 45 J'aime"). Numbers immediately precede the
+   * keyword; compact forms (1.2K, 2M) are normalized via parseCount.
+   */
+  private parseAggregateLabel(label: string): PostMetrics {
+    const metrics: PostMetrics = {};
+    // A count token is a number with optional spaces/commas/dots + K/M suffix.
+    const num = '([\\d.,\\s]+[KkMm]?)';
+    const pick = (keyword: string): number | undefined => {
+      const re = new RegExp(`${num}\\s*${keyword}`, 'i');
+      const m = label.match(re);
+      return m ? this.parseCount(m[1]) : undefined;
+    };
+
+    const comments = pick('(?:replies|reply|réponses|réponse)');
+    const reposts = pick('(?:reposts|repost|retweets|retweet)');
+    const likes = pick("(?:likes|like|j'aime|jaime)");
+
+    if (comments !== undefined) metrics.comments = comments;
+    if (reposts !== undefined) metrics.reposts = reposts;
+    if (likes !== undefined) metrics.likes = likes;
+    return metrics;
+  }
+
+  /**
+   * Fallback: reads each per-action button (like/reply/retweet), preferring its
+   * own aria-label, then visible text, and parses a leading count from each.
+   */
+  private async parseMetricsFromButtons(page: Page): Promise<PostMetrics> {
+    const metrics: PostMetrics = {};
+    const likes = await this.readButtonCount(page, SELECTORS.metricLike);
+    const comments = await this.readButtonCount(page, SELECTORS.metricReply);
+    const reposts = await this.readButtonCount(page, SELECTORS.metricRetweet);
+    if (likes !== undefined) metrics.likes = likes;
+    if (comments !== undefined) metrics.comments = comments;
+    if (reposts !== undefined) metrics.reposts = reposts;
+    return metrics;
+  }
+
+  /** Reads a single action button's count from its aria-label or visible text. */
+  private async readButtonCount(page: Page, selector: string): Promise<number | undefined> {
+    const button = page.locator(selector).first();
+    if (!(await button.count().catch(() => 0))) return undefined;
+
+    const label = await button.getAttribute('aria-label').catch(() => null);
+    const fromLabel = label ? this.parseCount(this.leadingCountToken(label)) : undefined;
+    if (fromLabel !== undefined) return fromLabel;
+
+    const text = await button.innerText().catch(() => '');
+    return text ? this.parseCount(this.leadingCountToken(text)) : undefined;
+  }
+
+  /** Extracts the leading count-like token (digits + spaces/commas/dots + K/M). */
+  private leadingCountToken(s: string): string {
+    const m = s.match(/[\d][\d.,\s]*[KkMm]?/);
+    return m ? m[0] : '';
+  }
+
+  /**
+   * Normalizes a human count token to a number. Handles compact suffixes
+   * ("1.2K", "1,2 K", "3 k", "2M") and grouped thousands ("1,234" / "1 234").
+   * Returns undefined when no digit is present.
+   */
+  private parseCount(s: string): number | undefined {
+    const trimmed = s.trim();
+    if (!/\d/.test(trimmed)) return undefined;
+
+    const suffixMatch = trimmed.match(/([KkMm])\s*$/);
+    const suffix = suffixMatch ? suffixMatch[1].toLowerCase() : '';
+    let core = suffix ? trimmed.slice(0, suffixMatch!.index).trim() : trimmed;
+
+    // Drop any spaces used as thousands separators.
+    core = core.replace(/\s/g, '');
+
+    let value: number;
+    if (suffix) {
+      // With a K/M suffix a single comma/dot is a decimal point ("1,2K" → 1.2).
+      const normalized = core.replace(',', '.');
+      value = Number.parseFloat(normalized);
+    } else if (/^[\d]+([.,][\d]{3})+$/.test(core)) {
+      // Pure grouped thousands ("1,234" / "1.234") — strip the separators.
+      value = Number.parseInt(core.replace(/[.,]/g, ''), 10);
+    } else {
+      // Plain integer or stray separator — keep digits only.
+      value = Number.parseInt(core.replace(/[.,]/g, ''), 10);
+    }
+
+    if (!Number.isFinite(value)) return undefined;
+    if (suffix === 'k') value *= 1_000;
+    else if (suffix === 'm') value *= 1_000_000;
+    return Math.round(value);
   }
 
   private sleep(ms: number): Promise<void> {

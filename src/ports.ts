@@ -98,10 +98,23 @@ export class PublishError extends Error {
   }
 }
 
+/** Public engagement counts scraped back from a live post (feedback loop). */
+export interface PostMetrics {
+  likes?: number;
+  comments?: number;
+  reposts?: number;
+}
+
 export interface Publisher {
   readonly source: PublishTarget;
   /** Cheap-ish check that the stored session is still logged in. */
   checkSession(session: PlatformSession): Promise<SessionState>;
   /** Drive the web UI to publish, returning the live post URL. Throws PublishError. */
   publish(input: PublishInput): Promise<PublishResult>;
+  /**
+   * Best-effort scrape of a published post's public engagement counts. Optional:
+   * platforms that don't implement it are skipped by the metrics refresher.
+   * Should resolve to {} rather than throw when counts can't be read.
+   */
+  fetchMetrics?(url: string, session: PlatformSession): Promise<PostMetrics>;
 }
