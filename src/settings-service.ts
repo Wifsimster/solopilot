@@ -17,6 +17,8 @@ const CREDENTIAL_KEYS = [
   // user). li_at is the auth cookie; JSESSIONID is the CSRF cookie.
   'LINKEDIN_LI_AT',
   'LINKEDIN_JSESSIONID',
+  // Reddit auto-publish session cookie (reddit_session), used against old.reddit.
+  'REDDIT_SESSION',
 ] as const;
 
 export type EditableKey = (typeof EDITABLE_KEYS)[number];

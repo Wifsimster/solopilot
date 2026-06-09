@@ -1381,6 +1381,21 @@ export function startServer(
         400,
       );
     }
+    // Reddit needs a target subreddit + a title (the body is the draft text).
+    if (draft.target_source === 'reddit') {
+      const meta = parsed.data.platform_meta ?? {};
+      const subreddit = typeof meta.subreddit === 'string' ? meta.subreddit.trim() : '';
+      const title = typeof meta.title === 'string' ? meta.title.trim() : '';
+      if (!subreddit || !title) {
+        return c.json(
+          {
+            success: false,
+            message: 'Reddit nécessite un subreddit cible et un titre.',
+          },
+          400,
+        );
+      }
+    }
     try {
       const outcome = await publishDraft(id, { meta: parsed.data.platform_meta });
       const updated = getContentDraft(id);
@@ -1475,6 +1490,33 @@ export function startServer(
         state === 'connected'
           ? 'Session LinkedIn enregistrée et vérifiée.'
           : 'Session LinkedIn enregistrée. La vérification automatique n’a pas confirmé la connexion — teste-la depuis les Connexions.',
+      state,
+    });
+  });
+
+  // Save a Reddit session by pasting its reddit_session cookie.
+  app.post('/api/publish/connections/reddit', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const cookie = typeof body.reddit_session === 'string' ? body.reddit_session.trim() : '';
+    if (!cookie) {
+      return c.json({ success: false, message: 'Le cookie reddit_session est requis.' }, 400);
+    }
+    setSetting('REDDIT_SESSION', cookie);
+    let state: string | undefined;
+    try {
+      state = await testConnection('reddit');
+    } catch {
+      state = undefined;
+    }
+    return c.json({
+      success: true,
+      message:
+        state === 'connected'
+          ? 'Session Reddit enregistrée et vérifiée.'
+          : 'Session Reddit enregistrée. La vérification automatique n’a pas confirmé la connexion — teste-la depuis les Connexions.',
       state,
     });
   });

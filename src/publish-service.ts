@@ -11,13 +11,15 @@ import {
   type SessionState,
 } from './ports.js';
 import { linkedInPublisher } from './adapters/linkedin-publisher.js';
+import { redditPublisher } from './adapters/reddit-publisher.js';
 
 // --- Publisher registry -----------------------------------------------------
-// Maps a draft's target_source to its browser adapter. Only LinkedIn (the
-// 'generic' source) is wired today; x/reddit are intentionally absent until
-// their adapters land (the API reports them as 'unsupported').
+// Maps a draft's target_source to its browser adapter. LinkedIn ('generic') and
+// Reddit are wired; X is intentionally absent until its adapter lands (the API
+// reports it as 'unsupported').
 const PUBLISHERS: Partial<Record<PublishTarget, Publisher>> = {
   generic: linkedInPublisher,
+  reddit: redditPublisher,
 };
 
 export function getPublisher(source: PublishTarget): Publisher | undefined {
@@ -82,6 +84,13 @@ export function buildSession(source: PublishTarget): PlatformSession | null {
       cookies.push({ name: 'JSESSIONID', value: jsession, domain: '.linkedin.com', path: '/' });
     }
     return { cookies };
+  }
+  if (source === 'reddit') {
+    const session = getSetting('REDDIT_SESSION');
+    if (!session) return null;
+    return {
+      cookies: [{ name: 'reddit_session', value: session, domain: '.reddit.com', path: '/' }],
+    };
   }
   return null;
 }

@@ -127,6 +127,7 @@ const TABS: TabConfig[] = [
 // Platforms that support one-click auto-publish today, and how to label them.
 const PUBLISH_PLATFORM_LABEL: Partial<Record<TargetSource, string>> = {
   generic: 'LinkedIn',
+  reddit: 'Reddit',
 };
 
 function publishPlatformLabel(source: TargetSource | null): string | null {
@@ -236,10 +237,11 @@ function CharCount({ length, source }: { length: number; source: TargetSource | 
 interface DraftCardProps {
   draft: ContentDraft;
   connection?: PublishConnection;
+  subredditOptions?: string[];
   onMutated: () => void;
 }
 
-function DraftCard({ draft, connection, onMutated }: DraftCardProps) {
+function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCardProps) {
   const initialText = draft.edited_text ?? draft.text;
   const [text, setText] = useState(initialText);
   const [usedOn, setUsedOn] = useState<string>(draft.used_on ?? defaultUsedOn(draft.target_source));
@@ -247,10 +249,23 @@ function DraftCard({ draft, connection, onMutated }: DraftCardProps) {
   const [publishing, setPublishing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  const isReddit = draft.target_source === 'reddit';
+  // Reddit needs a target subreddit + a title; pre-fill from a prior attempt's
+  // platform_meta or the product's configured subreddits.
+  const metaSubreddit = typeof draft.platform_meta?.subreddit === 'string'
+    ? (draft.platform_meta.subreddit as string)
+    : '';
+  const metaTitle = typeof draft.platform_meta?.title === 'string'
+    ? (draft.platform_meta.title as string)
+    : '';
+  const [subreddit, setSubreddit] = useState(metaSubreddit || subredditOptions?.[0] || '');
+  const [title, setTitle] = useState(metaTitle);
+
   const platformLabel = publishPlatformLabel(draft.target_source);
   const canAutoPublish = platformLabel !== null; // platform supported by an adapter
   const isConnected = connection?.status === 'connected';
   const isPublished = draft.status === 'published';
+  const redditReady = !isReddit || (subreddit.trim().length > 0 && title.trim().length > 0);
 
   // Keep textarea in sync if the server-side draft changes (e.g. after refetch)
   // while preserving in-flight user edits. The last saved value lives in a ref
@@ -339,10 +354,13 @@ function DraftCard({ draft, connection, onMutated }: DraftCardProps) {
     }
     setPublishing(true);
     try {
+      const platform_meta = isReddit
+        ? { subreddit: subreddit.trim().replace(/^r\//i, ''), title: title.trim() }
+        : undefined;
       const res = await fetch(`/api/content-drafts/${draft.id}/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirm: true }),
+        body: JSON.stringify({ confirm: true, ...(platform_meta ? { platform_meta } : {}) }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.success === false) {
@@ -357,7 +375,7 @@ function DraftCard({ draft, connection, onMutated }: DraftCardProps) {
     } finally {
       setPublishing(false);
     }
-  }, [dirty, handleSave, draft.id, onMutated, platformLabel]);
+  }, [dirty, handleSave, draft.id, onMutated, platformLabel, isReddit, subreddit, title]);
 
   // Subtle left accent border colored by the draft's source. Uses a literal
   // class from SOURCE_META so Tailwind's compiler emits it (runtime-built
@@ -575,6 +593,38 @@ function DraftCard({ draft, connection, onMutated }: DraftCardProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2">
+            {isReddit && (
+              <div className="space-y-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor={`subreddit-${draft.id}`}>Subreddit cible</Label>
+                  <Input
+                    id={`subreddit-${draft.id}`}
+                    value={subreddit}
+                    onChange={(e) => setSubreddit(e.target.value)}
+                    placeholder="r/SideProject"
+                    list={`subreddits-${draft.id}`}
+                    autoComplete="off"
+                  />
+                  {subredditOptions && subredditOptions.length > 0 && (
+                    <datalist id={`subreddits-${draft.id}`}>
+                      {subredditOptions.map((s) => (
+                        <option key={s} value={s} />
+                      ))}
+                    </datalist>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`title-${draft.id}`}>Titre du post</Label>
+                  <Input
+                    id={`title-${draft.id}`}
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Un titre accrocheur"
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+            )}
             <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/40 p-3 text-sm">
               {text}
             </div>
@@ -584,7 +634,9 @@ function DraftCard({ draft, connection, onMutated }: DraftCardProps) {
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <AlertDialogAction onClick={handlePublish}>Publier maintenant</AlertDialogAction>
+            <AlertDialogAction onClick={handlePublish} disabled={!redditReady}>
+              Publier maintenant
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -621,10 +673,12 @@ function NoResultsState({ onReset }: { onReset: () => void }) {
 function DraftsList({
   drafts,
   connectionsBySource,
+  subredditOptions,
   onMutated,
 }: {
   drafts: ContentDraft[];
   connectionsBySource: Partial<Record<TargetSource, PublishConnection>>;
+  subredditOptions: string[];
   onMutated: () => void;
 }) {
   return (
@@ -634,6 +688,7 @@ function DraftsList({
           key={d.id}
           draft={d}
           connection={d.target_source ? connectionsBySource[d.target_source] : undefined}
+          subredditOptions={subredditOptions}
           onMutated={onMutated}
         />
       ))}
@@ -766,25 +821,38 @@ function ConnectionsCard({
   connections: PublishConnection[];
   onChanged: () => void;
 }) {
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [connectPlatform, setConnectPlatform] = useState<TargetSource | null>(null);
   const [liAt, setLiAt] = useState('');
   const [jsession, setJsession] = useState('');
+  const [redditSession, setRedditSession] = useState('');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
 
   const supported = connections.filter((c) => c.supported);
   if (supported.length === 0) return null;
 
+  const resetFields = () => {
+    setLiAt('');
+    setJsession('');
+    setRedditSession('');
+  };
+
   const handleSave = async () => {
+    if (!connectPlatform) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/publish/connections/linkedin', {
+      const endpoint =
+        connectPlatform === 'reddit'
+          ? '/api/publish/connections/reddit'
+          : '/api/publish/connections/linkedin';
+      const payload =
+        connectPlatform === 'reddit'
+          ? { reddit_session: redditSession.trim() }
+          : { li_at: liAt.trim(), jsessionid: jsession.trim() || undefined };
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          li_at: liAt.trim(),
-          jsessionid: jsession.trim() || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.success === false) {
@@ -792,9 +860,8 @@ function ConnectionsCard({
         return;
       }
       toast.success(json?.message || 'Session enregistrée.');
-      setDialogOpen(false);
-      setLiAt('');
-      setJsession('');
+      setConnectPlatform(null);
+      resetFields();
       onChanged();
     } catch {
       toast.error('Erreur réseau lors de l’enregistrement.');
@@ -802,6 +869,9 @@ function ConnectionsCard({
       setSaving(false);
     }
   };
+
+  const saveDisabled =
+    saving || (connectPlatform === 'reddit' ? !redditSession.trim() : !liAt.trim());
 
   const handleTest = async (platform: string) => {
     setTesting(platform);
@@ -869,7 +939,7 @@ function ConnectionsCard({
                   variant="outline"
                   size="sm"
                   className="h-8"
-                  onClick={() => setDialogOpen(true)}
+                  onClick={() => setConnectPlatform(conn.source)}
                 >
                   {conn.status === 'connected' ? 'Reconnecter' : 'Connecter'}
                 </Button>
@@ -879,46 +949,81 @@ function ConnectionsCard({
         })}
       </CardContent>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={connectPlatform !== null}
+        onOpenChange={(open) => {
+          if (!open) setConnectPlatform(null);
+        }}
+      >
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Connecter LinkedIn</DialogTitle>
-            <DialogDescription>
-              Colle le cookie de session d’un navigateur déjà connecté à LinkedIn. Ouvre
-              linkedin.com (connecté) → Outils de développement → Application → Cookies → copie la
-              valeur de <code>li_at</code> (et éventuellement <code>JSESSIONID</code>).
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="li_at">Cookie li_at</Label>
-              <Input
-                id="li_at"
-                value={liAt}
-                onChange={(e) => setLiAt(e.target.value)}
-                placeholder="AQEDA…"
-                autoComplete="off"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="jsessionid">Cookie JSESSIONID (optionnel)</Label>
-              <Input
-                id="jsessionid"
-                value={jsession}
-                onChange={(e) => setJsession(e.target.value)}
-                placeholder='"ajax:…"'
-                autoComplete="off"
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Ces identifiants sont stockés comme des secrets et masqués dans l’API.
-            </p>
-          </div>
+          {connectPlatform === 'reddit' ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Connecter Reddit</DialogTitle>
+                <DialogDescription>
+                  Colle le cookie de session d’un navigateur déjà connecté à Reddit. Ouvre
+                  reddit.com (connecté) → Outils de développement → Application → Cookies → copie la
+                  valeur de <code>reddit_session</code>.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="reddit_session">Cookie reddit_session</Label>
+                  <Input
+                    id="reddit_session"
+                    value={redditSession}
+                    onChange={(e) => setRedditSession(e.target.value)}
+                    placeholder="…"
+                    autoComplete="off"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Ce cookie est stocké comme un secret et masqué dans l’API.
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Connecter LinkedIn</DialogTitle>
+                <DialogDescription>
+                  Colle le cookie de session d’un navigateur déjà connecté à LinkedIn. Ouvre
+                  linkedin.com (connecté) → Outils de développement → Application → Cookies → copie
+                  la valeur de <code>li_at</code> (et éventuellement <code>JSESSIONID</code>).
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="li_at">Cookie li_at</Label>
+                  <Input
+                    id="li_at"
+                    value={liAt}
+                    onChange={(e) => setLiAt(e.target.value)}
+                    placeholder="AQEDA…"
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="jsessionid">Cookie JSESSIONID (optionnel)</Label>
+                  <Input
+                    id="jsessionid"
+                    value={jsession}
+                    onChange={(e) => setJsession(e.target.value)}
+                    placeholder='"ajax:…"'
+                    autoComplete="off"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Ces identifiants sont stockés comme des secrets et masqués dans l’API.
+                </p>
+              </div>
+            </>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
+            <Button variant="outline" onClick={() => setConnectPlatform(null)} disabled={saving}>
               Annuler
             </Button>
-            <Button onClick={handleSave} disabled={saving || !liAt.trim()}>
+            <Button onClick={handleSave} disabled={saveDisabled}>
               {saving ? <Loader2 className="size-3.5 mr-1 animate-spin" /> : null}
               Enregistrer
             </Button>
@@ -1303,6 +1408,7 @@ export function StudioPage() {
                 <DraftsList
                   drafts={visible}
                   connectionsBySource={connectionsBySource}
+                  subredditOptions={productReq.data?.reddit_subreddits ?? []}
                   onMutated={refetchAll}
                 />
               )}
