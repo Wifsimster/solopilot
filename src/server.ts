@@ -140,6 +140,8 @@ import {
   deleteContentDraft,
   toContentDraftView,
   generatePostsSchema,
+  generateThread,
+  generateThreadSchema,
   contentDraftListQuerySchema,
   contentDraftPatchSchema,
   ContentStudioError,
@@ -167,6 +169,7 @@ import {
   PublishBusyError,
   PublishUnsupportedError,
   PublishSessionMissingError,
+  PublishRateLimitError,
 } from './publish-service.js';
 import { PublishError, type PublishTarget } from './ports.js';
 import {
@@ -1268,6 +1271,48 @@ export function startServer(
     }
   });
 
+  app.post('/api/products/:id/content/generate-thread', async (c) => {
+    const id = c.req.param('id');
+    const productRecord = getProduct(id);
+    if (!productRecord) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    const body = await c.req.json().catch(() => ({}));
+    const parsed = generateThreadSchema.safeParse(body ?? {});
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de generation invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const product = toProductView(productRecord);
+    if (!product.target_audience || product.value_props.length === 0) {
+      return c.json(
+        {
+          success: false,
+          message:
+            "Produit non configure pour le Studio. Renseigne l'audience cible et au moins une proposition de valeur dans la fiche produit avant de generer.",
+        },
+        400,
+      );
+    }
+    try {
+      const drafts = await generateThread(product, { count: parsed.data.count });
+      return c.json({ success: true, drafts: drafts.map(toContentDraftView) });
+    } catch (err) {
+      const message =
+        err instanceof ContentStudioError
+          ? err.message
+          : `Echec de la generation : ${err instanceof Error ? err.message : String(err)}`;
+      logger.warn('Content studio thread generation failed', { productId: id, error: message });
+      return c.json({ success: false, message });
+    }
+  });
+
   app.get('/api/content-drafts', (c) => {
     const parsed = contentDraftListQuerySchema.safeParse({
       productId: c.req.query('productId'),
@@ -1408,6 +1453,9 @@ export function startServer(
     } catch (err) {
       if (err instanceof PublishBusyError) {
         return c.json({ success: false, message: err.message }, 409);
+      }
+      if (err instanceof PublishRateLimitError) {
+        return c.json({ success: false, message: err.message }, 429);
       }
       if (err instanceof PublishSessionMissingError) {
         return c.json({ success: false, message: err.message, code: err.state }, 400);

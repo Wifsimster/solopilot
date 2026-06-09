@@ -59,6 +59,7 @@ import {
   Plug,
   RefreshCw,
   CheckCircle,
+  Hash,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, formatRelativeFr } from '@/lib/utils';
@@ -253,8 +254,17 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
 
   const isReddit = draft.target_source === 'reddit';
   const isX = draft.target_source === 'x';
-  // For X, long content becomes a thread; preview the exact split that posts.
-  const thread = useMemo(() => (isX ? splitIntoThread(text) : [text]), [isX, text]);
+  // For X, prefer a natively-generated thread (platform_meta.thread) when the
+  // text is unedited; otherwise fall back to splitting the (edited) text at 280.
+  const thread = ((): string[] => {
+    if (!isX) return [text];
+    const mt = draft.platform_meta?.thread;
+    if (Array.isArray(mt)) {
+      const arr = mt.filter((t): t is string => typeof t === 'string');
+      if (arr.length > 0 && text.trim() === arr.join('\n\n').trim()) return arr;
+    }
+    return splitIntoThread(text);
+  })();
   const isThread = isX && thread.length > 1;
   // Reddit needs a target subreddit + a title; pre-fill from a prior attempt's
   // platform_meta or the product's configured subreddits.
@@ -1244,6 +1254,36 @@ export function StudioPage() {
     [refetchAll, selectedProductId],
   );
 
+  const handleGenerateThread = useCallback(async () => {
+    if (!selectedProductId) {
+      toast.error('Sélectionne un produit avant de générer.');
+      return;
+    }
+    setGeneratingId('thread-x');
+    try {
+      const res = await fetch(
+        `/api/products/${encodeURIComponent(selectedProductId)}/content/generate-thread`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ count: 1 }),
+        },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) {
+        toast.error(json?.message || `Erreur HTTP ${res.status}`);
+        return;
+      }
+      toast.success('Thread X généré.');
+      setActiveTab('pending');
+      refetchAll();
+    } catch {
+      toast.error('Erreur réseau lors de la génération.');
+    } finally {
+      setGeneratingId(null);
+    }
+  }, [refetchAll, selectedProductId]);
+
   const generating = generatingId !== null;
 
   const anyLoading =
@@ -1395,6 +1435,20 @@ export function StudioPage() {
                 </Button>
               );
             })}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={handleGenerateThread}
+              disabled={generating}
+            >
+              {generatingId === 'thread-x' ? (
+                <Loader2 className="size-3.5 mr-1 animate-spin" />
+              ) : (
+                <Hash className="size-3.5 mr-1 text-foreground" />
+              )}
+              Générer un thread X
+            </Button>
           </div>
         </CardContent>
       </Card>

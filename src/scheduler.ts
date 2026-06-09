@@ -6,6 +6,7 @@ import { getDb, closeDb } from './db.js';
 import {
   schedulePublishCron,
   scheduleCollectCron,
+  scheduleCanaryCron,
   stopAll as stopAllCrons,
 } from './cron-manager.js';
 import { recoverStaleRuns, isAnyRunning, isAnyCollecting } from './run-service.js';
@@ -82,6 +83,9 @@ if (configResult.success) {
   // Schedule both cron tasks via the manager (supports hot-reload)
   schedulePublishCron(publishSchedule, config, buildMergedConfig);
   scheduleCollectCron(collectSchedule, config, buildMergedConfig);
+
+  // Daily publish-session canary (alerts on Discord when a session expires).
+  scheduleCanaryCron(dbOverrides['PUBLISH_CANARY_CRON'] || '0 8 * * *');
 } else {
   logger.warn('X AI Daily Bot started in setup mode — missing credentials', {
     missing: configResult.missing.map((m) => m.key),
