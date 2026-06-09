@@ -166,10 +166,13 @@ import {
   listConnections,
   testConnection,
   isPublishSupported,
+  scheduleDraft,
+  cancelSchedule,
   PublishBusyError,
   PublishUnsupportedError,
   PublishSessionMissingError,
   PublishRateLimitError,
+  PublishScheduleError,
 } from './publish-service.js';
 import { PublishError, type PublishTarget } from './ports.js';
 import {
@@ -1479,6 +1482,81 @@ export function startServer(
         502,
       );
     }
+  });
+
+  const scheduleBodySchema = z
+    .object({
+      scheduled_for: z
+        .number({ invalid_type_error: 'Date de publication invalide.' })
+        .int()
+        .positive(),
+      platform_meta: z.record(z.unknown()).optional(),
+    })
+    .strip();
+
+  app.post('/api/content-drafts/:id/schedule', async (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id < 1) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    const body = await c.req.json().catch(() => null);
+    const parsed = scheduleBodySchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees de programmation invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const draft = getContentDraft(id);
+    if (!draft) {
+      return c.json({ success: false, message: 'Brouillon introuvable.' }, 404);
+    }
+    if (!isPublishSupported(draft.target_source)) {
+      return c.json(
+        { success: false, message: 'Publication automatique indisponible pour cette plateforme.' },
+        400,
+      );
+    }
+    if (draft.target_source === 'reddit') {
+      const meta = parsed.data.platform_meta ?? {};
+      const subreddit = typeof meta.subreddit === 'string' ? meta.subreddit.trim() : '';
+      const title = typeof meta.title === 'string' ? meta.title.trim() : '';
+      if (!subreddit || !title) {
+        return c.json(
+          { success: false, message: 'Reddit nécessite un subreddit cible et un titre.' },
+          400,
+        );
+      }
+    }
+    try {
+      const job = scheduleDraft(id, parsed.data.scheduled_for, { meta: parsed.data.platform_meta });
+      const updated = getContentDraft(id);
+      return c.json({ success: true, job, draft: updated ? toContentDraftView(updated) : null });
+    } catch (err) {
+      if (err instanceof PublishScheduleError || err instanceof PublishUnsupportedError) {
+        return c.json({ success: false, message: err.message }, 400);
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json({ success: false, message }, 500);
+    }
+  });
+
+  app.post('/api/content-drafts/:id/unschedule', (c) => {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id < 1) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    const draft = getContentDraft(id);
+    if (!draft) {
+      return c.json({ success: false, message: 'Brouillon introuvable.' }, 404);
+    }
+    cancelSchedule(id);
+    const updated = getContentDraft(id);
+    return c.json({ success: true, draft: updated ? toContentDraftView(updated) : null });
   });
 
   app.get('/api/content-drafts/:id/publish-jobs', (c) => {

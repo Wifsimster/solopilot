@@ -13,6 +13,7 @@ export type ContentDraftStatus =
   | 'edited'
   | 'used'
   | 'discarded'
+  | 'scheduled'
   | 'publishing'
   | 'published'
   | 'failed';
@@ -24,6 +25,7 @@ export const CONTENT_DRAFT_STATUSES = [
   'edited',
   'used',
   'discarded',
+  'scheduled',
   'publishing',
   'published',
   'failed',
@@ -111,6 +113,7 @@ export interface ContentDraftView {
   platform_meta: Record<string, unknown> | null;
   publish_error: string | null;
   publish_attempts: number;
+  scheduled_for: number | null;
 }
 
 function parsePlatformMeta(raw: string | null): Record<string, unknown> | null {
@@ -153,13 +156,14 @@ export function toContentDraftView(row: ContentDraftRecord): ContentDraftView {
     platform_meta: parsePlatformMeta(row.platform_meta ?? null),
     publish_error: row.publish_error ?? null,
     publish_attempts: row.publish_attempts ?? 0,
+    scheduled_for: row.scheduled_for ?? null,
   };
 }
 
 // Columns selected for ContentDraftView. Centralized so the publish columns
 // stay in sync across the read queries.
 const CONTENT_DRAFT_COLUMNS =
-  'id, product_id, kind, target_source, angle, text, edited_text, status, used_on, generated_at, used_at, published_url, published_at, platform_meta, publish_error, publish_attempts';
+  'id, product_id, kind, target_source, angle, text, edited_text, status, used_on, generated_at, used_at, published_url, published_at, platform_meta, publish_error, publish_attempts, scheduled_for';
 
 export function listContentDrafts(filters: ContentDraftListOptions = {}): ContentDraftView[] {
   const db = getDb();

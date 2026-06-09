@@ -82,6 +82,7 @@ export interface ContentDraftRecord {
   platform_meta: string | null; // JSON: platform-specific fields (subreddit, title…)
   publish_error: string | null;
   publish_attempts: number;
+  scheduled_for: number | null;
 }
 
 export interface PublishJobRecord {
@@ -235,6 +236,7 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'content_drafts', 'platform_meta', `TEXT`);
   addColumnIfMissing(database, 'content_drafts', 'publish_error', `TEXT`);
   addColumnIfMissing(database, 'content_drafts', 'publish_attempts', `INTEGER NOT NULL DEFAULT 0`);
+  addColumnIfMissing(database, 'content_drafts', 'scheduled_for', `INTEGER`);
 
   database.exec(`CREATE TABLE IF NOT EXISTS intent_signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

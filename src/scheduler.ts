@@ -7,6 +7,7 @@ import {
   schedulePublishCron,
   scheduleCollectCron,
   scheduleCanaryCron,
+  schedulePublishQueueCron,
   stopAll as stopAllCrons,
 } from './cron-manager.js';
 import { recoverStaleRuns, isAnyRunning, isAnyCollecting } from './run-service.js';
@@ -86,6 +87,9 @@ if (configResult.success) {
 
   // Daily publish-session canary (alerts on Discord when a session expires).
   scheduleCanaryCron(dbOverrides['PUBLISH_CANARY_CRON'] || '0 8 * * *');
+
+  // Drain the scheduled-publish queue every minute ("Publier plus tard").
+  schedulePublishQueueCron(dbOverrides['PUBLISH_QUEUE_CRON'] || '* * * * *');
 } else {
   logger.warn('X AI Daily Bot started in setup mode — missing credentials', {
     missing: configResult.missing.map((m) => m.key),
