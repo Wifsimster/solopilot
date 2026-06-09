@@ -93,7 +93,8 @@ export interface AnglePerformance {
   published: number;
   used: number;
   discarded: number;
-  /** Avg (likes+comments+reposts) across published drafts (0 when no metrics). */
+  /** Avg (likes+comments+reposts) across published drafts that have scraped
+   *  metrics; null when none of the angle's posts have been scraped yet. */
   avg_engagement: number | null;
 }
 
@@ -111,7 +112,7 @@ export function getAnglePerformance(productId: string): AnglePerformance[] {
          SUM(CASE WHEN cd.status = 'published' THEN 1 ELSE 0 END) AS published,
          SUM(CASE WHEN cd.status = 'used' THEN 1 ELSE 0 END) AS used,
          SUM(CASE WHEN cd.status = 'discarded' THEN 1 ELSE 0 END) AS discarded,
-         AVG(CASE WHEN cd.status = 'published'
+         AVG(CASE WHEN cd.status = 'published' AND pm.draft_id IS NOT NULL
              THEN COALESCE(pm.likes, 0) + COALESCE(pm.comments, 0) + COALESCE(pm.reposts, 0)
              END) AS avg_engagement
        FROM content_drafts cd
