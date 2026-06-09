@@ -53,6 +53,49 @@ export const SOURCE_META: Record<TargetSource, SourceMeta> = {
   },
 };
 
+/**
+ * Split text into ≤limit-char tweets for an X thread, breaking on paragraph →
+ * sentence → word boundaries (never mid-word; a single over-long word is hard
+ * sliced). Mirrors the fallback split in the backend X adapter so the preview
+ * matches what gets posted. Returns a single-element array when it already fits.
+ */
+export function splitIntoThread(text: string, limit = PLATFORM_LIMITS.x): string[] {
+  const trimmed = text.trim();
+  if (trimmed.length <= limit) return [trimmed];
+
+  const words = trimmed.split(/\s+/);
+  const tweets: string[] = [];
+  let current = '';
+
+  const flush = () => {
+    if (current.trim().length > 0) tweets.push(current.trim());
+    current = '';
+  };
+
+  for (const word of words) {
+    if (word.length > limit) {
+      // Hard-slice a word that can't fit on its own.
+      flush();
+      let rest = word;
+      while (rest.length > limit) {
+        tweets.push(rest.slice(0, limit));
+        rest = rest.slice(limit);
+      }
+      current = rest;
+      continue;
+    }
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > limit) {
+      flush();
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  flush();
+  return tweets.length > 0 ? tweets : [trimmed.slice(0, limit)];
+}
+
 /** Small rounded badge showing the colored platform icon + label. */
 export function SourceBadge({ source }: { source: TargetSource | null }) {
   if (source === null) {

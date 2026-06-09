@@ -12,14 +12,15 @@ import {
 } from './ports.js';
 import { linkedInPublisher } from './adapters/linkedin-publisher.js';
 import { redditPublisher } from './adapters/reddit-publisher.js';
+import { xPublisher } from './adapters/x-publisher.js';
 
 // --- Publisher registry -----------------------------------------------------
-// Maps a draft's target_source to its browser adapter. LinkedIn ('generic') and
-// Reddit are wired; X is intentionally absent until its adapter lands (the API
-// reports it as 'unsupported').
+// Maps a draft's target_source to its browser adapter. All three platforms are
+// wired: LinkedIn ('generic'), Reddit, and X.
 const PUBLISHERS: Partial<Record<PublishTarget, Publisher>> = {
   generic: linkedInPublisher,
   reddit: redditPublisher,
+  x: xPublisher,
 };
 
 export function getPublisher(source: PublishTarget): Publisher | undefined {
@@ -90,6 +91,18 @@ export function buildSession(source: PublishTarget): PlatformSession | null {
     if (!session) return null;
     return {
       cookies: [{ name: 'reddit_session', value: session, domain: '.reddit.com', path: '/' }],
+    };
+  }
+  if (source === 'x') {
+    // Reuse the same auth_token + ct0 cookies the X scraper already uses.
+    const authToken = getSetting('X_SESSION_AUTH_TOKEN');
+    const csrf = getSetting('X_SESSION_CSRF_TOKEN');
+    if (!authToken || !csrf) return null;
+    return {
+      cookies: [
+        { name: 'auth_token', value: authToken, domain: '.x.com', path: '/' },
+        { name: 'ct0', value: csrf, domain: '.x.com', path: '/' },
+      ],
     };
   }
   return null;
