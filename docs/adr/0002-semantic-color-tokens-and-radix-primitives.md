@@ -51,10 +51,10 @@ Rejected as over-engineering — the settings forms are simple enough that the e
 
 ## Participants
 
-- Pixel-Perfect Hugo (Frontend) — Advocated for Radix Tabs, Sheet, Sonner, and semantic tokens as highest-priority fixes
-- Figma Fiona (UX/UI) — Emphasized color token foundation-first approach and WCAG compliance
-- Sprint Zero Sarah (PO) — Scoped to minimal high-impact changes, pushed back on over-engineering
-- Whiteboard Damien (Architect) — Recommended tiered approach with hook extraction for async state
+- Pixel-Perfect Hugo (Frontend Engineer) — Advocated for Radix Tabs, Sheet, Sonner, and semantic tokens as highest-priority fixes
+- Figma Fiona (UX/UI Designer) — Emphasized color token foundation-first approach and WCAG compliance
+- Sprint Zero Sarah (Product Owner) — Scoped to minimal high-impact changes, pushed back on over-engineering
+- Whiteboard Damien (Tech Lead / Architect) — Recommended tiered approach with hook extraction for async state
 
 ---
 _Decision recorded automatically from fast-meeting analysis._

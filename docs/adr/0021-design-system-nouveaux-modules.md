@@ -130,10 +130,10 @@ our primitive foundation for no gain over what we already run.
 
 ## Participants
 
-- Pixel-Perfect Hugo (Frontend) — Argued to extend shadcn with TanStack Table,
+- Pixel-Perfect Hugo (Frontend Engineer) — Argued to extend shadcn with TanStack Table,
   Recharts and dnd-kit so the new modules inherit the OKLCH tokens unchanged;
   kept every addition headless or Tailwind-native.
-- Figma Fiona (UX/UI) — Held the single-design-language line; swapped FullCalendar
+- Figma Fiona (UX/UI Designer) — Held the single-design-language line; swapped FullCalendar
   for Schedule-X to avoid vendor-CSS fighting the token system.
 - Sprint Zero Sarah (Product Owner) — Anchored the call in the read-only/cards
   shape of the first module cut and the already-sunk shadcn cost; flagged the
