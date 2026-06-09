@@ -134,7 +134,7 @@ export type ContentDraftStatus =
   | 'published'
   | 'failed';
 
-export type TargetSource = 'x' | 'reddit' | 'generic';
+export type TargetSource = 'x' | 'reddit' | 'generic' | 'instagram';
 
 export interface ContentDraft {
   id: number;

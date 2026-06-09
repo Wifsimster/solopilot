@@ -1,4 +1,4 @@
-import { Hash, MessageCircle, Globe } from 'lucide-react';
+import { Hash, MessageCircle, Globe, Camera } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TargetSource } from '@/types';
@@ -11,6 +11,7 @@ export const PLATFORM_LIMITS: Record<TargetSource, number> = {
   x: 280,
   reddit: 500,
   generic: 500,
+  instagram: 2200,
 };
 
 export interface SourceMeta {
@@ -50,6 +51,13 @@ export const SOURCE_META: Record<TargetSource, SourceMeta> = {
     dotClass: 'bg-blue-500',
     textClass: 'text-blue-600 dark:text-blue-400',
     borderClass: 'border-l-blue-500',
+  },
+  instagram: {
+    label: 'Instagram',
+    Icon: Camera,
+    dotClass: 'bg-pink-500',
+    textClass: 'text-pink-600 dark:text-pink-400',
+    borderClass: 'border-l-pink-500',
   },
 };
 

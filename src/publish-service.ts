@@ -36,6 +36,7 @@ const PLATFORM_LABEL: Record<PublishTarget, string> = {
   generic: 'linkedin',
   x: 'x',
   reddit: 'reddit',
+  instagram: 'instagram',
 };
 
 // --- Errors -----------------------------------------------------------------
