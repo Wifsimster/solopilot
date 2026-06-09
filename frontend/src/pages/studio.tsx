@@ -183,6 +183,7 @@ const SOURCE_FILTER_OPTIONS: { value: SourceFilter; label: string }[] = [
   { value: 'all', label: 'Toutes les sources' },
   { value: 'x', label: 'X' },
   { value: 'reddit', label: 'Reddit' },
+  { value: 'instagram', label: 'Instagram' },
   { value: 'generic', label: 'Générique' },
 ];
 
@@ -217,6 +218,7 @@ function statusBadgeVariant(
 function defaultUsedOn(source: TargetSource | null): string {
   if (source === 'reddit') return 'reddit';
   if (source === 'generic') return 'linkedin';
+  if (source === 'instagram') return 'instagram';
   return 'x';
 }
 
@@ -1469,7 +1471,7 @@ export function StudioPage() {
           toast.error(json?.message || `Erreur HTTP ${res.status}`);
           return;
         }
-        const generated = Array.isArray(json) ? json.length : count;
+        const generated = Array.isArray(json?.drafts) ? json.drafts.length : count;
         toast.success(
           `${generated} draft${generated > 1 ? 's' : ''} généré${generated > 1 ? 's' : ''}.`,
         );
