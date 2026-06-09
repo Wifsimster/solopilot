@@ -1,9 +1,11 @@
 import cron, { type ScheduledTask } from 'node-cron';
 import { logger } from './logger.js';
 import { triggerRun, triggerCollect } from './run-service.js';
-import { getSettingsMap, getProductSettingsMap } from './settings-service.js';
+import { getSettingsMap, getProductSettingsMap, getSetting } from './settings-service.js';
 import { listProducts } from './product-service.js';
 import { runWorkflowById } from './workflow/runner.js';
+import { runConnectionCanary } from './publish-service.js';
+import { sendDiscordNotification } from './adapters/discord-notifier.js';
 import type { Config } from './config.js';
 
 /**
@@ -105,6 +107,41 @@ export function scheduleCollectCron(
         });
       }
     }
+  });
+}
+
+/**
+ * Schedule the publish-session canary: periodically health-checks every
+ * connected publish session and pings Discord when one has expired, so the user
+ * reconnects BEFORE a real publish fails. No-op alert when no webhook is set.
+ */
+export function scheduleCanaryCron(schedule: string): boolean {
+  return scheduleNamedCron('publish-canary', schedule, async () => {
+    let results;
+    try {
+      results = await runConnectionCanary();
+    } catch (err) {
+      logger.error('Publish canary failed', {
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    const broken = results.filter((r) => r.state === 'expired');
+    if (broken.length === 0) {
+      logger.info('Publish canary OK', { checked: results.length });
+      return;
+    }
+    logger.warn('Publish canary found expired sessions', {
+      platforms: broken.map((b) => b.platform),
+    });
+    const webhook = getSetting('DISCORD_WEBHOOK_URL');
+    if (!webhook) return;
+    const platforms = broken.map((b) => b.platform).join(', ');
+    await sendDiscordNotification(
+      webhook,
+      `⚠️ Sessions de publication expirées : ${platforms}. Reconnecte-les dans Solopilot → Studio → Connexions pour continuer à publier automatiquement.`,
+      0,
+    );
   });
 }
 

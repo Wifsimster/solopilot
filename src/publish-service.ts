@@ -67,6 +67,73 @@ export class PublishSessionMissingError extends Error {
   }
 }
 
+export class PublishRateLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PublishRateLimitError';
+  }
+}
+
+// --- Rate-limit guardrails --------------------------------------------------
+// Human-paced caps to keep the accounts safe: a per-platform daily ceiling and
+// a minimum spacing between two posts on the same platform. Defaults are
+// conservative; both are overridable via editable settings.
+const DEFAULT_DAILY_CAP = 5;
+const DEFAULT_MIN_SPACING_MINUTES = 20;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function getDailyCap(): number {
+  const v = Number(getSetting('PUBLISH_DAILY_CAP'));
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : DEFAULT_DAILY_CAP;
+}
+
+function getMinSpacingMs(): number {
+  const v = Number(getSetting('PUBLISH_MIN_SPACING_MINUTES'));
+  const minutes = Number.isFinite(v) && v >= 0 ? v : DEFAULT_MIN_SPACING_MINUTES;
+  return minutes * 60 * 1000;
+}
+
+/** Throws PublishRateLimitError if posting now would breach the cap/spacing. */
+function enforceRateLimits(productId: string, source: PublishTarget, label: string): void {
+  const db = getDb();
+  const cap = getDailyCap();
+  const since = Date.now() - DAY_MS;
+  const todays = (
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM publish_jobs
+         WHERE product_id = ? AND target_source = ? AND status = 'published' AND finished_at >= ?`,
+      )
+      .get(productId, source, since) as { n: number }
+  ).n;
+  if (todays >= cap) {
+    throw new PublishRateLimitError(
+      `Plafond quotidien atteint pour ${label} (${cap}/jour). Réessaie demain ou augmente la limite dans les réglages.`,
+    );
+  }
+
+  const spacing = getMinSpacingMs();
+  if (spacing > 0) {
+    const last = (
+      db
+        .prepare(
+          `SELECT MAX(finished_at) AS m FROM publish_jobs
+           WHERE product_id = ? AND target_source = ? AND status = 'published'`,
+        )
+        .get(productId, source) as { m: number | null }
+    ).m;
+    if (last) {
+      const wait = last + spacing - Date.now();
+      if (wait > 0) {
+        const mins = Math.ceil(wait / 60000);
+        throw new PublishRateLimitError(
+          `Attends encore ${mins} min avant de republier sur ${label} (espacement minimum).`,
+        );
+      }
+    }
+  }
+}
+
 // --- Session building -------------------------------------------------------
 // Sessions are cookie-based, mirroring the X scraper. Cookies live in the
 // settings table (masked in API responses by the existing credential masking).
@@ -139,6 +206,37 @@ export async function testConnection(source: PublishTarget): Promise<SessionStat
   const session = buildSession(source);
   if (!session) return 'missing';
   return publisher.checkSession(session);
+}
+
+export interface CanaryResult {
+  source: PublishTarget;
+  platform: string;
+  state: SessionState;
+}
+
+/**
+ * Health-check every connected publish session by driving the browser. Run on a
+ * schedule so an expired/broken session is caught BEFORE a real publish needs
+ * it. Platforms with no stored session ('missing') are skipped — only sessions
+ * the user actually connected are probed.
+ */
+export async function runConnectionCanary(): Promise<CanaryResult[]> {
+  const results: CanaryResult[] = [];
+  for (const conn of listConnections()) {
+    if (!conn.supported) continue;
+    const session = buildSession(conn.source);
+    if (!session) continue; // never connected — nothing to alert on
+    const publisher = getPublisher(conn.source);
+    if (!publisher) continue;
+    let state: SessionState;
+    try {
+      state = await publisher.checkSession(session);
+    } catch {
+      state = 'expired';
+    }
+    results.push({ source: conn.source, platform: conn.platform, state });
+  }
+  return results;
 }
 
 // --- Publish orchestration --------------------------------------------------
@@ -246,6 +344,9 @@ export async function publishDraft(
 
   const now = Date.now();
   const productId = draft.product_id || DEFAULT_PRODUCT_ID;
+
+  // Human-paced safety: daily cap + minimum spacing per platform.
+  enforceRateLimits(productId, source, PLATFORM_LABEL[source]);
 
   // One job row per (draft, text) keyed by idempotency_key. Retries reuse the
   // row via upsert — a plain INSERT would collide with the UNIQUE index on a

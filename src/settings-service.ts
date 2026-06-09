@@ -8,6 +8,10 @@ const EDITABLE_KEYS = [
   'COLLECT_CRON_SCHEDULE',
   'X_GQL_USER_BY_SCREEN_NAME_ID',
   'X_GQL_HOME_TIMELINE_ID',
+  // Auto-publish guardrails + canary schedule (see publish-service / cron-manager).
+  'PUBLISH_DAILY_CAP',
+  'PUBLISH_MIN_SPACING_MINUTES',
+  'PUBLISH_CANARY_CRON',
 ] as const;
 const CREDENTIAL_KEYS = [
   'X_SESSION_AUTH_TOKEN',

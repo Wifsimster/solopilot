@@ -1261,7 +1261,7 @@ Genere exactement ${count} drafts, chacun avec un angle DIFFERENT.`;
   const placeholders = insertedIds.map(() => '?').join(',');
   const rows = db
     .prepare(
-      `SELECT id, product_id, kind, target_source, angle, text, edited_text, status, used_on, generated_at, used_at
+      `SELECT ${CONTENT_DRAFT_COLUMNS}
        FROM content_drafts
        WHERE id IN (${placeholders})
        ORDER BY generated_at DESC, id DESC`,
@@ -1269,4 +1269,183 @@ Genere exactement ${count} drafts, chacun avec un angle DIFFERENT.`;
     .all(...insertedIds) as ContentDraftRecord[];
 
   return rows;
+}
+
+// --- Native X threads -------------------------------------------------------
+// Instead of mechanically slicing a long post at 280 chars, ask the model to
+// author a coherent multi-tweet thread. The draft stores the joined text (for
+// search/preview) plus platform_meta.thread = the ordered tweets the publisher
+// posts verbatim.
+export const generateThreadSchema = z.object({
+  count: z
+    .number({ invalid_type_error: 'Le nombre de threads doit etre un entier.' })
+    .int({ message: 'Le nombre de threads doit etre un entier.' })
+    .min(1, { message: 'Il faut au moins 1 thread.' })
+    .max(3, { message: 'Maximum 3 threads par generation.' })
+    .optional()
+    .default(1),
+});
+
+export type GenerateThreadInput = z.infer<typeof generateThreadSchema>;
+
+const generateThreadResponseSchema = z.object({
+  threads: z
+    .array(
+      z.object({
+        angle: z.string().min(1).max(120),
+        tweets: z.array(z.string().min(1).max(280)).min(2).max(12),
+      }),
+    )
+    .min(1),
+});
+
+const GENERATE_THREAD_SYSTEM_PROMPT = `Tu es un copywriter expert des threads X (Twitter) pour la promotion de produits.
+
+On va te demander d'écrire un ou plusieurs THREADS X au sujet d'un produit. Un thread est une suite de tweets liés qui raconte une histoire ou développe une idée.
+
+Règles STRICTES :
+- Chaque tweet fait AU MAXIMUM 280 caractères (impératif).
+- Le PREMIER tweet est un hook fort qui donne envie de lire la suite (pas de "1/").
+- Les tweets du milieu développent un seul point chacun, de façon concrète.
+- Le DERNIER tweet contient un appel à l'action (parmi ceux fournis) et, si pertinent, l'URL EXACTE à promouvoir (jamais un dépôt de code).
+- 3 à 8 tweets par thread idéalement.
+- Respecte la voix et la langue demandées.
+- Pas de mention d'IA/bot/génération automatique. Pas d'emojis sauf si voix = decontractee.
+- Chaque thread a un \`angle\` court (2-6 mots).
+
+Réponds STRICTEMENT en JSON :
+{
+  "threads": [
+    { "angle": "<libellé court>", "tweets": ["<tweet 1>", "<tweet 2>", "..."] }
+  ]
+}`;
+
+export async function generateThread(
+  product: ProductView,
+  opts: { count: number },
+): Promise<ContentDraftRecord[]> {
+  const { count } = opts;
+
+  let config;
+  try {
+    config = loadConfig();
+  } catch (err) {
+    throw new ContentStudioError(
+      `Echec de la generation : configuration AI indisponible : ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (!config.GITHUB_TOKEN) {
+    throw new ContentStudioError(
+      'Echec de la generation : client AI indisponible (GITHUB_TOKEN manquant).',
+    );
+  }
+
+  const client = new OpenAI({
+    baseURL: 'https://models.github.ai/inference',
+    apiKey: config.GITHUB_TOKEN,
+    timeout: GENERATE_AI_TIMEOUT_MS,
+  });
+
+  const language = product.content_language ?? 'fr';
+  const voice = product.content_voice ?? product.reply_voice ?? 'professionnelle';
+  const valueProps =
+    product.value_props.length > 0
+      ? product.value_props.map((v, i) => `${i + 1}. ${v}`).join('\n')
+      : '(aucune proposition de valeur fournie)';
+  const ctas =
+    product.call_to_actions.length > 0
+      ? product.call_to_actions.map((c, i) => `${i + 1}. ${c}`).join('\n')
+      : "(aucun appel a l'action fourni)";
+  const promoUrl = product.production_url || product.product_url;
+
+  const userPayload = `PRODUIT
+Nom: ${product.name}
+URL à promouvoir: ${promoUrl || '(aucune URL fournie)'}
+Description: ${product.product_description || '(aucune description fournie)'}
+Audience cible: ${product.target_audience || '(non specifiee)'}
+
+PROPOSITIONS DE VALEUR
+${valueProps}
+
+APPELS A L'ACTION POSSIBLES
+${ctas}
+
+PARAMETRES DE GENERATION
+Nombre de threads a produire: ${count}
+Voix: ${voice}
+Langue: ${language}
+
+Genere exactement ${count} thread(s), chacun avec un angle DIFFERENT.`;
+
+  let raw: string;
+  try {
+    const response = await client.chat.completions.create({
+      model: config.AI_MODEL,
+      max_tokens: 2048,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: GENERATE_THREAD_SYSTEM_PROMPT },
+        { role: 'user', content: userPayload },
+      ],
+    });
+    logger.info('Content studio thread API usage', {
+      productId: product.id,
+      inputTokens: response.usage?.prompt_tokens,
+      outputTokens: response.usage?.completion_tokens,
+      model: response.model,
+      count,
+    });
+    raw = response.choices[0]?.message?.content ?? '';
+  } catch (err) {
+    throw new ContentStudioError(
+      `Echec de la generation : ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new ContentStudioError(
+      `Echec de la generation : reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  const validated = generateThreadResponseSchema.safeParse(parsed);
+  if (!validated.success) {
+    throw new ContentStudioError(
+      `Echec de la generation : reponse AI invalide : ${validated.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+    );
+  }
+
+  const db = getDb();
+  const insert = db.prepare(
+    `INSERT INTO content_drafts (product_id, kind, target_source, angle, text, edited_text, status, used_on, generated_at, used_at, platform_meta)
+     VALUES (?, 'post', 'x', ?, ?, NULL, 'pending', NULL, ?, NULL, ?)`,
+  );
+
+  const insertedIds: number[] = [];
+  const insertMany = db.transaction((items: { angle: string; tweets: string[] }[]) => {
+    const now = Date.now();
+    for (const item of items) {
+      const text = item.tweets.join('\n\n');
+      const meta = JSON.stringify({ thread: item.tweets });
+      const result = insert.run(product.id, item.angle, text, now, meta);
+      insertedIds.push(Number(result.lastInsertRowid));
+    }
+  });
+
+  insertMany(validated.data.threads);
+
+  logger.info('Content threads generated', { productId: product.id, count: insertedIds.length });
+
+  const placeholders = insertedIds.map(() => '?').join(',');
+  return db
+    .prepare(
+      `SELECT ${CONTENT_DRAFT_COLUMNS}
+       FROM content_drafts
+       WHERE id IN (${placeholders})
+       ORDER BY generated_at DESC, id DESC`,
+    )
+    .all(...insertedIds) as ContentDraftRecord[];
 }
