@@ -66,6 +66,7 @@ import {
   PLATFORM_LIMITS,
   SOURCE_META,
   SourceBadge,
+  splitIntoThread,
 } from '@/components/studio/platform-meta';
 import type {
   ContentDraft,
@@ -128,6 +129,7 @@ const TABS: TabConfig[] = [
 const PUBLISH_PLATFORM_LABEL: Partial<Record<TargetSource, string>> = {
   generic: 'LinkedIn',
   reddit: 'Reddit',
+  x: 'X',
 };
 
 function publishPlatformLabel(source: TargetSource | null): string | null {
@@ -250,6 +252,10 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const isReddit = draft.target_source === 'reddit';
+  const isX = draft.target_source === 'x';
+  // For X, long content becomes a thread; preview the exact split that posts.
+  const thread = useMemo(() => (isX ? splitIntoThread(text) : [text]), [isX, text]);
+  const isThread = isX && thread.length > 1;
   // Reddit needs a target subreddit + a title; pre-fill from a prior attempt's
   // platform_meta or the product's configured subreddits.
   const metaSubreddit = typeof draft.platform_meta?.subreddit === 'string'
@@ -356,7 +362,9 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
     try {
       const platform_meta = isReddit
         ? { subreddit: subreddit.trim().replace(/^r\//i, ''), title: title.trim() }
-        : undefined;
+        : isX
+          ? { thread }
+          : undefined;
       const res = await fetch(`/api/content-drafts/${draft.id}/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -375,7 +383,7 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
     } finally {
       setPublishing(false);
     }
-  }, [dirty, handleSave, draft.id, onMutated, platformLabel, isReddit, subreddit, title]);
+  }, [dirty, handleSave, draft.id, onMutated, platformLabel, isReddit, subreddit, title, isX, thread]);
 
   // Subtle left accent border colored by the draft's source. Uses a literal
   // class from SOURCE_META so Tailwind's compiler emits it (runtime-built
@@ -625,12 +633,36 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
                 </div>
               </div>
             )}
-            <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/40 p-3 text-sm">
-              {text}
-            </div>
-            <div className="flex justify-end">
-              <CharCount length={text.length} source={draft.target_source} />
-            </div>
+            {isThread ? (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Ce post dépasse 280 caractères : il sera publié en thread de {thread.length}{' '}
+                  tweets.
+                </p>
+                <div className="max-h-60 space-y-2 overflow-y-auto">
+                  {thread.map((tweet, i) => (
+                    <div key={i} className="rounded-lg border border-border bg-muted/40 p-3">
+                      <div className="mb-1 text-[10px] font-medium text-muted-foreground tabular-nums">
+                        {i + 1}/{thread.length}
+                      </div>
+                      <div className="whitespace-pre-wrap text-sm">{tweet}</div>
+                      <div className="mt-1 flex justify-end">
+                        <CharCount length={tweet.length} source="x" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/40 p-3 text-sm">
+                  {text}
+                </div>
+                <div className="flex justify-end">
+                  <CharCount length={text.length} source={draft.target_source} />
+                </div>
+              </>
+            )}
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Annuler</AlertDialogCancel>
@@ -825,6 +857,8 @@ function ConnectionsCard({
   const [liAt, setLiAt] = useState('');
   const [jsession, setJsession] = useState('');
   const [redditSession, setRedditSession] = useState('');
+  const [xAuth, setXAuth] = useState('');
+  const [xCsrf, setXCsrf] = useState('');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
 
@@ -835,20 +869,27 @@ function ConnectionsCard({
     setLiAt('');
     setJsession('');
     setRedditSession('');
+    setXAuth('');
+    setXCsrf('');
   };
 
   const handleSave = async () => {
     if (!connectPlatform) return;
     setSaving(true);
     try {
+      // X reuses the existing credentials endpoint (validates auth_token + ct0).
       const endpoint =
         connectPlatform === 'reddit'
           ? '/api/publish/connections/reddit'
-          : '/api/publish/connections/linkedin';
+          : connectPlatform === 'x'
+            ? '/api/credentials'
+            : '/api/publish/connections/linkedin';
       const payload =
         connectPlatform === 'reddit'
           ? { reddit_session: redditSession.trim() }
-          : { li_at: liAt.trim(), jsessionid: jsession.trim() || undefined };
+          : connectPlatform === 'x'
+            ? { X_SESSION_AUTH_TOKEN: xAuth.trim(), X_SESSION_CSRF_TOKEN: xCsrf.trim() }
+            : { li_at: liAt.trim(), jsessionid: jsession.trim() || undefined };
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -871,7 +912,12 @@ function ConnectionsCard({
   };
 
   const saveDisabled =
-    saving || (connectPlatform === 'reddit' ? !redditSession.trim() : !liAt.trim());
+    saving ||
+    (connectPlatform === 'reddit'
+      ? !redditSession.trim()
+      : connectPlatform === 'x'
+        ? !xAuth.trim() || !xCsrf.trim()
+        : !liAt.trim());
 
   const handleTest = async (platform: string) => {
     setTesting(platform);
@@ -956,7 +1002,44 @@ function ConnectionsCard({
         }}
       >
         <DialogContent>
-          {connectPlatform === 'reddit' ? (
+          {connectPlatform === 'x' ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Connecter X</DialogTitle>
+                <DialogDescription>
+                  Colle les cookies de session d’un navigateur déjà connecté à X. Ouvre x.com
+                  (connecté) → Outils de développement → Application → Cookies → copie les valeurs de{' '}
+                  <code>auth_token</code> et <code>ct0</code>.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="x_auth_token">Cookie auth_token</Label>
+                  <Input
+                    id="x_auth_token"
+                    value={xAuth}
+                    onChange={(e) => setXAuth(e.target.value)}
+                    placeholder="…"
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="x_ct0">Cookie ct0</Label>
+                  <Input
+                    id="x_ct0"
+                    value={xCsrf}
+                    onChange={(e) => setXCsrf(e.target.value)}
+                    placeholder="…"
+                    autoComplete="off"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Ces identifiants sont stockés comme des secrets et masqués dans l’API. Ce sont les
+                  mêmes cookies que la veille X.
+                </p>
+              </div>
+            </>
+          ) : connectPlatform === 'reddit' ? (
             <>
               <DialogHeader>
                 <DialogTitle>Connecter Reddit</DialogTitle>
