@@ -50,7 +50,7 @@ Keep all current implementations unchanged. Rejected: CardTitle styling bug is a
 ## Participants
 
 - Pixel-Perfect Hugo (Frontend Engineer) — Advocated for Input ref fix, Card semantics, forwardRef cleanup; opposed gratuitous deps
-- Whiteboard Damien (Architect) — Identified Button asChild as the one real gap; pushed YAGNI on Label/Separator
+- Whiteboard Damien (Tech Lead / Architect) — Identified Button asChild as the one real gap; pushed YAGNI on Label/Separator
 - Sprint Zero Sarah (Product Owner) — Challenged all changes as zero user value; accepted forwardRef cleanup as low-risk
 
 ---
