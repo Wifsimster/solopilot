@@ -5,6 +5,7 @@ import { getSettingsMap, getProductSettingsMap, getSetting } from './settings-se
 import { listProducts } from './product-service.js';
 import { runWorkflowById } from './workflow/runner.js';
 import { runConnectionCanary, publishDueScheduledJobs } from './publish-service.js';
+import { refreshPublishedMetrics } from './content-metrics.js';
 import { sendDiscordNotification } from './adapters/discord-notifier.js';
 import type { Config } from './config.js';
 
@@ -155,6 +156,23 @@ export function schedulePublishQueueCron(schedule: string): boolean {
       await publishDueScheduledJobs();
     } catch (err) {
       logger.error('Publish queue drain failed', {
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+}
+
+/**
+ * Periodically refresh engagement metrics for published posts (feedback loop).
+ * Defaults to every 6 hours. Best-effort; only platforms exposing fetchMetrics
+ * (X today) are scraped.
+ */
+export function scheduleMetricsCron(schedule: string): boolean {
+  return scheduleNamedCron('publish-metrics', schedule, async () => {
+    try {
+      await refreshPublishedMetrics();
+    } catch (err) {
+      logger.error('Metrics refresh cron failed', {
         message: err instanceof Error ? err.message : String(err),
       });
     }

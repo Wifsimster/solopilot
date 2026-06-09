@@ -154,6 +154,21 @@ export interface ContentDraft {
   publish_error: string | null;
   publish_attempts: number;
   scheduled_for: number | null;
+  metrics: {
+    likes: number | null;
+    comments: number | null;
+    reposts: number | null;
+    fetched_at: number;
+  } | null;
+}
+
+export interface AnglePerformance {
+  angle: string;
+  total: number;
+  published: number;
+  used: number;
+  discarded: number;
+  avg_engagement: number | null;
 }
 
 export type ConnectionStatus = 'connected' | 'expired' | 'missing' | 'unsupported';

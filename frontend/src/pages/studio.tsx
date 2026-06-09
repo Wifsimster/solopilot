@@ -60,6 +60,10 @@ import {
   RefreshCw,
   CheckCircle,
   Hash,
+  Heart,
+  MessageCircle,
+  Repeat2,
+  BarChart3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, formatRelativeFr } from '@/lib/utils';
@@ -70,6 +74,7 @@ import {
   splitIntoThread,
 } from '@/components/studio/platform-meta';
 import type {
+  AnglePerformance,
   ContentDraft,
   ContentDraftStatus,
   ContentLanguage,
@@ -681,6 +686,26 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
             )}
           </p>
         )}
+
+        {isPublished && draft.metrics && (
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground tabular-nums">
+            <span className="inline-flex items-center gap-1">
+              <Heart className="size-3.5" />
+              {draft.metrics.likes ?? '—'}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <MessageCircle className="size-3.5" />
+              {draft.metrics.comments ?? '—'}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Repeat2 className="size-3.5" />
+              {draft.metrics.reposts ?? '—'}
+            </span>
+            <span className="text-[10px]">
+              maj {formatRelativeFr(draft.metrics.fetched_at)}
+            </span>
+          </div>
+        )}
       </CardContent>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -1224,6 +1249,94 @@ function ConnectionsCard({
   );
 }
 
+/**
+ * Feedback loop: which angles get kept (published/used) vs discarded, plus
+ * average engagement where metrics were scraped back. Hidden until there's
+ * something to show.
+ */
+function AnglePerformanceCard({
+  productId,
+  onRefreshed,
+}: {
+  productId: string;
+  onRefreshed: () => void;
+}) {
+  const perf = useApi<AnglePerformance[]>('/api/content/angle-performance', { productId });
+  const [refreshing, setRefreshing] = useState(false);
+
+  const rows = (perf.data ?? []).filter((r) => r.published + r.used + r.discarded > 0);
+  if (rows.length === 0) return null;
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const res = await fetch(
+        `/api/content/metrics/refresh?productId=${encodeURIComponent(productId)}`,
+        { method: 'POST' },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) {
+        toast.error(json?.message || 'Échec du rafraîchissement des stats.');
+        return;
+      }
+      toast.success(`${json?.updated ?? 0} post(s) mis à jour.`);
+      perf.refetch();
+      onRefreshed();
+    } catch {
+      toast.error('Erreur réseau lors du rafraîchissement.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+        <div>
+          <CardTitle className="inline-flex items-center gap-1.5 text-sm font-semibold">
+            <BarChart3 className="size-4" />
+            Performance par angle
+          </CardTitle>
+          <CardDescription>
+            Ce que tu gardes et publies par angle — et l’engagement quand il est disponible.
+          </CardDescription>
+        </div>
+        <Button variant="outline" size="sm" className="h-8" onClick={handleRefresh} disabled={refreshing}>
+          {refreshing ? (
+            <Loader2 className="size-3.5 mr-1 animate-spin" />
+          ) : (
+            <RefreshCw className="size-3.5 mr-1" />
+          )}
+          Rafraîchir les stats
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-1.5">
+          <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 gap-y-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span>Angle</span>
+            <span className="text-right">Publiées</span>
+            <span className="text-right">Utilisées</span>
+            <span className="text-right">Jetées</span>
+            <span className="text-right">Engag.</span>
+          </div>
+          {rows.map((r) => (
+            <div
+              key={r.angle}
+              className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-x-4 gap-y-1 border-t border-border py-1.5 text-sm tabular-nums"
+            >
+              <span className="truncate">{r.angle}</span>
+              <span className="text-right text-success">{r.published}</span>
+              <span className="text-right">{r.used}</span>
+              <span className="text-right text-muted-foreground">{r.discarded}</span>
+              <span className="text-right">{r.avg_engagement ?? '—'}</span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function StudioPage() {
   const { selectedProductId } = useSelectedProduct();
   const [activeTab, setActiveTab] = useState<StatusFilter>('pending');
@@ -1468,6 +1581,8 @@ export function StudioPage() {
       {connectionsReq.data && (
         <ConnectionsCard connections={connectionsReq.data} onChanged={connectionsReq.refetch} />
       )}
+
+      <AnglePerformanceCard productId={selectedProductId} onRefreshed={refetchAll} />
 
       <Card>
         <CardHeader className="pb-3">
