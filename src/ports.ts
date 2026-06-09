@@ -48,7 +48,7 @@ export function isXUrl(url: string): boolean {
 // the publish-service orchestrates guard/retry/idempotency around it.
 
 /** Platforms a draft can be published to. Mirrors content-studio's TargetSource. */
-export type PublishTarget = 'x' | 'reddit' | 'generic';
+export type PublishTarget = 'x' | 'reddit' | 'generic' | 'instagram';
 
 /** Whether a stored session can currently act as the logged-in user. */
 export type SessionState = 'connected' | 'expired' | 'missing';

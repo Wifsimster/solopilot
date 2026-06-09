@@ -152,6 +152,7 @@ const USED_ON_OPTIONS: { value: string; label: string }[] = [
   { value: 'x', label: 'X' },
   { value: 'reddit', label: 'Reddit' },
   { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'instagram', label: 'Instagram' },
   { value: 'autre', label: 'Autre' },
 ];
 
@@ -168,6 +169,7 @@ type GeneratePreset = {
 const GENERATE_PRESETS: GeneratePreset[] = [
   { key: 'x', label: '10 posts X', count: 10, source: 'x' },
   { key: 'reddit', label: '10 posts Reddit', count: 10, source: 'reddit' },
+  { key: 'instagram', label: '5 posts Instagram', count: 5, source: 'instagram' },
   { key: 'generic', label: '5 posts génériques', count: 5, source: 'generic' },
 ];
 

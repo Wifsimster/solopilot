@@ -17,7 +17,7 @@ export type ContentDraftStatus =
   | 'publishing'
   | 'published'
   | 'failed';
-export type TargetSource = 'x' | 'reddit' | 'generic';
+export type TargetSource = 'x' | 'reddit' | 'generic' | 'instagram';
 
 export const CONTENT_DRAFT_KINDS = ['post'] as const;
 export const CONTENT_DRAFT_STATUSES = [
@@ -30,7 +30,7 @@ export const CONTENT_DRAFT_STATUSES = [
   'published',
   'failed',
 ] as const;
-export const TARGET_SOURCES = ['x', 'reddit', 'generic'] as const;
+export const TARGET_SOURCES = ['x', 'reddit', 'generic', 'instagram'] as const;
 
 const contentDraftKindSchema = z.enum(CONTENT_DRAFT_KINDS, {
   errorMap: () => ({ message: 'Type de brouillon invalide (post).' }),
@@ -44,7 +44,7 @@ const contentDraftStatusSchema = z.enum(CONTENT_DRAFT_STATUSES, {
 
 const targetSourceSchema = z.enum(TARGET_SOURCES, {
   errorMap: () => ({
-    message: 'Plateforme cible invalide (x, reddit ou generic).',
+    message: 'Plateforme cible invalide (x, reddit, generic ou instagram).',
   }),
 });
 
@@ -1162,6 +1162,8 @@ function platformConstraints(targetSource: TargetSource): string {
       return 'X (Twitter) — MAX 280 caracteres par post, ton direct et percutant.';
     case 'reddit':
       return 'Reddit — environ 500 caracteres max, ton conversationnel, premiere personne, pas de spam.';
+    case 'instagram':
+      return 'Instagram — legende max ~2200 caracteres, ton visuel et inspirant, premiere ligne accrocheuse, emojis bienvenus, 3 a 5 hashtags pertinents en fin de legende.';
     case 'generic':
     default:
       return 'Generique (LinkedIn-friendly) — environ 500 caracteres max, ton professionnel mais accessible.';
