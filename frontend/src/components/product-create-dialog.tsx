@@ -1208,8 +1208,8 @@ function ProductForm({
       <div className="max-h-[72vh] overflow-y-auto space-y-4 pr-1">
       <GenerateAllButton generating={generating} onClick={() => void generateAll()} />
 
-      <div className="grid gap-x-6 gap-y-4 md:grid-cols-2 md:items-start">
-      {/* Left column — identité, configuration et studio de contenu */}
+      <div className="grid gap-x-6 gap-y-4 md:grid-cols-2 lg:grid-cols-3 md:items-start">
+      {/* Column 1 — identité et configuration */}
       <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="product-name">Nom</Label>
@@ -1271,10 +1271,14 @@ function ProductForm({
         />
       </div>
 
+      </div>
+
+      {/* Column 2 — studio de contenu */}
+      <div className="space-y-4">
       <StudioSection state={state} set={set} valuePropRef={valuePropRef} ctaRef={ctaRef} />
       </div>
 
-      {/* Right column — sources de collecte et détection d'intention */}
+      {/* Column 3 — sources de collecte et détection d'intention */}
       <div className="space-y-4">
       <SourcesSection state={state} set={set} subredditRef={subredditRef} hnRef={hnRef} />
 
@@ -1324,7 +1328,7 @@ export function ProductCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent className="sm:max-w-6xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Éditer le produit' : 'Nouveau produit'}</DialogTitle>
           <DialogDescription>
