@@ -362,6 +362,8 @@ interface FormState {
   hnKeywords: string[];
   intentEnabled: boolean;
   intentKeywords: string[];
+  intentExcludeKeywords: string[];
+  intentRequireKeywords: string[];
   discordWebhook: string;
   aiPromptOverride: string;
   productDescription: string;
@@ -397,6 +399,8 @@ function buildInitialFormState(initialValues: ProductRecord | null): FormState {
     hnKeywords: initialValues?.hn_keywords ?? [],
     intentEnabled: initialValues?.intent_enabled ?? false,
     intentKeywords: initialValues?.intent_keywords ?? [],
+    intentExcludeKeywords: initialValues?.intent_exclude_keywords ?? [],
+    intentRequireKeywords: initialValues?.intent_require_keywords ?? [],
     // discord_webhook is masked from backend — leave blank so user can re-enter
     // only if changing.
     discordWebhook: '',
@@ -432,6 +436,8 @@ interface SubmitFlushers {
   subreddit: SubredditPickerHandle | null;
   hn: ChipInputHandle | null;
   intent: ChipInputHandle | null;
+  intentExclude: ChipInputHandle | null;
+  intentRequire: ChipInputHandle | null;
   valueProp: ChipInputHandle | null;
   cta: ChipInputHandle | null;
 }
@@ -542,6 +548,35 @@ async function submitProduct({
     return;
   }
 
+  // Flush pending exclude / require refinement inputs (optional fields).
+  let pendingIntentExclude = state.intentExcludeKeywords;
+  let pendingIntentRequire = state.intentRequireKeywords;
+  if (state.intentEnabled) {
+    const flushedExclude = flushers.intentExclude?.flush();
+    if (flushedExclude === null || flushedExclude === undefined) {
+      set('error', "Corrige les mots-cles d'exclusion invalides avant de continuer.");
+      return;
+    }
+    pendingIntentExclude = flushedExclude;
+
+    const flushedRequire = flushers.intentRequire?.flush();
+    if (flushedRequire === null || flushedRequire === undefined) {
+      set('error', 'Corrige les mots-cles requis invalides avant de continuer.');
+      return;
+    }
+    pendingIntentRequire = flushedRequire;
+  }
+
+  if (state.intentEnabled && pendingIntentExclude.length > INTENT_KEYWORDS_MAX) {
+    set('error', `Maximum ${INTENT_KEYWORDS_MAX} mots-cles d'exclusion par produit.`);
+    return;
+  }
+
+  if (state.intentEnabled && pendingIntentRequire.length > INTENT_KEYWORDS_MAX) {
+    set('error', `Maximum ${INTENT_KEYWORDS_MAX} mots-cles requis par produit.`);
+    return;
+  }
+
   if (state.productDescription.length > PRODUCT_DESCRIPTION_MAX) {
     set('error', `Description trop longue (max ${PRODUCT_DESCRIPTION_MAX} caractères).`);
     return;
@@ -628,6 +663,13 @@ async function submitProduct({
     // Intent keywords: when enabled, send the current array (validated above);
     // when disabled, explicitly clear with null.
     body.intent_keywords = state.intentEnabled ? pendingIntentKeywords : null;
+
+    // Boolean refinement lists travel with the intent toggle. Empty arrays are
+    // sent as null so the backend stores "no filter" rather than "[]".
+    body.intent_exclude_keywords =
+      state.intentEnabled && pendingIntentExclude.length > 0 ? pendingIntentExclude : null;
+    body.intent_require_keywords =
+      state.intentEnabled && pendingIntentRequire.length > 0 ? pendingIntentRequire : null;
 
     const trimmedWebhook = state.discordWebhook.trim();
     if (trimmedWebhook) {
@@ -865,10 +907,18 @@ interface IntentSectionProps {
   state: FormState;
   set: Setter;
   intentRef: Ref<ChipInputHandle>;
+  intentExcludeRef: Ref<ChipInputHandle>;
+  intentRequireRef: Ref<ChipInputHandle>;
 }
 
 /** "Détection d'intention" card: intent toggle + keywords + AI analysis context. */
-function IntentSection({ state, set, intentRef }: IntentSectionProps) {
+function IntentSection({
+  state,
+  set,
+  intentRef,
+  intentExcludeRef,
+  intentRequireRef,
+}: IntentSectionProps) {
   return (
     <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
       <div>
@@ -916,6 +966,56 @@ function IntentSection({ state, set, intentRef }: IntentSectionProps) {
             Tape une expression puis Entrée ou virgule ({INTENT_KEYWORD_MIN} à {INTENT_KEYWORD_MAX}{' '}
             caractères, {INTENT_KEYWORDS_MAX} max).
           </p>
+        </div>
+
+        <div className={cn('grid gap-4 sm:grid-cols-2', !state.intentEnabled && 'opacity-50 pointer-events-none')}>
+          <div>
+            <Label htmlFor="product-intent-exclude" className="text-xs">
+              Exclure si contient (optionnel)
+            </Label>
+            <div className="mt-1">
+              <ChipInput
+                ref={intentExcludeRef}
+                id="product-intent-exclude"
+                ariaLabel="Ajouter un mot-clé d'exclusion"
+                value={state.intentExcludeKeywords}
+                onChange={(next) => set('intentExcludeKeywords', next)}
+                parse={parseIntentKeywords}
+                max={INTENT_KEYWORDS_MAX}
+                maxError={`Maximum ${INTENT_KEYWORDS_MAX} mots-clés d'exclusion.`}
+                removeLabel={(kw) => `Retirer ${kw}`}
+                placeholder="emploi, recrute, salaire"
+                disabled={!state.intentEnabled}
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Le post est ignoré s'il contient l'un de ces termes.
+            </p>
+          </div>
+
+          <div>
+            <Label htmlFor="product-intent-require" className="text-xs">
+              Exiger au moins un (optionnel)
+            </Label>
+            <div className="mt-1">
+              <ChipInput
+                ref={intentRequireRef}
+                id="product-intent-require"
+                ariaLabel="Ajouter un mot-clé requis"
+                value={state.intentRequireKeywords}
+                onChange={(next) => set('intentRequireKeywords', next)}
+                parse={parseIntentKeywords}
+                max={INTENT_KEYWORDS_MAX}
+                maxError={`Maximum ${INTENT_KEYWORDS_MAX} mots-clés requis.`}
+                removeLabel={(kw) => `Retirer ${kw}`}
+                placeholder="cherche, recommande, quelqu'un"
+                disabled={!state.intentEnabled}
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Si renseigné, le post doit contenir au moins un de ces termes.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -1173,6 +1273,8 @@ function ProductForm({
   const subredditRef = useRef<SubredditPickerHandle>(null);
   const hnRef = useRef<ChipInputHandle>(null);
   const intentRef = useRef<ChipInputHandle>(null);
+  const intentExcludeRef = useRef<ChipInputHandle>(null);
+  const intentRequireRef = useRef<ChipInputHandle>(null);
   const valuePropRef = useRef<ChipInputHandle>(null);
   const ctaRef = useRef<ChipInputHandle>(null);
 
@@ -1194,6 +1296,8 @@ function ProductForm({
         subreddit: subredditRef.current,
         hn: hnRef.current,
         intent: intentRef.current,
+        intentExclude: intentExcludeRef.current,
+        intentRequire: intentRequireRef.current,
         valueProp: valuePropRef.current,
         cta: ctaRef.current,
       },
@@ -1282,7 +1386,13 @@ function ProductForm({
       <div className="space-y-4">
       <SourcesSection state={state} set={set} subredditRef={subredditRef} hnRef={hnRef} />
 
-      <IntentSection state={state} set={set} intentRef={intentRef} />
+      <IntentSection
+        state={state}
+        set={set}
+        intentRef={intentRef}
+        intentExcludeRef={intentExcludeRef}
+        intentRequireRef={intentRequireRef}
+      />
       </div>
       </div>
 

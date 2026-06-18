@@ -97,6 +97,16 @@ const productBaseSchema = z.object({
     .max(30, { message: "Trop de mots-cles d'intention (max 30)." })
     .optional()
     .nullable(),
+  intent_exclude_keywords: z
+    .array(intentKeywordSchema)
+    .max(30, { message: "Trop de mots-cles d'exclusion (max 30)." })
+    .optional()
+    .nullable(),
+  intent_require_keywords: z
+    .array(intentKeywordSchema)
+    .max(30, { message: 'Trop de mots-cles requis (max 30).' })
+    .optional()
+    .nullable(),
   product_description: z
     .string()
     .max(2000, { message: 'La description du produit est trop longue (max 2000 caracteres).' })
@@ -199,6 +209,8 @@ export interface ProductView extends Omit<
   | 'hn_keywords'
   | 'intent_enabled'
   | 'intent_keywords'
+  | 'intent_exclude_keywords'
+  | 'intent_require_keywords'
   | 'value_props'
   | 'call_to_actions'
   | 'content_language'
@@ -210,6 +222,8 @@ export interface ProductView extends Omit<
   hn_keywords: string[];
   intent_enabled: boolean;
   intent_keywords: string[];
+  intent_exclude_keywords: string[];
+  intent_require_keywords: string[];
   value_props: string[];
   call_to_actions: string[];
   content_language: ContentLanguage;
@@ -242,6 +256,8 @@ export function toProductView(product: ProductRecord): ProductView {
     hn_keywords: deserializeStringArray(product.hn_keywords),
     intent_enabled: product.intent_enabled === 1,
     intent_keywords: deserializeStringArray(product.intent_keywords),
+    intent_exclude_keywords: deserializeStringArray(product.intent_exclude_keywords),
+    intent_require_keywords: deserializeStringArray(product.intent_require_keywords),
     value_props: deserializeStringArray(product.value_props),
     call_to_actions: deserializeStringArray(product.call_to_actions),
     content_language: isContentLanguage(product.content_language) ? product.content_language : 'fr',
@@ -270,8 +286,8 @@ export function productExists(id: string): boolean {
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
-    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords, intent_exclude_keywords, intent_require_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.name,
@@ -291,6 +307,12 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
     input.intent_enabled === true ? 1 : 0,
     input.intent_keywords && input.intent_keywords.length > 0
       ? JSON.stringify(input.intent_keywords)
+      : null,
+    input.intent_exclude_keywords && input.intent_exclude_keywords.length > 0
+      ? JSON.stringify(input.intent_exclude_keywords)
+      : null,
+    input.intent_require_keywords && input.intent_require_keywords.length > 0
+      ? JSON.stringify(input.intent_require_keywords)
       : null,
     input.product_description ?? null,
     input.reply_voice ?? null,
@@ -372,6 +394,22 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
     values.push(
       patch.intent_keywords && patch.intent_keywords.length > 0
         ? JSON.stringify(patch.intent_keywords)
+        : null,
+    );
+  }
+  if (patch.intent_exclude_keywords !== undefined) {
+    sets.push('intent_exclude_keywords = ?');
+    values.push(
+      patch.intent_exclude_keywords && patch.intent_exclude_keywords.length > 0
+        ? JSON.stringify(patch.intent_exclude_keywords)
+        : null,
+    );
+  }
+  if (patch.intent_require_keywords !== undefined) {
+    sets.push('intent_require_keywords = ?');
+    values.push(
+      patch.intent_require_keywords && patch.intent_require_keywords.length > 0
+        ? JSON.stringify(patch.intent_require_keywords)
         : null,
     );
   }

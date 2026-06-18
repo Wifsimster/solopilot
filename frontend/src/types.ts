@@ -111,6 +111,8 @@ export interface ProductRecord {
   hn_keywords: string[] | null;
   intent_enabled: boolean;
   intent_keywords: string[];
+  intent_exclude_keywords: string[];
+  intent_require_keywords: string[];
   product_description: string | null;
   reply_voice: ReplyVoice | null;
   product_url: string | null;
