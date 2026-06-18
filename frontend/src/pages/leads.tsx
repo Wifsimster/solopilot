@@ -60,6 +60,21 @@ function sourceLabel(source: IntentSignal['source']): string {
   return 'X';
 }
 
+// Human labels for the AI intent taxonomy (set by the analyze pass). Keys match
+// the `ai_intent_category` values returned by the backend.
+const CATEGORY_LABELS: Record<string, string> = {
+  demande_active: 'Demande active',
+  mention_concurrent: 'Mention concurrent',
+  signal_douleur: 'Signal de douleur',
+  question: 'Question',
+  recommandation: 'Recommandation',
+  autre: 'Autre',
+};
+
+function categoryLabel(category: string): string {
+  return CATEGORY_LABELS[category] ?? category;
+}
+
 function LeadCard({
   signal,
   onMutate,
@@ -114,11 +129,18 @@ function LeadCard({
           )}
         </div>
 
-        {signal.matched_pattern && (
-          <div className="pt-0.5">
-            <Badge variant="success" className="font-mono text-[11px]">
-              motif : {signal.matched_pattern}
-            </Badge>
+        {(signal.matched_pattern || signal.ai_intent_category) && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            {signal.matched_pattern && (
+              <Badge variant="success" className="font-mono text-[11px]">
+                motif : {signal.matched_pattern}
+              </Badge>
+            )}
+            {signal.ai_intent_category && (
+              <Badge variant="secondary" className="text-[11px]">
+                {categoryLabel(signal.ai_intent_category)}
+              </Badge>
+            )}
           </div>
         )}
       </CardHeader>
