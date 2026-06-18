@@ -373,12 +373,27 @@ function LeadAiAnalyzed({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Badge
-          variant={scoreBadgeVariant(signal.ai_score ?? 0)}
-          className="text-[11px] tabular-nums"
-        >
-          Score IA : {signal.ai_score}/100
-        </Badge>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge
+            variant={scoreBadgeVariant(signal.ai_score ?? 0)}
+            className="text-[11px] tabular-nums"
+          >
+            Intention : {signal.ai_score}/100
+          </Badge>
+          {signal.ai_icp_score !== null && (
+            <Badge
+              variant={scoreBadgeVariant(signal.ai_icp_score)}
+              className="text-[11px] tabular-nums"
+            >
+              Profil cible : {signal.ai_icp_score}/100
+            </Badge>
+          )}
+          {(signal.ai_score ?? 0) >= 70 && (signal.ai_icp_score ?? 0) >= 70 && (
+            <Badge variant="success" className="text-[11px]">
+              🎯 Prioritaire
+            </Badge>
+          )}
+        </div>
         {signal.ai_processed_at !== null && (
           <span className="text-xs text-muted-foreground">
             Analysé {formatRelativeFr(signal.ai_processed_at)}
@@ -391,6 +406,15 @@ function LeadAiAnalyzed({
           <p className="text-xs leading-relaxed whitespace-pre-wrap">
             <span className="font-semibold">Pourquoi : </span>
             {signal.ai_explanation}
+          </p>
+        </div>
+      )}
+
+      {signal.ai_icp_reason && (
+        <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+          <p className="text-xs leading-relaxed whitespace-pre-wrap">
+            <span className="font-semibold">Profil cible : </span>
+            {signal.ai_icp_reason}
           </p>
         </div>
       )}
