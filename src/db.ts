@@ -125,6 +125,14 @@ export interface IntentSignalRecord {
   ai_drafted_reply: string | null;
   ai_processed_at: number | null;
   ai_error: string | null;
+  // ICP fit scoring (stolen from Buska): how well the author/context matches the
+  // product's Ideal Customer Profile (target_audience + value_props), independent
+  // of buying intent. Lets the owner triage on fit, not just demand.
+  ai_icp_score: number | null;
+  ai_icp_reason: string | null;
+  // Intent taxonomy bucket (stolen from Buska): one of demande_active,
+  // mention_concurrent, signal_douleur, question, recommandation, autre.
+  ai_intent_category: string | null;
 }
 
 export interface IntentSignalReplyRecord {
@@ -269,6 +277,9 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'intent_signals', 'ai_drafted_reply', `TEXT`);
   addColumnIfMissing(database, 'intent_signals', 'ai_processed_at', `INTEGER`);
   addColumnIfMissing(database, 'intent_signals', 'ai_error', `TEXT`);
+  addColumnIfMissing(database, 'intent_signals', 'ai_icp_score', `INTEGER`);
+  addColumnIfMissing(database, 'intent_signals', 'ai_icp_reason', `TEXT`);
+  addColumnIfMissing(database, 'intent_signals', 'ai_intent_category', `TEXT`);
 
   database.exec(`CREATE TABLE IF NOT EXISTS intent_signal_replies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

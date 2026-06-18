@@ -221,5 +221,8 @@ export interface IntentSignal {
   ai_drafted_reply: string | null;
   ai_processed_at: number | null;
   ai_error: string | null;
+  ai_icp_score: number | null;
+  ai_icp_reason: string | null;
+  ai_intent_category: string | null;
   replies: IntentSignalReply[];
 }

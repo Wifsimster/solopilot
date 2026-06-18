@@ -8,6 +8,19 @@ import { loadConfig } from './config.js';
 export const INTENT_STATUSES = ['new', 'snoozed', 'dismissed', 'replied'] as const;
 export type IntentStatus = (typeof INTENT_STATUSES)[number];
 
+// Intent taxonomy (stolen from Buska's 5-category model): every analyzed signal
+// is classified into one bucket so the owner can triage by *kind* of signal, not
+// just by score. 'autre' is the escape hatch so the model never force-fits.
+export const INTENT_CATEGORIES = [
+  'demande_active',
+  'mention_concurrent',
+  'signal_douleur',
+  'question',
+  'recommandation',
+  'autre',
+] as const;
+export type IntentCategory = (typeof INTENT_CATEGORIES)[number];
+
 const intentStatusSchema = z.enum(INTENT_STATUSES, {
   errorMap: () => ({
     message: 'Statut invalide (new, snoozed, dismissed ou replied).',
@@ -60,6 +73,9 @@ export interface IntentSignalView {
   ai_drafted_reply: string | null;
   ai_processed_at: number | null;
   ai_error: string | null;
+  ai_icp_score: number | null;
+  ai_icp_reason: string | null;
+  ai_intent_category: string | null;
   replies: IntentSignalReplyView[];
 }
 
@@ -228,6 +244,7 @@ export function listIntentSignals(opts: IntentSignalListOptions = {}): IntentSig
     .prepare(
       `SELECT s.id, s.item_id, s.product_id, s.source, s.matched_pattern, s.status, s.notes, s.created_at,
               s.ai_score, s.ai_explanation, s.ai_drafted_reply, s.ai_processed_at, s.ai_error,
+              s.ai_icp_score, s.ai_icp_reason, s.ai_intent_category,
               t.text AS text, t.author AS author, t.url AS url
        FROM intent_signals s
        LEFT JOIN tweets t ON t.id = s.item_id
@@ -250,6 +267,7 @@ export function getIntentSignal(id: number): IntentSignalView | undefined {
     .prepare(
       `SELECT s.id, s.item_id, s.product_id, s.source, s.matched_pattern, s.status, s.notes, s.created_at,
               s.ai_score, s.ai_explanation, s.ai_drafted_reply, s.ai_processed_at, s.ai_error,
+              s.ai_icp_score, s.ai_icp_reason, s.ai_intent_category,
               t.text AS text, t.author AS author, t.url AS url
        FROM intent_signals s
        LEFT JOIN tweets t ON t.id = s.item_id
@@ -382,6 +400,9 @@ function mapRowToView(
     ai_drafted_reply: row.ai_drafted_reply ?? null,
     ai_processed_at: row.ai_processed_at ?? null,
     ai_error: row.ai_error ?? null,
+    ai_icp_score: row.ai_icp_score ?? null,
+    ai_icp_reason: row.ai_icp_reason ?? null,
+    ai_intent_category: row.ai_intent_category ?? null,
     replies,
   };
 }
@@ -403,6 +424,9 @@ const replyVariantSchema = z.object({
 const analyzeResponseSchema = z.object({
   score: z.number().int().min(0).max(100),
   explanation: z.string().min(1).max(500),
+  icp_score: z.number().int().min(0).max(100),
+  icp_reason: z.string().min(1).max(500),
+  intent_category: z.enum(INTENT_CATEGORIES).catch('autre'),
   replies: z.array(replyVariantSchema).min(0).max(MAX_REPLY_COUNT),
 });
 
@@ -421,21 +445,41 @@ function characterLimitForSource(source: string): number {
 }
 
 function buildAnalyzeSystemPrompt(count: number, charLimit: number, source: string): string {
-  return `Tu es un expert marketing produit. Tu analyses un post (X, Reddit, ou Hacker News) pour determiner s'il represente un signal d'intention d'achat pour un produit donne, et tu rediges plusieurs variantes de brouillon de reponse, chacune avec un ANGLE different.
+  return `Tu es un expert marketing produit. Tu analyses un post (X, Reddit, ou Hacker News) pour determiner s'il represente un signal d'intention d'achat pour un produit donne, tu evalues l'adequation de l'auteur avec le profil client ideal (ICP), et tu rediges plusieurs variantes de brouillon de reponse, chacune avec un ANGLE different.
 
 Reponds STRICTEMENT en JSON avec cette structure exacte :
 {
   "score": <entier 0-100>,
   "explanation": "<1-2 phrases en francais expliquant pourquoi ce post est ou n'est pas un signal pertinent pour ce produit>",
+  "icp_score": <entier 0-100>,
+  "icp_reason": "<1-2 phrases en francais expliquant l'adequation entre l'auteur/contexte du post et le profil client ideal>",
+  "intent_category": "<une seule valeur parmi: demande_active | mention_concurrent | signal_douleur | question | recommandation | autre>",
   "replies": [
     { "angle": "<libelle court 2-6 mots>", "text": "<le brouillon de reponse>" }
   ]
 }
 
-Regles de score :
+Regles de "intent_category" (le TYPE de signal — choisis la categorie la plus representative) :
+- "demande_active" = l'auteur cherche activement un outil/une solution ("quelqu'un connait un outil pour...", "je cherche une alternative a...")
+- "mention_concurrent" = l'auteur parle d'un produit concurrent (le nomme, le compare, s'en plaint)
+- "signal_douleur" = l'auteur exprime un probleme ou une frustration sans forcement demander de solution
+- "question" = l'auteur pose une question generale sur le domaine, sans demande d'achat explicite
+- "recommandation" = l'auteur demande ou donne une recommandation de produit
+- "autre" = aucune categorie ci-dessus ne convient clairement
+Cette categorie est INDEPENDANTE du score : un post peut etre "question" avec un score faible.
+
+Regles de "score" (intention d'achat — le post exprime-t-il un besoin que ce produit resout ?) :
 - 0-39 = signal non pertinent ou faux positif → "replies" DOIT etre un tableau vide []
 - 40-69 = signal possible, merite un oeil → genere exactement ${count} variantes
 - 70-100 = signal fort, a traiter rapidement → genere exactement ${count} variantes
+
+Regles de "icp_score" (adequation avec le profil client ideal — l'auteur RESSEMBLE-t-il au client cible ?) :
+- C'est une dimension DISTINCTE du score d'intention. Un post peut avoir une forte intention mais un auteur hors-cible (icp faible), ou un auteur parfaitement cible sans intention immediate.
+- Base-toi sur l'audience cible et les propositions de valeur fournies dans la section PRODUIT.
+- 0-39 = auteur/contexte hors du profil cible
+- 40-69 = adequation partielle ou incertaine
+- 70-100 = correspond clairement au profil client ideal
+- Si l'audience cible n'est pas fournie, retourne icp_score = 50 et explique dans icp_reason que le profil cible n'est pas defini.
 
 Regles sur les variantes de reponse :
 - Chaque variante prend un ANGLE different. Exemples d'angles a varier :
@@ -486,9 +530,13 @@ function buildUserPayload(signal: IntentSignalView, product: ProductView | null,
   const productName = product?.name ?? signal.product_id;
   const productDescription = product?.product_description ?? null;
   const replyVoice = product?.reply_voice ?? null;
+  const targetAudience = product?.target_audience ?? null;
+  const valueProps = product?.value_props ?? [];
   return `PRODUIT
 Nom: ${productName}
 Description: ${productDescription || '(aucune description fournie)'}
+Audience cible (profil client ideal): ${targetAudience || '(non definie)'}
+Propositions de valeur: ${valueProps.length > 0 ? valueProps.map((v) => `- ${v}`).join('\n') : '(non definies)'}
 Voix de reponse demandee: ${replyVoice || 'professionnelle'}
 
 POST
@@ -572,7 +620,8 @@ export async function analyzeIntentSignal(
     db.prepare(
       `UPDATE intent_signals
        SET ai_score = NULL, ai_explanation = NULL, ai_drafted_reply = NULL,
-           ai_processed_at = ?, ai_error = ?
+           ai_processed_at = ?, ai_error = ?,
+           ai_icp_score = NULL, ai_icp_reason = NULL, ai_intent_category = NULL
        WHERE id = ?`,
     ).run(now, cleaned, signalId);
     logger.warn('Intent signal analysis failed', { signalId, error: cleaned });
@@ -643,7 +692,7 @@ export async function analyzeIntentSignal(
     );
   }
 
-  const { score, explanation, replies } = validated.data;
+  const { score, explanation, icp_score, icp_reason, intent_category, replies } = validated.data;
   const now = Date.now();
   const lowScore = score < 40;
   const effectiveReplies = lowScore ? [] : replies;
@@ -653,9 +702,10 @@ export async function analyzeIntentSignal(
     db.prepare(
       `UPDATE intent_signals
        SET ai_score = ?, ai_explanation = ?, ai_drafted_reply = ?,
-           ai_processed_at = ?, ai_error = NULL
+           ai_processed_at = ?, ai_error = NULL,
+           ai_icp_score = ?, ai_icp_reason = ?, ai_intent_category = ?
        WHERE id = ?`,
-    ).run(score, explanation, draftedReply, now, signalId);
+    ).run(score, explanation, draftedReply, now, icp_score, icp_reason, intent_category, signalId);
     if (effectiveReplies.length > 0) {
       const insert = db.prepare(
         `INSERT INTO intent_signal_replies (intent_signal_id, angle, text, used, generated_at)
@@ -671,6 +721,8 @@ export async function analyzeIntentSignal(
   logger.info('Intent signal analyzed', {
     signalId,
     score,
+    icpScore: icp_score,
+    category: intent_category,
     replies: effectiveReplies.length,
   });
   return getIntentSignal(signalId)!;
