@@ -114,6 +114,34 @@ export interface MatchIntentResult {
   matched: number;
 }
 
+/**
+ * Lowercase, trim, and drop empties — used to pre-process exclude/require lists
+ * once per match run so the hot per-item loop only does substring checks.
+ */
+function normalizeFilterTerms(terms: string[]): string[] {
+  return terms.map((t) => t.toLowerCase().trim()).filter((t) => t.length > 0);
+}
+
+/**
+ * Syften-style boolean gate applied before the include-keyword pass:
+ * - reject if the post contains ANY exclude term;
+ * - if require terms exist, the post must contain AT LEAST ONE of them.
+ * `excludeLower` / `requireLower` are assumed already normalized.
+ */
+function postPassesFilters(
+  lowerText: string,
+  excludeLower: string[],
+  requireLower: string[],
+): boolean {
+  for (const ex of excludeLower) {
+    if (lowerText.includes(ex)) return false;
+  }
+  if (requireLower.length > 0) {
+    return requireLower.some((rq) => lowerText.includes(rq));
+  }
+  return true;
+}
+
 export function matchIntentForProduct(
   productId: string,
   newItemIds: string[],
@@ -148,11 +176,15 @@ export function matchIntentForProduct(
      VALUES (?, ?, ?, ?, 'new', NULL, ?)`,
   );
 
+  const excludeLower = normalizeFilterTerms(product.intent_exclude_keywords);
+  const requireLower = normalizeFilterTerms(product.intent_require_keywords);
+
   const insertMany = db.transaction((items: TweetTextRow[]) => {
     let matched = 0;
     const now = Date.now();
     for (const item of items) {
       const lowerText = item.text.toLowerCase();
+      if (!postPassesFilters(lowerText, excludeLower, requireLower)) continue;
       for (const kw of product.intent_keywords) {
         const lowerKw = kw.toLowerCase();
         if (lowerKw.length === 0) continue;
@@ -201,11 +233,15 @@ export function rematchIntentForProductAll(productId: string): RematchIntentResu
      VALUES (?, ?, ?, ?, 'new', NULL, ?)`,
   );
 
+  const excludeLower = normalizeFilterTerms(product.intent_exclude_keywords);
+  const requireLower = normalizeFilterTerms(product.intent_require_keywords);
+
   const insertMany = db.transaction((items: TweetTextRow[]) => {
     let matched = 0;
     const now = Date.now();
     for (const item of items) {
       const lowerText = item.text.toLowerCase();
+      if (!postPassesFilters(lowerText, excludeLower, requireLower)) continue;
       for (const kw of product.intent_keywords) {
         const lowerKw = kw.toLowerCase();
         if (lowerKw.length === 0) continue;

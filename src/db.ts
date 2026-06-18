@@ -53,6 +53,12 @@ export interface ProductRecord {
   hn_keywords: string | null;
   intent_enabled: number;
   intent_keywords: string | null;
+  // Boolean refinement of intent matching (Syften-style): a post is skipped if it
+  // contains ANY exclude term, and (when require is non-empty) must contain at
+  // least one require term. Both are JSON string arrays. Applied before the
+  // include-keyword pass, deterministically, with zero LLM cost.
+  intent_exclude_keywords: string | null;
+  intent_require_keywords: string | null;
   product_description: string | null;
   reply_voice: string | null;
   product_url: string | null;
@@ -219,6 +225,8 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'products', 'hn_keywords', `TEXT`);
   addColumnIfMissing(database, 'products', 'intent_enabled', `INTEGER NOT NULL DEFAULT 0`);
   addColumnIfMissing(database, 'products', 'intent_keywords', `TEXT`);
+  addColumnIfMissing(database, 'products', 'intent_exclude_keywords', `TEXT`);
+  addColumnIfMissing(database, 'products', 'intent_require_keywords', `TEXT`);
   addColumnIfMissing(database, 'products', 'product_description', `TEXT`);
   addColumnIfMissing(database, 'products', 'reply_voice', `TEXT`);
   addColumnIfMissing(database, 'products', 'product_url', `TEXT`);
