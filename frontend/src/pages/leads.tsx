@@ -71,8 +71,61 @@ const CATEGORY_LABELS: Record<string, string> = {
   autre: 'Autre',
 };
 
+// Canonical display order for the taxonomy filter chips.
+const CATEGORY_ORDER = [
+  'demande_active',
+  'mention_concurrent',
+  'signal_douleur',
+  'question',
+  'recommandation',
+  'autre',
+];
+
 function categoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category;
+}
+
+/**
+ * Single-select chip row to filter the current tab's leads by AI intent
+ * category. Counts and chips reflect the active tab only; renders nothing until
+ * at least one lead in the tab has been classified.
+ */
+function CategoryFilterBar({
+  categories,
+  active,
+  onChange,
+}: {
+  categories: { value: string; count: number }[];
+  active: string;
+  onChange: (value: string) => void;
+}) {
+  if (categories.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Button
+        variant={active === 'all' ? 'default' : 'outline'}
+        size="sm"
+        className="h-7 text-xs"
+        onClick={() => onChange('all')}
+      >
+        Toutes
+      </Button>
+      {categories.map((cat) => (
+        <Button
+          key={cat.value}
+          variant={active === cat.value ? 'default' : 'outline'}
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() => onChange(cat.value)}
+        >
+          {categoryLabel(cat.value)}
+          <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0 tabular-nums">
+            {cat.count}
+          </Badge>
+        </Button>
+      ))}
+    </div>
+  );
 }
 
 function LeadCard({
@@ -251,6 +304,7 @@ function LeadsList({
 export function LeadsPage() {
   const { selectedProductId } = useSelectedProduct();
   const [activeTab, setActiveTab] = useState<StatusFilter>('new');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   // Fetch all statuses in parallel so the tab badges can show counts. Each tab
   // is a separate request so the backend remains a thin filter.
@@ -290,6 +344,22 @@ export function LeadsPage() {
     }),
     [newReq.data, snoozedReq.data, repliedReq.data, dismissedReq.data],
   );
+
+  // Taxonomy chips reflect the active tab only: count classified leads per
+  // category and order them canonically.
+  const activeSignals = requestsByStatus[activeTab].data ?? [];
+  const categoryCounts = useMemo(() => {
+    const tally = new Map<string, number>();
+    for (const s of activeSignals) {
+      if (s.ai_intent_category) {
+        tally.set(s.ai_intent_category, (tally.get(s.ai_intent_category) ?? 0) + 1);
+      }
+    }
+    return CATEGORY_ORDER.filter((c) => tally.has(c)).map((value) => ({
+      value,
+      count: tally.get(value) ?? 0,
+    }));
+  }, [activeSignals]);
 
   const handleMutate = useCallback(
     async (id: number, patch: Partial<Pick<IntentSignal, 'status' | 'notes'>>) => {
@@ -348,7 +418,12 @@ export function LeadsPage() {
 
       <Tabs
         value={activeTab}
-        onValueChange={(v) => setActiveTab(v as StatusFilter)}
+        onValueChange={(v) => {
+          setActiveTab(v as StatusFilter);
+          // A category present in one tab may be absent in another; reset so the
+          // new tab never opens on an empty filtered list with no visible chip.
+          setCategoryFilter('all');
+        }}
       >
         <div className="overflow-x-auto pb-1">
           <TabsList className="h-auto flex-nowrap gap-1 w-max">
@@ -364,6 +439,16 @@ export function LeadsPage() {
             ))}
           </TabsList>
         </div>
+
+        {categoryCounts.length > 0 && (
+          <div className="mt-3">
+            <CategoryFilterBar
+              categories={categoryCounts}
+              active={categoryFilter}
+              onChange={setCategoryFilter}
+            />
+          </div>
+        )}
 
         {TABS.map((tab) => {
           const req = requestsByStatus[tab.id];
@@ -382,6 +467,13 @@ export function LeadsPage() {
                   return 0;
                 })
               : signals;
+          // Apply the taxonomy filter only to the active tab — that is the only
+          // tab whose chips/counts are computed, so others stay unfiltered.
+          const visibleSignals =
+            tab.id === activeTab && categoryFilter !== 'all'
+              ? orderedSignals.filter((s) => s.ai_intent_category === categoryFilter)
+              : orderedSignals;
+          const filtered = tab.id === activeTab && categoryFilter !== 'all';
           return (
             <TabsContent key={tab.id} value={tab.id} className="mt-4">
               {anyLoading && !req.data ? (
@@ -392,9 +484,15 @@ export function LeadsPage() {
                 </div>
               ) : (
                 <LeadsList
-                  signals={orderedSignals}
-                  emptyTitle={tab.emptyTitle}
-                  emptyHint={tab.emptyHint}
+                  signals={visibleSignals}
+                  emptyTitle={
+                    filtered ? 'Aucun lead dans cette catégorie.' : tab.emptyTitle
+                  }
+                  emptyHint={
+                    filtered
+                      ? 'Choisis « Toutes » pour revoir tous les signaux de cet onglet.'
+                      : tab.emptyHint
+                  }
                   onMutate={handleMutate}
                   onAnalyzed={req.refetch}
                 />

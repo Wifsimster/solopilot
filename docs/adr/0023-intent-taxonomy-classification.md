@@ -43,6 +43,8 @@ One additive nullable column via the existing `addColumnIfMissing` path in `db.t
 
 The Lead card header (`leads.tsx`) renders the category as a secondary badge next to the existing `motif :` (matched_pattern) badge — `Demande active`, `Mention concurrent`, etc. via a `CATEGORY_LABELS` map. The badge only appears once the signal has been analyzed.
 
+A **single-select category filter bar** sits under the status tabs. Its chips and counts reflect the **active tab only** (computed from that tab's loaded signals, ordered canonically via `CATEGORY_ORDER`), and it renders nothing until at least one lead in the tab is classified. Selecting a chip filters the visible list client-side; the filter resets to "Toutes" on tab change so a category present in one tab never leaves another tab showing an empty list with no highlighted chip. This is purely a frontend concern — the backend list endpoint stays a thin per-status filter, consistent with the existing tab-per-status fetch model.
+
 ## Consequences
 
 ### Positive
@@ -63,7 +65,7 @@ The Lead card header (`leads.tsx`) renders the category as a secondary badge nex
 
 ## Explicitly NOT in scope
 
-- A category **filter** on the leads page — display only for now. The data is structured correctly; the filter UI is a follow-up once enough signals are classified to make it useful.
+- **Server-side** category filtering — the filter is client-side over already-loaded signals; the list endpoint is unchanged. A `?category=` query param can be added later if pagination ever makes client-side filtering insufficient.
 - Per-category reply-voice or routing (e.g. auto-Discord-push only for `demande_active`).
 - Categorizing at collect time, or back-filling historical signals.
 - Making the taxonomy product-configurable.
