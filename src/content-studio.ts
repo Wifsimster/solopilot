@@ -331,7 +331,7 @@ const generateResponseSchema = z.object({
 const GENERATE_SYSTEM_PROMPT = `Tu es un marketeur produit expérimenté et un copywriter spécialisé en posts promotionnels courts pour les réseaux sociaux.
 
 On va te demander d'écrire plusieurs posts promotionnels au sujet d'un produit précis. Chaque post DOIT prendre un ANGLE différent. Exemples d'angles à varier :
-- preuve sociale (social proof)
+- preuve sociale (social proof — qualitative uniquement, sans chiffres inventés)
 - problème / frustration ciblée (problem-focused)
 - avant / après (before/after)
 - contrarian / opinion forte
@@ -349,6 +349,7 @@ Règles :
   * generic : ~500 caractères max, ton type LinkedIn, professionnel mais accessible.
 - Intègre subtilement un appel à l'action quand pertinent (parmi ceux fournis).
 - Quand tu inclus un lien, utilise EXACTEMENT l'URL à promouvoir fournie. N'invente jamais d'URL et ne lie jamais vers un dépôt de code (ex. github.com).
+- N'invente JAMAIS de chiffres ni de faits invérifiables : nombre d'utilisateurs / clients / téléchargements, statistiques, notes, prix ou récompenses, avis ou témoignages. N'utilise QUE les informations fournies (description, propositions de valeur, CTA). Pour l'angle « preuve sociale », reste qualitatif (ex. « rejoins la communauté », « pensé avec des parents ») — jamais de métrique chiffrée non fournie.
 - Pas de mention d'IA, de bot, ou de génération automatique.
 - Pas d'emojis sauf si voix = decontractee.
 - Chaque draft a un \`angle\` court (2-6 mots) qui résume l'approche.
@@ -1341,6 +1342,7 @@ Règles STRICTES :
 - Le DERNIER tweet contient un appel à l'action (parmi ceux fournis) et, si pertinent, l'URL EXACTE à promouvoir (jamais un dépôt de code).
 - 3 à 8 tweets par thread idéalement.
 - Respecte la voix et la langue demandées.
+- N'invente JAMAIS de chiffres ni de faits invérifiables (nombre d'utilisateurs, statistiques, notes, récompenses, avis, témoignages). N'utilise QUE les informations fournies. Pour la « preuve sociale », reste qualitatif, sans métrique chiffrée non fournie.
 - Pas de mention d'IA/bot/génération automatique. Pas d'emojis sauf si voix = decontractee.
 - Chaque thread a un \`angle\` court (2-6 mots).
 
