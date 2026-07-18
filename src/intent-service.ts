@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import OpenAI from 'openai';
 import { getDb, type IntentSignalRecord, type IntentSignalReplyRecord } from './db.js';
 import { getProduct, toProductView, type ProductView } from './product-service.js';
 import { logger } from './logger.js';
 import { loadConfig } from './config.js';
+import { createAiClient, resolveAiApiKey } from './ai-client.js';
 
 export const INTENT_STATUSES = ['new', 'snoozed', 'dismissed', 'replied'] as const;
 export type IntentStatus = (typeof INTENT_STATUSES)[number];
@@ -673,15 +673,11 @@ export async function analyzeIntentSignal(
     );
   }
 
-  if (!config.GITHUB_TOKEN) {
-    return persistError('Client AI indisponible : GITHUB_TOKEN manquant.');
+  if (!resolveAiApiKey(config)) {
+    return persistError('Client AI indisponible : clé AI (AI_API_KEY ou GITHUB_TOKEN) manquante.');
   }
 
-  const client = new OpenAI({
-    baseURL: 'https://models.github.ai/inference',
-    apiKey: config.GITHUB_TOKEN,
-    timeout: ANALYZE_AI_TIMEOUT_MS,
-  });
+  const client = createAiClient(config, { timeout: ANALYZE_AI_TIMEOUT_MS });
 
   const charLimit = characterLimitForSource(signal.source);
   const systemPrompt = buildAnalyzeSystemPrompt(count, charLimit, signal.source);
@@ -780,17 +776,13 @@ export async function generateRepliesOnly(
     throw new IntentReplyGenerationError(message);
   }
 
-  if (!config.GITHUB_TOKEN) {
-    const message = 'Client AI indisponible : GITHUB_TOKEN manquant.';
+  if (!resolveAiApiKey(config)) {
+    const message = 'Client AI indisponible : clé AI (AI_API_KEY ou GITHUB_TOKEN) manquante.';
     logger.warn('Intent reply generation failed', { signalId: signal.id, error: message.trim() });
     throw new IntentReplyGenerationError(message);
   }
 
-  const client = new OpenAI({
-    baseURL: 'https://models.github.ai/inference',
-    apiKey: config.GITHUB_TOKEN,
-    timeout: ANALYZE_AI_TIMEOUT_MS,
-  });
+  const client = createAiClient(config, { timeout: ANALYZE_AI_TIMEOUT_MS });
 
   const charLimit = characterLimitForSource(signal.source);
   const systemPrompt = buildRepliesOnlySystemPrompt(count, charLimit, signal.source);

@@ -4,6 +4,8 @@ export function buildMergedConfig(baseConfig: Config, overrides: Record<string, 
   return {
     ...baseConfig,
     ...(overrides.AI_MODEL && { AI_MODEL: overrides.AI_MODEL }),
+    ...(overrides.AI_BASE_URL && { AI_BASE_URL: overrides.AI_BASE_URL }),
+    ...(overrides.AI_API_KEY && { AI_API_KEY: overrides.AI_API_KEY }),
     ...(overrides.TWEETS_LOOKBACK_DAYS && {
       TWEETS_LOOKBACK_DAYS: Number(overrides.TWEETS_LOOKBACK_DAYS),
     }),
