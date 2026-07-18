@@ -190,6 +190,9 @@ jobs:
           echo "major=$MAJOR" >> $GITHUB_OUTPUT
           echo "minor=$MINOR" >> $GITHUB_OUTPUT
           echo "full=$VERSION" >> $GITHUB_OUTPUT
+          # Actual build timestamp — repository.updated_at reflects repo metadata
+          # changes, not the build, so it was baking a stale date into the image.
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -203,7 +206,7 @@ jobs:
             ghcr.io/wifsimster/solopilot:${{ steps.version_parts.outputs.major }}
           build-args: |
             VERSION=${{ steps.version.outputs.new_version }}
-            BUILD_DATE=${{ github.event.repository.updated_at }}
+            BUILD_DATE=${{ steps.version_parts.outputs.build_date }}
             VCS_REF=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max,ignore-error=true
