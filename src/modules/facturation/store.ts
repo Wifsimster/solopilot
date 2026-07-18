@@ -150,7 +150,7 @@ export function upsertStripeInvoices(
   const stmt = db.prepare(
     `INSERT INTO invoices (id, product_id, number, client_name, client_email, amount_cents, currency, status, issued_on, due_on, paid_on, stripe_id, created_at)
      VALUES (@id, @product_id, @number, @client_name, @client_email, @amount_cents, @currency, @status, @issued_on, @due_on, @paid_on, @stripe_id, @created_at)
-     ON CONFLICT(stripe_id) DO UPDATE SET
+     ON CONFLICT(stripe_id) WHERE stripe_id IS NOT NULL DO UPDATE SET
        status = excluded.status, amount_cents = excluded.amount_cents,
        paid_on = excluded.paid_on, due_on = excluded.due_on`,
   );
