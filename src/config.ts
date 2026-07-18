@@ -11,7 +11,14 @@ const configSchema = z.object({
   X_GQL_USER_BY_SCREEN_NAME_ID: z.string().optional(),
   X_GQL_HOME_TIMELINE_ID: z.string().optional(),
 
-  GITHUB_TOKEN: z.string().min(1),
+  // AI provider credentials. Solopilot talks to any OpenAI-compatible endpoint.
+  // The default provider is GitHub Models (free; needs a fine-grained PAT with
+  // the `models:read` scope). To use OpenRouter instead, set AI_BASE_URL +
+  // AI_API_KEY below. GITHUB_TOKEN stays optional and, when present, also powers
+  // GitHub repo-context enrichment during content generation.
+  GITHUB_TOKEN: z.string().min(1).optional(),
+  AI_BASE_URL: z.string().url().default('https://models.github.ai/inference'),
+  AI_API_KEY: z.string().min(1).optional(),
   AI_MODEL: z.string().default('openai/gpt-4.1'),
   TWEETS_LOOKBACK_DAYS: z.coerce.number().int().positive().default(1),
   DRY_RUN: z
@@ -42,7 +49,12 @@ const configSchema = z.object({
   // Optional: a calendar ICS feed URL (e.g. Google Calendar secret address) for
   // the Agenda module. When absent, Agenda works as a local event store.
   AGENDA_ICS_URL: z.string().url().optional(),
-});
+  })
+  .refine((c) => Boolean(c.AI_API_KEY ?? c.GITHUB_TOKEN), {
+    message:
+      'Configurez un fournisseur AI : AI_API_KEY (OpenRouter / compatible OpenAI) ou GITHUB_TOKEN (GitHub Models).',
+    path: ['GITHUB_TOKEN'],
+  });
 
 export type Config = z.infer<typeof configSchema>;
 
@@ -80,10 +92,10 @@ export const REQUIRED_CREDENTIALS = [
   },
   {
     key: 'GITHUB_TOKEN',
-    label: 'GitHub Personal Access Token',
+    label: 'Fournisseur AI — GitHub Models (par défaut) ou OpenRouter',
     docUrl: 'https://github.com/settings/tokens?type=beta',
     howToFind:
-      'Créez un token sur <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">github.com/settings/tokens</a> (Fine-grained token). Activez le scope <code>models:read</code>. Le token commence par <code>github_pat_...</code>.',
+      'Deux options. <strong>GitHub Models (gratuit)</strong> : créez un token sur <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">github.com/settings/tokens</a> (Fine-grained), scope <code>models:read</code>, renseignez <code>GITHUB_TOKEN</code> (commence par <code>github_pat_...</code>). <strong>OpenRouter</strong> : renseignez plutôt <code>AI_BASE_URL=https://openrouter.ai/api/v1</code> + <code>AI_API_KEY=sk-or-...</code> et un <code>AI_MODEL</code> supporté. Un seul des deux suffit.',
   },
 ] as const;
 

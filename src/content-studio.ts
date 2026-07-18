@@ -4,6 +4,7 @@ import { getDb, type ContentDraftRecord } from './db.js';
 import type { ProductView } from './product-service.js';
 import { logger } from './logger.js';
 import { loadConfig } from './config.js';
+import { createAiClient, resolveAiApiKey } from './ai-client.js';
 import { fetchGithubRepoContext } from './github-import.js';
 import { verifySubredditsExist } from './adapters/reddit-reader.js';
 
@@ -432,17 +433,13 @@ function createSuggestionClient(): { client: OpenAI; config: ReturnType<typeof l
     );
   }
 
-  if (!config.GITHUB_TOKEN) {
+  if (!resolveAiApiKey(config)) {
     throw new ContentStudioError(
-      'Echec de la suggestion : client AI indisponible (GITHUB_TOKEN manquant).',
+      'Echec de la suggestion : client AI indisponible (clé AI_API_KEY ou GITHUB_TOKEN manquante).',
     );
   }
 
-  const client = new OpenAI({
-    baseURL: 'https://models.github.ai/inference',
-    apiKey: config.GITHUB_TOKEN,
-    timeout: GENERATE_AI_TIMEOUT_MS,
-  });
+  const client = createAiClient(config, { timeout: GENERATE_AI_TIMEOUT_MS });
 
   return { client, config };
 }
@@ -1185,17 +1182,13 @@ export async function generatePosts(
     );
   }
 
-  if (!config.GITHUB_TOKEN) {
+  if (!resolveAiApiKey(config)) {
     throw new ContentStudioError(
-      'Echec de la generation : client AI indisponible (GITHUB_TOKEN manquant).',
+      'Echec de la generation : client AI indisponible (clé AI_API_KEY ou GITHUB_TOKEN manquante).',
     );
   }
 
-  const client = new OpenAI({
-    baseURL: 'https://models.github.ai/inference',
-    apiKey: config.GITHUB_TOKEN,
-    timeout: GENERATE_AI_TIMEOUT_MS,
-  });
+  const client = createAiClient(config, { timeout: GENERATE_AI_TIMEOUT_MS });
 
   const language = product.content_language ?? 'fr';
   const voice = product.content_voice ?? product.reply_voice ?? 'professionnelle';
@@ -1372,17 +1365,13 @@ export async function generateThread(
       `Echec de la generation : configuration AI indisponible : ${err instanceof Error ? err.message : String(err)}`,
     );
   }
-  if (!config.GITHUB_TOKEN) {
+  if (!resolveAiApiKey(config)) {
     throw new ContentStudioError(
-      'Echec de la generation : client AI indisponible (GITHUB_TOKEN manquant).',
+      'Echec de la generation : client AI indisponible (clé AI_API_KEY ou GITHUB_TOKEN manquante).',
     );
   }
 
-  const client = new OpenAI({
-    baseURL: 'https://models.github.ai/inference',
-    apiKey: config.GITHUB_TOKEN,
-    timeout: GENERATE_AI_TIMEOUT_MS,
-  });
+  const client = createAiClient(config, { timeout: GENERATE_AI_TIMEOUT_MS });
 
   const language = product.content_language ?? 'fr';
   const voice = product.content_voice ?? product.reply_voice ?? 'professionnelle';

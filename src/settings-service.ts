@@ -2,6 +2,9 @@ import { getDb, type SettingRecord, type ProductSettingRecord } from './db.js';
 
 const EDITABLE_KEYS = [
   'AI_MODEL',
+  // AI provider endpoint (OpenAI-compatible). Default GitHub Models; set to
+  // https://openrouter.ai/api/v1 to use OpenRouter.
+  'AI_BASE_URL',
   'TWEETS_LOOKBACK_DAYS',
   'DRY_RUN',
   'CRON_SCHEDULE',
@@ -19,6 +22,9 @@ const CREDENTIAL_KEYS = [
   'X_SESSION_AUTH_TOKEN',
   'X_SESSION_CSRF_TOKEN',
   'DISCORD_WEBHOOK_URL',
+  // AI provider API key (OpenRouter sk-or-... or any OpenAI-compatible key).
+  // Falls back to GITHUB_TOKEN when unset.
+  'AI_API_KEY',
   // LinkedIn auto-publish session cookies (drive the web UI as the logged-in
   // user). li_at is the auth cookie; JSESSIONID is the CSRF cookie.
   'LINKEDIN_LI_AT',

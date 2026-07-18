@@ -1,6 +1,6 @@
-import OpenAI from 'openai';
 import type { Config } from './config.js';
 import type { Item } from './ports.js';
+import { createAiClient } from './ai-client.js';
 import { logger } from './logger.js';
 
 const SYSTEM_PROMPT = `You are a tech news curator. You receive a list of items aggregated from multiple sources (X / Twitter, Reddit and Hacker News).
@@ -38,11 +38,7 @@ Use a professional but engaging tone.`;
 const AI_TIMEOUT_MS = 60_000;
 
 export function createAIFilter(config: Config) {
-  const client = new OpenAI({
-    baseURL: 'https://models.github.ai/inference',
-    apiKey: config.GITHUB_TOKEN,
-    timeout: AI_TIMEOUT_MS,
-  });
+  const client = createAiClient(config, { timeout: AI_TIMEOUT_MS });
 
   return { filterAndSummarize, synthesizeMonthlySummary };
 
