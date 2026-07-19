@@ -21,6 +21,12 @@ const configSchema = z.object({
   AI_API_KEY: z.string().min(1).optional(),
   AI_MODEL: z.string().default('openai/gpt-4.1'),
   TWEETS_LOOKBACK_DAYS: z.coerce.number().int().positive().default(1),
+  // Hard cap on the number of accumulated items fed to the AI in a single digest.
+  // Bounds the prompt size so a backlog can never inflate the request past the
+  // model/provider prompt-token limit (which would 402/413 and stall the digest,
+  // leaving items un-consumed and the backlog growing every run). Items beyond
+  // the cap are still drained from the queue — only the newest are summarized.
+  VEILLE_DIGEST_MAX_ITEMS: z.coerce.number().int().positive().default(300),
   DRY_RUN: z
     .enum(['true', 'false', '1', '0'])
     .default('false')
