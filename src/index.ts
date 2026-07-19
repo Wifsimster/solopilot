@@ -56,9 +56,24 @@ export async function run(
 
   logger.info('Items accumulated for summary', { count: items.length, productId });
 
-  // 3. Filter and summarize AI news
+  // 3. Filter and summarize AI news.
+  //    Cap the items sent to the AI so a backlog can never inflate the prompt
+  //    past the provider's token limit (a 402/413 there would throw, leave every
+  //    item un-consumed, and grow the backlog on every subsequent run). Items are
+  //    ordered oldest-first, so the newest `maxItems` are the freshest news.
+  const maxItems = config.VEILLE_DIGEST_MAX_ITEMS;
+  const itemsForSummary = items.length > maxItems ? items.slice(-maxItems) : items;
+  if (items.length > maxItems) {
+    logger.warn('Digest backlog exceeds cap — summarizing newest items, draining the rest', {
+      productId,
+      total: items.length,
+      summarized: itemsForSummary.length,
+      dropped: items.length - itemsForSummary.length,
+    });
+  }
+
   const aiFilter = createAIFilter(config);
-  const summary = await aiFilter.filterAndSummarize(items);
+  const summary = await aiFilter.filterAndSummarize(itemsForSummary);
   if (runId && summary) updateRunStats(runId, { summary });
 
   if (!summary) {
