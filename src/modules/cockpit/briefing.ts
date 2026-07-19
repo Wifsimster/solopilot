@@ -7,7 +7,7 @@
  * agenda) report a `planned` status so the cockpit shows the full roadmap
  * without faking data. See ADR-0015.
  */
-import { getLastRun } from '../../run-service.js';
+import { getLastDigest } from '../../run-service.js';
 import { getUnpublishedTweets } from '../../tweet-store.js';
 import { listIntentSignals } from '../../intent-service.js';
 import { listWorkflowRuns } from '../../workflow/run-store.js';
@@ -62,7 +62,7 @@ export interface Briefing {
 }
 
 export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing {
-  const lastRun = getLastRun(activityId);
+  const lastDigest = getLastDigest(activityId);
   const pendingItems = getUnpublishedTweets(activityId).length;
   const newLeads = listIntentSignals({ productId: activityId, status: 'new', limit: 500 }).length;
 
@@ -83,9 +83,9 @@ export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing
     generatedAt: new Date().toISOString(),
     veille: {
       status: 'live',
-      lastDigestAt: lastRun?.started_at ?? null,
-      lastDigestStatus: lastRun?.status ?? null,
-      summary: lastRun?.summary ?? null,
+      lastDigestAt: lastDigest?.started_at ?? null,
+      lastDigestStatus: lastDigest?.status ?? null,
+      summary: lastDigest?.summary ?? null,
       pendingItems,
     },
     acquisition: { status: 'live', newLeads },

@@ -216,6 +216,22 @@ export function getLastRun(productId: string = DEFAULT_PRODUCT_ID): RunRecord | 
 }
 
 /**
+ * Returns the most recent run that actually produced a digest (non-null summary).
+ * Unlike getLastRun, this skips interleaved collect / no-news runs, so the cockpit's
+ * "Veille" card keeps showing the last real digest instead of blanking out every
+ * time an hourly collect run (summary NULL) becomes the newest row.
+ */
+export function getLastDigest(productId: string = DEFAULT_PRODUCT_ID): RunRecord | undefined {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT * FROM runs WHERE product_id = ? AND summary IS NOT NULL AND status = 'success'
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(productId) as RunRecord | undefined;
+}
+
+/**
  * Soft-deletes a summary: nulls the summary, sets status to 'deleted',
  * releases associated tweets, and cascades to monthly summaries.
  */
