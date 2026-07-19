@@ -4,7 +4,7 @@ import { getDb, type ContentDraftRecord } from './db.js';
 import type { ProductView } from './product-service.js';
 import { logger } from './logger.js';
 import { loadConfig } from './config.js';
-import { createAiClient, resolveAiApiKey } from './ai-client.js';
+import { createAiClient, resolveAiApiKey, jsonModeParams, parseJsonResponse } from './ai-client.js';
 import { fetchGithubRepoContext } from './github-import.js';
 import { verifySubredditsExist } from './adapters/reddit-reader.js';
 
@@ -493,7 +493,7 @@ async function runSuggestion<T>(opts: {
     const response = await client.chat.completions.create({
       model: config.AI_MODEL,
       max_tokens: SUGGEST_AI_MAX_TOKENS,
-      response_format: { type: 'json_object' },
+      ...jsonModeParams(config),
       messages: [
         { role: 'system', content: opts.systemPrompt },
         { role: 'user', content: opts.userPayload + repoBlock },
@@ -514,7 +514,7 @@ async function runSuggestion<T>(opts: {
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonResponse(raw);
   } catch (err) {
     throw new ContentStudioError(
       `Echec de la suggestion : reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`,
@@ -1230,7 +1230,7 @@ Genere exactement ${count} drafts, chacun avec un angle DIFFERENT.`;
     const response = await client.chat.completions.create({
       model: config.AI_MODEL,
       max_tokens: 2048,
-      response_format: { type: 'json_object' },
+      ...jsonModeParams(config),
       messages: [
         { role: 'system', content: GENERATE_SYSTEM_PROMPT },
         { role: 'user', content: userPayload },
@@ -1253,7 +1253,7 @@ Genere exactement ${count} drafts, chacun avec un angle DIFFERENT.`;
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonResponse(raw);
   } catch (err) {
     throw new ContentStudioError(
       `Echec de la generation : reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`,
@@ -1411,7 +1411,7 @@ Genere exactement ${count} thread(s), chacun avec un angle DIFFERENT.`;
     const response = await client.chat.completions.create({
       model: config.AI_MODEL,
       max_tokens: 2048,
-      response_format: { type: 'json_object' },
+      ...jsonModeParams(config),
       messages: [
         { role: 'system', content: GENERATE_THREAD_SYSTEM_PROMPT },
         { role: 'user', content: userPayload },
@@ -1433,7 +1433,7 @@ Genere exactement ${count} thread(s), chacun avec un angle DIFFERENT.`;
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonResponse(raw);
   } catch (err) {
     throw new ContentStudioError(
       `Echec de la generation : reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`,

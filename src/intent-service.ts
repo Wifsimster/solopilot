@@ -3,7 +3,7 @@ import { getDb, type IntentSignalRecord, type IntentSignalReplyRecord } from './
 import { getProduct, toProductView, type ProductView } from './product-service.js';
 import { logger } from './logger.js';
 import { loadConfig } from './config.js';
-import { createAiClient, resolveAiApiKey } from './ai-client.js';
+import { createAiClient, resolveAiApiKey, jsonModeParams, parseJsonResponse } from './ai-client.js';
 
 export const INTENT_STATUSES = ['new', 'snoozed', 'dismissed', 'replied'] as const;
 export type IntentStatus = (typeof INTENT_STATUSES)[number];
@@ -688,7 +688,7 @@ export async function analyzeIntentSignal(
     const response = await client.chat.completions.create({
       model: config.AI_MODEL,
       max_tokens: 2048,
-      response_format: { type: 'json_object' },
+      ...jsonModeParams(config),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPayload },
@@ -710,7 +710,7 @@ export async function analyzeIntentSignal(
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonResponse(raw);
   } catch (err) {
     return persistError(
       `Reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`,
@@ -793,7 +793,7 @@ export async function generateRepliesOnly(
     const response = await client.chat.completions.create({
       model: config.AI_MODEL,
       max_tokens: 1500,
-      response_format: { type: 'json_object' },
+      ...jsonModeParams(config),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPayload },
@@ -815,7 +815,7 @@ export async function generateRepliesOnly(
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonResponse(raw);
   } catch (err) {
     const message = `Reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`;
     logger.warn('Intent reply generation failed', { signalId: signal.id, error: message.trim() });
