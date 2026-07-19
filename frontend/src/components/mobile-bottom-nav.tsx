@@ -1,16 +1,18 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, FileText, Target, Wand2, Menu } from 'lucide-react';
+import { Gauge, Receipt, CalendarDays, Users, Menu } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MobileBottomNavProps {
   onMore: () => void;
 }
 
+// Ordered by daily priority: the briefing first, then the modules with
+// time-sensitive daily actions (overdue invoices, today's events, stale deals).
 const ITEMS = [
-  { to: '/', label: 'Accueil', icon: LayoutDashboard, end: true },
-  { to: '/summaries', label: 'Synthèses', icon: FileText },
-  { to: '/leads', label: 'Opportunités', icon: Target },
-  { to: '/studio', label: 'Studio', icon: Wand2 },
+  { to: '/cockpit', label: 'Cockpit', icon: Gauge },
+  { to: '/facturation', label: 'Facturation', icon: Receipt },
+  { to: '/agenda', label: 'Agenda', icon: CalendarDays },
+  { to: '/crm', label: 'CRM', icon: Users },
 ];
 
 function itemClass({ isActive }: { isActive: boolean }) {
