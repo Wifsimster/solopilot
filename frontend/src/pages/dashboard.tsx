@@ -24,15 +24,62 @@ import {
   Play,
   AlertCircle,
   FileText,
+  Flame,
 } from 'lucide-react';
 import { humanizeCron, nextCronDate, formatTimeUntil } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/responsive-dialog';
 import { MarkdownContent } from '@/components/markdown-content';
 import { toast } from 'sonner';
 import { useSelectedProduct, withProductId } from '@/lib/product-context-hooks';
-import type { StatusResponse } from '@/types';
+import type { StatusResponse, VeilleItem } from '@/types';
+import { Badge } from '@/components/ui/badge';
+import { URGENT_THRESHOLD } from '@/pages/mentions';
 
 const POLL_INTERVAL_MS = 4_000;
+const URGENT_FETCH_LIMIT = 50;
+const URGENT_PREVIEW_COUNT = 3;
+
+/**
+ * "À traiter" widget: urgent, still-untriaged mentions surfaced on the
+ * dashboard so critical signals don't wait for a visit to the Mentions page.
+ * Renders nothing when there is nothing urgent (or triage is not enabled).
+ */
+function UrgentMentionsCard({ productId }: { productId: string }) {
+  const { data: items } = useApi<VeilleItem[]>(
+    `/api/veille/items?status=new&minUrgency=${URGENT_THRESHOLD}&sort=urgency&limit=${URGENT_FETCH_LIMIT}`,
+    { productId },
+  );
+  if (!items || items.length === 0) return null;
+
+  const countLabel = items.length >= URGENT_FETCH_LIMIT ? `${URGENT_FETCH_LIMIT}+` : `${items.length}`;
+
+  return (
+    <Alert role="status" className="border-destructive/40 bg-destructive/5">
+      <Flame className="size-4 text-destructive" />
+      <AlertTitle className="flex items-center gap-2">
+        Mentions urgentes à traiter
+        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 tabular-nums">
+          {countLabel}
+        </Badge>
+      </AlertTitle>
+      <AlertDescription>
+        <ul className="mt-1 space-y-1">
+          {items.slice(0, URGENT_PREVIEW_COUNT).map((item) => (
+            <li key={item.id} className="truncate text-sm">
+              <span className="tabular-nums font-medium">{item.triage_urgency}/100</span>
+              {' — '}
+              {item.text}
+            </li>
+          ))}
+        </ul>
+        <Link to="/mentions" className="mt-2 inline-flex items-center gap-1 font-medium underline">
+          Ouvrir la boîte des mentions
+          <ArrowRight className="size-3.5" aria-hidden="true" />
+        </Link>
+      </AlertDescription>
+    </Alert>
+  );
+}
 
 function isCookieError(message: string | null | undefined): boolean {
   if (!message) return false;
@@ -169,6 +216,8 @@ export function DashboardPage() {
           />
         }
       />
+
+      <UrgentMentionsCard productId={selectedProductId} />
 
       {cookiesExpired && (
         <Alert variant="destructive" role="alert">

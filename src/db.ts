@@ -68,6 +68,14 @@ export interface ProductRecord {
   call_to_actions: string | null;
   content_voice: string | null;
   content_language: string | null;
+  // Per-item AI triage (stolen from Stalkr): opt-in flag + optional custom
+  // category list (JSON string array) replacing the default taxonomy.
+  triage_enabled: number;
+  triage_categories: string | null;
+  // Real-time high-urgency alerts: opt-in flag + urgency threshold (NULL =
+  // default 80). Requires triage_enabled to produce anything.
+  alert_enabled: number;
+  alert_threshold: number | null;
 }
 
 export interface ContentDraftRecord {
@@ -236,6 +244,29 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'products', 'call_to_actions', `TEXT`);
   addColumnIfMissing(database, 'products', 'content_voice', `TEXT`);
   addColumnIfMissing(database, 'products', 'content_language', `TEXT`);
+  addColumnIfMissing(database, 'products', 'triage_enabled', `INTEGER NOT NULL DEFAULT 0`);
+  addColumnIfMissing(database, 'products', 'triage_categories', `TEXT`);
+  addColumnIfMissing(database, 'products', 'alert_enabled', `INTEGER NOT NULL DEFAULT 0`);
+  addColumnIfMissing(database, 'products', 'alert_threshold', `INTEGER`);
+
+  // Per-item AI triage columns (Stalkr-style): each collected item gets a
+  // category, an urgency score and a relevance score at collect time. NULL
+  // triaged_at = not yet triaged; triage_error explains a NULL category.
+  addColumnIfMissing(database, 'tweets', 'triage_category', `TEXT`);
+  addColumnIfMissing(database, 'tweets', 'triage_urgency', `INTEGER`);
+  addColumnIfMissing(database, 'tweets', 'triage_relevance', `INTEGER`);
+  addColumnIfMissing(database, 'tweets', 'triaged_at', `INTEGER`);
+  addColumnIfMissing(database, 'tweets', 'triage_error', `TEXT`);
+  // NULL = not alerted; set when a high-urgency Discord alert has been sent so
+  // re-runs never double-ping (idempotent across restarts).
+  addColumnIfMissing(database, 'tweets', 'alerted_at', `INTEGER`);
+  // Owner triage feed state (new | handled | ignored) — distinct from the AI
+  // triage above: the AI scores, the owner works through the feed.
+  addColumnIfMissing(database, 'tweets', 'triage_status', `TEXT NOT NULL DEFAULT 'new'`);
+  addColumnIfMissing(database, 'tweets', 'triage_status_at', `INTEGER`);
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tweets_triage ON tweets(product_id, triaged_at, triage_urgency)`,
+  );
 
   database.exec(`CREATE TABLE IF NOT EXISTS content_drafts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

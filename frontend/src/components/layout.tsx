@@ -36,6 +36,7 @@ import {
   Sun,
   Moon,
   Compass,
+  Radar,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -73,6 +74,7 @@ const NAV_SECTIONS: NavSection[] = [
     id: 'engage',
     label: 'Engager',
     items: [
+      { to: '/mentions', label: 'Mentions', icon: Radar },
       { to: '/leads', label: 'Opportunités', icon: Target, tourId: 'nav-leads' },
       { to: '/crm', label: 'CRM', icon: Users, tourId: 'nav-crm' },
       { to: '/studio', label: 'Studio', icon: Wand2, tourId: 'nav-studio' },

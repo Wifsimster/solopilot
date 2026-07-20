@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { getDb, DEFAULT_PRODUCT_ID } from './db.js';
 import type { Item, ItemSource } from './ports.js';
 import { logger } from './logger.js';
@@ -208,6 +209,145 @@ export function countTweetsForDate(
     .prepare(`SELECT COUNT(*) as count FROM tweets WHERE ${clauses.join(' AND ')}`)
     .get(...params) as { count: number };
   return row.count;
+}
+
+export const VEILLE_ITEM_STATUSES = ['new', 'handled', 'ignored'] as const;
+export type VeilleItemStatus = (typeof VEILLE_ITEM_STATUSES)[number];
+
+const veilleItemStatusSchema = z.enum(VEILLE_ITEM_STATUSES, {
+  errorMap: () => ({ message: 'Statut invalide (new, handled ou ignored).' }),
+});
+
+export const veilleItemPatchSchema = z.object({
+  status: veilleItemStatusSchema,
+});
+
+export const veilleItemListQuerySchema = z.object({
+  productId: z.string().min(1).max(64).optional(),
+  source: z.enum(['x', 'reddit', 'hn']).optional(),
+  category: z
+    .string()
+    .min(1)
+    .max(60)
+    .optional(),
+  minUrgency: z
+    .preprocess(
+      (v) => (typeof v === 'string' ? Number(v) : v),
+      z.number().int().min(0).max(100),
+    )
+    .optional(),
+  triaged: z.enum(['true', 'false']).optional(),
+  status: veilleItemStatusSchema.optional(),
+  sort: z.enum(['recent', 'urgency']).optional(),
+  limit: z
+    .preprocess((v) => (typeof v === 'string' ? Number(v) : v), z.number().int().min(1).max(500))
+    .optional(),
+});
+
+export interface VeilleItemListOptions {
+  productId?: string;
+  source?: ItemSource;
+  category?: string;
+  minUrgency?: number;
+  triaged?: 'true' | 'false';
+  status?: VeilleItemStatus;
+  sort?: 'recent' | 'urgency';
+  limit?: number;
+}
+
+export interface VeilleItemView {
+  id: string;
+  product_id: string;
+  source: string;
+  text: string;
+  author: string;
+  url: string;
+  created_at: string;
+  collection_date: string;
+  triage_category: string | null;
+  triage_urgency: number | null;
+  triage_relevance: number | null;
+  triaged_at: number | null;
+  triage_error: string | null;
+  alerted_at: number | null;
+  triage_status: string;
+  triage_status_at: number | null;
+}
+
+/**
+ * Lists collected items with their per-item AI triage fields, filterable by
+ * category / minimum urgency / triage state. Backs the veille items API
+ * independently of the daily digest.
+ */
+export function listVeilleItems(opts: VeilleItemListOptions = {}): VeilleItemView[] {
+  const db = getDb();
+  const clauses = ['product_id = ?'];
+  const params: unknown[] = [opts.productId ?? DEFAULT_PRODUCT_ID];
+
+  if (opts.source) {
+    clauses.push('source = ?');
+    params.push(opts.source);
+  }
+  if (opts.category) {
+    clauses.push('triage_category = ?');
+    params.push(opts.category);
+  }
+  if (opts.minUrgency !== undefined) {
+    clauses.push('triage_urgency >= ?');
+    params.push(opts.minUrgency);
+  }
+  if (opts.triaged === 'true') {
+    clauses.push('triaged_at IS NOT NULL');
+  } else if (opts.triaged === 'false') {
+    clauses.push('triaged_at IS NULL');
+  }
+  if (opts.status) {
+    clauses.push('triage_status = ?');
+    params.push(opts.status);
+  }
+
+  const orderBy =
+    opts.sort === 'urgency'
+      ? 'triage_urgency DESC NULLS LAST, created_at DESC'
+      : 'created_at DESC';
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
+  params.push(limit);
+
+  return db
+    .prepare(
+      `SELECT id, product_id, source, text, author, url, created_at, collection_date,
+              triage_category, triage_urgency, triage_relevance, triaged_at, triage_error, alerted_at,
+              triage_status, triage_status_at
+       FROM tweets
+       WHERE ${clauses.join(' AND ')}
+       ORDER BY ${orderBy}
+       LIMIT ?`,
+    )
+    .all(...params) as VeilleItemView[];
+}
+
+/**
+ * Updates the owner triage status of one item. Returns the updated view, or
+ * undefined when the id is unknown.
+ */
+export function updateVeilleItemStatus(
+  id: string,
+  status: VeilleItemStatus,
+): VeilleItemView | undefined {
+  const db = getDb();
+  const result = db
+    .prepare(`UPDATE tweets SET triage_status = ?, triage_status_at = ? WHERE id = ?`)
+    .run(status, Date.now(), id);
+  if (result.changes === 0) return undefined;
+  logger.info('Veille item status updated', { itemId: id, status });
+  return db
+    .prepare(
+      `SELECT id, product_id, source, text, author, url, created_at, collection_date,
+              triage_category, triage_urgency, triage_relevance, triaged_at, triage_error, alerted_at,
+              triage_status, triage_status_at
+       FROM tweets WHERE id = ?`,
+    )
+    .get(id) as VeilleItemView;
 }
 
 function mapRowToItem(row: ItemRow, productId: string): Item {

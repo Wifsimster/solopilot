@@ -30,7 +30,7 @@ export function MobileBottomNav({ onMore }: MobileBottomNavProps) {
     >
       <div className="flex items-stretch">
         {ITEMS.map((item) => (
-          <NavLink key={item.to} to={item.to} end={item.end} className={itemClass}>
+          <NavLink key={item.to} to={item.to} className={itemClass}>
             {({ isActive }) => (
               <>
                 <span

@@ -15,6 +15,7 @@ import { SettingsPage } from "@/pages/settings";
 import { SetupPage } from "@/pages/setup";
 import { ProductsPage } from "@/pages/products";
 import { LeadsPage } from "@/pages/leads";
+import { MentionsPage } from "@/pages/mentions";
 import { StudioPage } from "@/pages/studio";
 
 // Code-split the modules that pull heavy libs (recharts, dnd-kit, schedule-x) —
@@ -52,6 +53,7 @@ export function App() {
                 <Route path="/facturation" element={<LazyPage><FacturationPage /></LazyPage>} />
                 <Route path="/comptabilite" element={<LazyPage><ComptabilitePage /></LazyPage>} />
                 <Route path="/agenda" element={<LazyPage><AgendaPage /></LazyPage>} />
+                <Route path="/mentions" element={<MentionsPage />} />
                 <Route path="/leads" element={<LeadsPage />} />
                 <Route path="/crm" element={<LazyPage><CrmPage /></LazyPage>} />
                 <Route path="/studio" element={<StudioPage />} />

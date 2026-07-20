@@ -9,6 +9,7 @@
  * already merged for the activity by the scheduler (as cron-manager does today).
  */
 import { triggerCollect, triggerRun } from '../run-service.js';
+import { sendPendingAlerts } from '../alert-service.js';
 import type { Step } from '../workflow/types.js';
 
 export interface VeilleCollectOutput {
@@ -34,5 +35,22 @@ export const veillePublishRunStep: Step<VeillePublishOutput> = {
   run: async (ctx) => {
     const run = await triggerRun(ctx.config, 'cron', ctx.activityId);
     return { status: run.status, hasSummary: run.summary !== null };
+  },
+};
+
+export interface VeilleAlertOutput {
+  alerted: number;
+}
+
+/**
+ * Safety-net sweep for high-urgency alerts. The primary path is inline in
+ * collect (immediacy); this step re-runs the same idempotent service so
+ * missed items (e.g. webhook down during collect) are picked up, and so the
+ * sweep can be run manually via `npm run workflow -- veille.alert`.
+ */
+export const veilleAlertRunStep: Step<VeilleAlertOutput> = {
+  use: 'veille.alert-run',
+  run: async (ctx) => {
+    return sendPendingAlerts(ctx.config, ctx.activityId);
   },
 };

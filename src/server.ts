@@ -43,7 +43,16 @@ import {
   getProductSettingsMap,
 } from './settings-service.js';
 import { REQUIRED_CREDENTIALS, type Config } from './config.js';
-import { countUnpublishedTweets, countTweetsForDate, getTweetsByRunId } from './tweet-store.js';
+import {
+  countUnpublishedTweets,
+  countTweetsForDate,
+  getTweetsByRunId,
+  listVeilleItems,
+  veilleItemListQuerySchema,
+  veilleItemPatchSchema,
+  updateVeilleItemStatus,
+} from './tweet-store.js';
+import { triageCategoriesForProduct, DEFAULT_TRIAGE_CATEGORIES } from './ai-triage.js';
 import { getTodayDateParis } from './date-utils.js';
 import { validateXCookies, detectGqlIds, DEFAULT_GQL_IDS } from './adapters/scraper-reader.js';
 import { searchSubreddits } from './adapters/reddit-reader.js';
@@ -852,6 +861,69 @@ export function startServer(
         502,
       );
     }
+  });
+
+  // --- Veille items API (per-item AI triage, ADR-agnostic read model) ---
+
+  app.get('/api/veille/items', (c) => {
+    const parsed = veilleItemListQuerySchema.safeParse({
+      productId: c.req.query('productId'),
+      source: c.req.query('source'),
+      category: c.req.query('category'),
+      minUrgency: c.req.query('minUrgency'),
+      triaged: c.req.query('triaged'),
+      limit: c.req.query('limit'),
+    });
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Parametres de requete invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    return c.json(listVeilleItems(parsed.data));
+  });
+
+  app.patch('/api/veille/items/:id', async (c) => {
+    const id = c.req.param('id');
+    if (!id) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = veilleItemPatchSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const updated = updateVeilleItemStatus(id, parsed.data.status);
+    if (!updated) {
+      return c.json({ success: false, message: 'Item introuvable.' }, 404);
+    }
+    return c.json(updated);
+  });
+
+  app.get('/api/veille/triage-categories', (c) => {
+    const productId = c.req.query('productId');
+    if (!productId) {
+      return c.json({ categories: [...DEFAULT_TRIAGE_CATEGORIES] });
+    }
+    const product = getProduct(productId);
+    if (!product) {
+      return c.json({ success: false, message: 'Produit introuvable.' }, 404);
+    }
+    return c.json({ categories: triageCategoriesForProduct(toProductView(product)) });
   });
 
   // --- Intent signals API (available in both setup and operational mode) ---
