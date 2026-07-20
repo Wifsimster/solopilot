@@ -101,11 +101,7 @@ export function DashboardPage() {
   if (loading && !status) {
     return (
       <div className="space-y-6">
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-14" />
-          <Skeleton className="h-7 w-36" />
-          <Skeleton className="h-5 w-64" />
-        </div>
+        <Skeleton className="h-48 rounded-2xl sm:h-44" />
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           <Skeleton className="h-28 rounded-xl" />
           <Skeleton className="h-28 rounded-xl" />
@@ -146,17 +142,44 @@ export function DashboardPage() {
         {liveMessage}
       </output>
 
-      <PageHeader
-        eyebrow="Veille"
-        title="Dashboard"
-        description="Supervision du bot X AI Weekly"
-        actions={
+      <section
+        aria-labelledby="dashboard-title"
+        className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-xs animate-in fade-in slide-in-from-bottom-2 duration-500"
+      >
+        <div className="pointer-events-none absolute inset-0 bg-brand-aurora" aria-hidden="true" />
+        <div className="pointer-events-none absolute inset-0 bg-grid-fade" aria-hidden="true" />
+        <div className="relative flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0 max-w-2xl space-y-4">
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/8 px-3 py-1 text-xs font-medium text-primary dark:border-primary/30 dark:bg-primary/15">
+              <span className="relative flex size-1.5" aria-hidden="true">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+                <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
+              </span>
+              {running
+                ? 'Run en cours…'
+                : nextRunLabel
+                  ? `Veille active · prochain run dans ${nextRunLabel}`
+                  : 'Veille active'}
+            </span>
+            <h1
+              id="dashboard-title"
+              className="text-3xl font-semibold tracking-tight sm:text-4xl"
+            >
+              Votre veille,{' '}
+              <span className="text-gradient-brand">en pilote automatique</span>
+            </h1>
+            <p className="max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+              Collecte automatique des sources, synthèse IA chaque matin. Tout
+              se pilote d'ici, d'un coup d'œil.
+            </p>
+          </div>
           <ConfirmDialog
             trigger={
               <Button
+                size="lg"
                 disabled={running || triggering}
                 aria-label="Lancer un run maintenant"
-                className="hidden sm:inline-flex gap-2"
+                className="hidden shrink-0 gap-2 shadow-lg shadow-primary/25 sm:inline-flex"
               >
                 <Play className="size-4" aria-hidden="true" />
                 {running || triggering ? 'Run en cours…' : 'Lancer un run'}
@@ -167,8 +190,8 @@ export function DashboardPage() {
             confirmLabel="Lancer le run"
             onConfirm={handleTrigger}
           />
-        }
-      />
+        </div>
+      </section>
 
       {cookiesExpired && (
         <Alert variant="destructive" role="alert">
@@ -184,7 +207,7 @@ export function DashboardPage() {
         </Alert>
       )}
 
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100 fill-mode-backwards">
         <StatCard
           title="Statut actuel"
           icon={Activity}
@@ -211,7 +234,7 @@ export function DashboardPage() {
       </div>
 
       {lastRun ? (
-        <Card className="hover:border-muted-foreground/20 transition-colors">
+        <Card className="hover:border-muted-foreground/20 hover:shadow-md transition-all animate-in fade-in slide-in-from-bottom-2 duration-500 delay-150 fill-mode-backwards">
           <CardHeader className="pb-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="space-y-1 min-w-0">
@@ -270,10 +293,14 @@ export function DashboardPage() {
           </CardFooter>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="py-16 flex flex-col items-center gap-4 text-center">
-            <div className="flex size-12 items-center justify-center rounded-full bg-muted" aria-hidden="true">
-              <Activity className="size-5 text-muted-foreground" />
+        <Card className="relative overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500 delay-150 fill-mode-backwards">
+          <div className="pointer-events-none absolute inset-0 bg-brand-aurora" aria-hidden="true" />
+          <CardContent className="relative py-16 flex flex-col items-center gap-4 text-center">
+            <div
+              className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-chart-2/15 text-primary ring-1 ring-inset ring-primary/15"
+              aria-hidden="true"
+            >
+              <Activity className="size-5" />
             </div>
             <div className="space-y-1">
               <p className="font-medium">Aucun run enregistré</p>
