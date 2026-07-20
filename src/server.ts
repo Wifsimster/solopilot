@@ -49,6 +49,8 @@ import {
   getTweetsByRunId,
   listVeilleItems,
   veilleItemListQuerySchema,
+  veilleItemPatchSchema,
+  updateVeilleItemStatus,
 } from './tweet-store.js';
 import { triageCategoriesForProduct, DEFAULT_TRIAGE_CATEGORIES } from './ai-triage.js';
 import { getTodayDateParis } from './date-utils.js';
@@ -883,6 +885,33 @@ export function startServer(
       );
     }
     return c.json(listVeilleItems(parsed.data));
+  });
+
+  app.patch('/api/veille/items/:id', async (c) => {
+    const id = c.req.param('id');
+    if (!id) {
+      return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+    }
+    const body = await c.req.json().catch(() => null);
+    if (body === null || typeof body !== 'object') {
+      return c.json({ success: false, message: 'Corps de requete invalide.' }, 400);
+    }
+    const parsed = veilleItemPatchSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        {
+          success: false,
+          message: 'Donnees invalides.',
+          issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })),
+        },
+        400,
+      );
+    }
+    const updated = updateVeilleItemStatus(id, parsed.data.status);
+    if (!updated) {
+      return c.json({ success: false, message: 'Item introuvable.' }, 404);
+    }
+    return c.json(updated);
   });
 
   app.get('/api/veille/triage-categories', (c) => {

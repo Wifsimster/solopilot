@@ -228,3 +228,24 @@ export interface IntentSignal {
   ai_intent_category: string | null;
   replies: IntentSignalReply[];
 }
+
+export type VeilleItemStatus = 'new' | 'handled' | 'ignored';
+
+export interface VeilleItem {
+  id: string;
+  product_id: string;
+  source: FeedItemSource;
+  text: string;
+  author: string;
+  url: string;
+  created_at: string;
+  collection_date: string;
+  triage_category: string | null;
+  triage_urgency: number | null;
+  triage_relevance: number | null;
+  triaged_at: number | null;
+  triage_error: string | null;
+  alerted_at: number | null;
+  triage_status: VeilleItemStatus;
+  triage_status_at: number | null;
+}

@@ -260,6 +260,10 @@ function runProductMigrations(database: Database.Database) {
   // NULL = not alerted; set when a high-urgency Discord alert has been sent so
   // re-runs never double-ping (idempotent across restarts).
   addColumnIfMissing(database, 'tweets', 'alerted_at', `INTEGER`);
+  // Owner triage feed state (new | handled | ignored) — distinct from the AI
+  // triage above: the AI scores, the owner works through the feed.
+  addColumnIfMissing(database, 'tweets', 'triage_status', `TEXT NOT NULL DEFAULT 'new'`);
+  addColumnIfMissing(database, 'tweets', 'triage_status_at', `INTEGER`);
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_tweets_triage ON tweets(product_id, triaged_at, triage_urgency)`,
   );
