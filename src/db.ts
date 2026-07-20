@@ -68,6 +68,10 @@ export interface ProductRecord {
   call_to_actions: string | null;
   content_voice: string | null;
   content_language: string | null;
+  // Per-item AI triage (stolen from Stalkr): opt-in flag + optional custom
+  // category list (JSON string array) replacing the default taxonomy.
+  triage_enabled: number;
+  triage_categories: string | null;
 }
 
 export interface ContentDraftRecord {
@@ -236,6 +240,20 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'products', 'call_to_actions', `TEXT`);
   addColumnIfMissing(database, 'products', 'content_voice', `TEXT`);
   addColumnIfMissing(database, 'products', 'content_language', `TEXT`);
+  addColumnIfMissing(database, 'products', 'triage_enabled', `INTEGER NOT NULL DEFAULT 0`);
+  addColumnIfMissing(database, 'products', 'triage_categories', `TEXT`);
+
+  // Per-item AI triage columns (Stalkr-style): each collected item gets a
+  // category, an urgency score and a relevance score at collect time. NULL
+  // triaged_at = not yet triaged; triage_error explains a NULL category.
+  addColumnIfMissing(database, 'tweets', 'triage_category', `TEXT`);
+  addColumnIfMissing(database, 'tweets', 'triage_urgency', `INTEGER`);
+  addColumnIfMissing(database, 'tweets', 'triage_relevance', `INTEGER`);
+  addColumnIfMissing(database, 'tweets', 'triaged_at', `INTEGER`);
+  addColumnIfMissing(database, 'tweets', 'triage_error', `TEXT`);
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_tweets_triage ON tweets(product_id, triaged_at, triage_urgency)`,
+  );
 
   database.exec(`CREATE TABLE IF NOT EXISTS content_drafts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

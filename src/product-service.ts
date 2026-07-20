@@ -27,6 +27,15 @@ const intentKeywordSchema = z
   .min(2, { message: "Mot-cle d'intention trop court (min 2 caracteres)." })
   .max(128, { message: "Mot-cle d'intention trop long (max 128 caracteres)." });
 
+const triageCategorySchema = z
+  .string()
+  .trim()
+  .min(2, { message: 'Categorie de triage trop courte (min 2 caracteres).' })
+  .max(40, { message: 'Categorie de triage trop longue (max 40 caracteres).' })
+  .regex(/^[a-z0-9]+(_[a-z0-9]+)*$/, {
+    message: 'Categorie de triage invalide (minuscules, chiffres et underscores).',
+  });
+
 export const REPLY_VOICES = ['decontractee', 'professionnelle', 'directe', 'aidante'] as const;
 export type ReplyVoice = (typeof REPLY_VOICES)[number];
 
@@ -142,6 +151,12 @@ const productBaseSchema = z.object({
     .nullable(),
   content_voice: contentVoiceSchema.optional().nullable(),
   content_language: contentLanguageSchema.optional().nullable(),
+  triage_enabled: z.boolean().optional(),
+  triage_categories: z
+    .array(triageCategorySchema)
+    .max(20, { message: 'Trop de categories de triage (max 20).' })
+    .optional()
+    .nullable(),
 });
 
 export const productCreateSchema = productBaseSchema
@@ -214,6 +229,8 @@ export interface ProductView extends Omit<
   | 'value_props'
   | 'call_to_actions'
   | 'content_language'
+  | 'triage_enabled'
+  | 'triage_categories'
 > {
   x_enabled: boolean;
   reddit_enabled: boolean;
@@ -227,6 +244,8 @@ export interface ProductView extends Omit<
   value_props: string[];
   call_to_actions: string[];
   content_language: ContentLanguage;
+  triage_enabled: boolean;
+  triage_categories: string[];
 }
 
 function deserializeStringArray(value: string | null): string[] {
@@ -261,6 +280,8 @@ export function toProductView(product: ProductRecord): ProductView {
     value_props: deserializeStringArray(product.value_props),
     call_to_actions: deserializeStringArray(product.call_to_actions),
     content_language: isContentLanguage(product.content_language) ? product.content_language : 'fr',
+    triage_enabled: product.triage_enabled === 1,
+    triage_categories: deserializeStringArray(product.triage_categories),
   };
 }
 
@@ -286,8 +307,8 @@ export function productExists(id: string): boolean {
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
-    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords, intent_exclude_keywords, intent_require_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords, intent_exclude_keywords, intent_require_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language, triage_enabled, triage_categories)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.name,
@@ -325,6 +346,10 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
       : null,
     input.content_voice ?? null,
     input.content_language ?? null,
+    input.triage_enabled === true ? 1 : 0,
+    input.triage_categories && input.triage_categories.length > 0
+      ? JSON.stringify(input.triage_categories)
+      : null,
   );
   logger.info('Product created', { productId: input.id });
   return getProduct(input.id)!;
@@ -454,6 +479,18 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
   if (patch.content_language !== undefined) {
     sets.push('content_language = ?');
     values.push(patch.content_language ?? null);
+  }
+  if (patch.triage_enabled !== undefined) {
+    sets.push('triage_enabled = ?');
+    values.push(patch.triage_enabled ? 1 : 0);
+  }
+  if (patch.triage_categories !== undefined) {
+    sets.push('triage_categories = ?');
+    values.push(
+      patch.triage_categories && patch.triage_categories.length > 0
+        ? JSON.stringify(patch.triage_categories)
+        : null,
+    );
   }
 
   if (sets.length === 0) {
