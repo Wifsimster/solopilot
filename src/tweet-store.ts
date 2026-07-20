@@ -254,6 +254,7 @@ export interface VeilleItemView {
   triage_relevance: number | null;
   triaged_at: number | null;
   triage_error: string | null;
+  alerted_at: number | null;
 }
 
 /**
@@ -290,7 +291,7 @@ export function listVeilleItems(opts: VeilleItemListOptions = {}): VeilleItemVie
   return db
     .prepare(
       `SELECT id, product_id, source, text, author, url, created_at, collection_date,
-              triage_category, triage_urgency, triage_relevance, triaged_at, triage_error
+              triage_category, triage_urgency, triage_relevance, triaged_at, triage_error, alerted_at
        FROM tweets
        WHERE ${clauses.join(' AND ')}
        ORDER BY created_at DESC

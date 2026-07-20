@@ -3,8 +3,9 @@ import { logger } from '../logger.js';
 const DISCORD_MAX_CONTENT = 2000;
 const DISCORD_MAX_EMBED_DESC = 4096;
 
-interface DiscordEmbed {
+export interface DiscordEmbed {
   title?: string;
+  url?: string;
   description?: string;
   color?: number;
   footer?: { text: string };
@@ -61,16 +62,10 @@ function formatDiscordPayload(summary: string, runId: number): DiscordPayload {
 }
 
 /**
- * Send a notification to a Discord webhook.
+ * POST a payload to a Discord webhook.
  * Retries once on HTTP 429 (rate limit) using the Retry-After header.
  */
-export async function sendDiscordNotification(
-  webhookUrl: string,
-  summary: string,
-  runId: number,
-): Promise<NotifyResult> {
-  const payload = formatDiscordPayload(summary, runId);
-
+async function postDiscordPayload(webhookUrl: string, payload: DiscordPayload): Promise<NotifyResult> {
   const doSend = async (): Promise<Response> => {
     return fetch(webhookUrl, {
       method: 'POST',
@@ -98,13 +93,43 @@ export async function sendDiscordNotification(
       return { success: false, error };
     }
 
-    logger.info('Discord notification sent', { runId });
     return { success: true };
   } catch (err) {
     const error = `Discord webhook error: ${err instanceof Error ? err.message : String(err)}`;
     logger.error(error);
     return { success: false, error };
   }
+}
+
+/**
+ * Send a notification to a Discord webhook.
+ */
+export async function sendDiscordNotification(
+  webhookUrl: string,
+  summary: string,
+  runId: number,
+): Promise<NotifyResult> {
+  const result = await postDiscordPayload(webhookUrl, formatDiscordPayload(summary, runId));
+  if (result.success) {
+    logger.info('Discord notification sent', { runId });
+  }
+  return result;
+}
+
+/**
+ * Send raw embeds to a Discord webhook (max 10 per message — Discord's limit;
+ * callers must batch). Text fields are sanitized against mention injection.
+ */
+export async function sendDiscordEmbeds(
+  webhookUrl: string,
+  embeds: DiscordEmbed[],
+): Promise<NotifyResult> {
+  const safeEmbeds = embeds.slice(0, 10).map((e) => ({
+    ...e,
+    ...(e.title ? { title: truncate(sanitize(e.title), 256) } : {}),
+    ...(e.description ? { description: truncate(sanitize(e.description), DISCORD_MAX_EMBED_DESC) } : {}),
+  }));
+  return postDiscordPayload(webhookUrl, { embeds: safeEmbeds, allowed_mentions: { parse: [] } });
 }
 
 /**

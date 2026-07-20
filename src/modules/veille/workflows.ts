@@ -32,4 +32,20 @@ export const veilleDigest: Workflow = {
   steps: [{ use: 'veille.publish-run' }],
 };
 
-export const veilleWorkflows: Workflow[] = [veilleCollect, veilleDigest];
+/**
+ * Hourly safety-net sweep for high-urgency alerts (offset from collect). The
+ * primary alert path runs inline at the end of each collect; this workflow
+ * retries items a failed webhook call left pending and enables manual runs.
+ * Idempotent via `alerted_at` — both paths never double-ping.
+ */
+export const veilleAlert: Workflow = {
+  id: 'veille.alert',
+  module: 'veille',
+  label: 'Alertes mentions urgentes',
+  trigger: { kind: 'cron', expr: '10 * * * *' },
+  version: 1,
+  enabled: true,
+  steps: [{ use: 'veille.alert-run' }],
+};
+
+export const veilleWorkflows: Workflow[] = [veilleCollect, veilleDigest, veilleAlert];

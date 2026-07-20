@@ -16,7 +16,7 @@ import { facturationRelanceStep, facturationSyncStep } from '../steps/facturatio
 import { comptaSeuilsStep, comptaEcheanceStep } from '../steps/comptabilite.js';
 import { crmFollowupStep } from '../steps/crm.js';
 import { agendaSyncStep, agendaRappelsStep } from '../steps/agenda.js';
-import { veilleCollectRunStep, veillePublishRunStep } from '../steps/veille.js';
+import { veilleCollectRunStep, veillePublishRunStep, veilleAlertRunStep } from '../steps/veille.js';
 import { veilleWorkflows } from '../modules/veille/workflows.js';
 import { cockpitWorkflows } from '../modules/cockpit/workflows.js';
 import { facturationWorkflows } from '../modules/facturation/workflows.js';
@@ -43,6 +43,7 @@ export function registerSolopilot(): void {
   registerStep(agendaRappelsStep);
   registerStep(veilleCollectRunStep);
   registerStep(veillePublishRunStep);
+  registerStep(veilleAlertRunStep);
 
   for (const wf of [
     ...veilleWorkflows,

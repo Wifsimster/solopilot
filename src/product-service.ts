@@ -157,6 +157,14 @@ const productBaseSchema = z.object({
     .max(20, { message: 'Trop de categories de triage (max 20).' })
     .optional()
     .nullable(),
+  alert_enabled: z.boolean().optional(),
+  alert_threshold: z
+    .number({ invalid_type_error: "Le seuil d'alerte doit etre un entier." })
+    .int({ message: "Le seuil d'alerte doit etre un entier." })
+    .min(0, { message: "Le seuil d'alerte doit etre entre 0 et 100." })
+    .max(100, { message: "Le seuil d'alerte doit etre entre 0 et 100." })
+    .optional()
+    .nullable(),
 });
 
 export const productCreateSchema = productBaseSchema
@@ -231,6 +239,7 @@ export interface ProductView extends Omit<
   | 'content_language'
   | 'triage_enabled'
   | 'triage_categories'
+  | 'alert_enabled'
 > {
   x_enabled: boolean;
   reddit_enabled: boolean;
@@ -246,6 +255,7 @@ export interface ProductView extends Omit<
   content_language: ContentLanguage;
   triage_enabled: boolean;
   triage_categories: string[];
+  alert_enabled: boolean;
 }
 
 function deserializeStringArray(value: string | null): string[] {
@@ -282,6 +292,7 @@ export function toProductView(product: ProductRecord): ProductView {
     content_language: isContentLanguage(product.content_language) ? product.content_language : 'fr',
     triage_enabled: product.triage_enabled === 1,
     triage_categories: deserializeStringArray(product.triage_categories),
+    alert_enabled: product.alert_enabled === 1,
   };
 }
 
@@ -307,8 +318,8 @@ export function productExists(id: string): boolean {
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
-    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords, intent_exclude_keywords, intent_require_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language, triage_enabled, triage_categories)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords, intent_exclude_keywords, intent_require_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language, triage_enabled, triage_categories, alert_enabled, alert_threshold)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.name,
@@ -350,6 +361,8 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
     input.triage_categories && input.triage_categories.length > 0
       ? JSON.stringify(input.triage_categories)
       : null,
+    input.alert_enabled === true ? 1 : 0,
+    input.alert_threshold ?? null,
   );
   logger.info('Product created', { productId: input.id });
   return getProduct(input.id)!;
@@ -491,6 +504,14 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
         ? JSON.stringify(patch.triage_categories)
         : null,
     );
+  }
+  if (patch.alert_enabled !== undefined) {
+    sets.push('alert_enabled = ?');
+    values.push(patch.alert_enabled ? 1 : 0);
+  }
+  if (patch.alert_threshold !== undefined) {
+    sets.push('alert_threshold = ?');
+    values.push(patch.alert_threshold ?? null);
   }
 
   if (sets.length === 0) {

@@ -9,6 +9,7 @@ import { DEFAULT_PRODUCT_ID } from './db.js';
 import { getProduct, toProductView } from './product-service.js';
 import { matchIntentForProduct } from './intent-service.js';
 import { triageNewItems } from './ai-triage.js';
+import { sendPendingAlerts } from './alert-service.js';
 
 export interface CollectResult {
   fetched: number;
@@ -16,6 +17,7 @@ export interface CollectResult {
   bySource: Record<string, { fetched: number; new: number }>;
   intentSignals: number;
   triaged: number;
+  alerted: number;
 }
 
 /**
@@ -143,6 +145,19 @@ export async function collectTweets(
     }
   }
 
+  // Alerts run every collect (not only when new items arrived) so items left
+  // pending by an earlier failed webhook call are retried within the hour.
+  let alerted = 0;
+  try {
+    const result = await sendPendingAlerts(config, productId);
+    alerted = result.alerted;
+  } catch (err) {
+    logger.warn('Urgency alerting failed', {
+      productId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   logger.info('Item collection complete', {
     productId,
     collectionDate,
@@ -151,7 +166,8 @@ export async function collectTweets(
     bySource,
     intentSignals,
     triaged,
+    alerted,
   });
 
-  return { fetched: totalFetched, newTweets: totalNew, bySource, intentSignals, triaged };
+  return { fetched: totalFetched, newTweets: totalNew, bySource, intentSignals, triaged, alerted };
 }
