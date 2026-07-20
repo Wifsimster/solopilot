@@ -6,7 +6,20 @@ import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { formatDateFr } from '@/lib/utils';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
-import { Workflow, Clock, CheckCircle2, XCircle, Circle } from 'lucide-react';
+import {
+  Workflow,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Circle,
+  Eye,
+  TrendingUp,
+  Receipt,
+  Calculator,
+  Users,
+  CalendarDays,
+  LayoutDashboard,
+} from 'lucide-react';
 
 interface WorkflowTrigger {
   kind: 'cron' | 'manual' | 'event' | 'webhook';
@@ -32,6 +45,8 @@ interface WorkflowSummary {
   lastRun: WorkflowLastRun | null;
 }
 
+type IconType = React.ComponentType<{ className?: string }>;
+
 const MODULE_LABELS: Record<string, string> = {
   cockpit: 'Cockpit',
   veille: 'Veille',
@@ -40,6 +55,16 @@ const MODULE_LABELS: Record<string, string> = {
   facturation: 'Facturation',
   compta: 'Comptabilité',
   agenda: 'Agenda',
+};
+
+const MODULE_ICONS: Record<string, IconType> = {
+  cockpit: LayoutDashboard,
+  veille: Eye,
+  acquisition: TrendingUp,
+  crm: Users,
+  facturation: Receipt,
+  compta: Calculator,
+  agenda: CalendarDays,
 };
 
 function triggerLabel(trigger: WorkflowTrigger): string {
@@ -67,27 +92,39 @@ function LastRunIcon({ status }: { status: string }) {
   return <Circle className="size-3.5 text-muted-foreground" aria-hidden="true" />;
 }
 
-function WorkflowRow({ wf }: { wf: WorkflowSummary }) {
+function ModuleCardIcon({ icon: Icon, muted }: { icon: IconType; muted?: boolean }) {
   return (
-    <Card className="hover:border-muted-foreground/20 transition-colors">
-      <CardContent className="py-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 space-y-1.5 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-medium text-sm leading-none">{wf.label}</span>
-              <Badge
-                variant={wf.enabled ? 'brand' : 'outline'}
-                className="text-xs shrink-0"
-              >
-                {wf.enabled ? 'Actif' : 'Désactivé'}
-              </Badge>
-            </div>
-            <code className="text-xs text-muted-foreground block">{wf.id}</code>
+    <div
+      className={
+        muted
+          ? 'flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground ring-1 ring-inset ring-border'
+          : 'flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground ring-1 ring-inset ring-accent-foreground/10'
+      }
+      aria-hidden="true"
+    >
+      <Icon className="size-4" />
+    </div>
+  );
+}
+
+function WorkflowCard({ wf }: { wf: WorkflowSummary }) {
+  const Icon = MODULE_ICONS[wf.module] ?? Workflow;
+  return (
+    <Card className="group flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
+      <CardContent className="flex flex-1 flex-col gap-4 p-5">
+        <div className="flex items-start gap-3">
+          <ModuleCardIcon icon={Icon} muted={!wf.enabled} />
+          <div className="min-w-0 flex-1 space-y-1">
+            <h3 className="truncate text-sm font-semibold leading-tight">{wf.label}</h3>
+            <code className="block truncate text-xs text-muted-foreground">{wf.id}</code>
           </div>
+          <Badge variant={wf.enabled ? 'brand' : 'outline'} className="shrink-0 text-xs">
+            {wf.enabled ? 'Actif' : 'Désactivé'}
+          </Badge>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="font-mono text-xs gap-1">
+        <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-3">
+          <Badge variant="outline" className="gap-1 font-mono text-xs">
             <Clock className="size-3" aria-hidden="true" />
             {triggerLabel(wf.trigger)}
           </Badge>
@@ -97,7 +134,7 @@ function WorkflowRow({ wf }: { wf: WorkflowSummary }) {
               <Badge variant={statusVariant(wf.lastRun.status)} className="text-xs">
                 {wf.lastRun.status}
               </Badge>
-              <span>{formatDateFr(wf.lastRun.startedAt)}</span>
+              <span className="tabular-nums">{formatDateFr(wf.lastRun.startedAt)}</span>
             </span>
           ) : (
             <span className="text-xs text-muted-foreground">Aucun run</span>
@@ -139,14 +176,14 @@ export function WorkflowsPage() {
       />
 
       {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full rounded-xl" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-36 w-full rounded-xl" />
           ))}
         </div>
       ) : workflows.length === 0 ? (
         <Card>
-          <CardContent className="py-16 flex flex-col items-center gap-4 text-center">
+          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
             <div className="flex size-12 items-center justify-center rounded-full bg-muted" aria-hidden="true">
               <Workflow className="size-5 text-muted-foreground" />
             </div>
@@ -159,27 +196,35 @@ export function WorkflowsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-8">
-          {modules.map((module) => (
-            <section key={module} className="space-y-3">
-              <div className="flex items-center gap-2">
-                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {MODULE_LABELS[module] ?? module}
-                </h2>
-                <div className="flex-1 h-px bg-border" aria-hidden="true" />
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {workflows.filter((w) => w.module === module).length}
-                </span>
-              </div>
-              <div className="space-y-2">
-                {workflows
-                  .filter((w) => w.module === module)
-                  .map((wf) => (
-                    <WorkflowRow key={wf.id} wf={wf} />
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100 fill-mode-backwards">
+          {modules.map((module) => {
+            const ModuleIcon = MODULE_ICONS[module] ?? Workflow;
+            const moduleWorkflows = workflows.filter((w) => w.module === module);
+            return (
+              <section key={module} className="space-y-3">
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className="flex size-6 items-center justify-center rounded-md bg-muted text-muted-foreground"
+                    aria-hidden="true"
+                  >
+                    <ModuleIcon className="size-3.5" />
+                  </div>
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {MODULE_LABELS[module] ?? module}
+                  </h2>
+                  <div className="h-px flex-1 bg-border" aria-hidden="true" />
+                  <Badge variant="secondary" className="tabular-nums">
+                    {moduleWorkflows.length}
+                  </Badge>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {moduleWorkflows.map((wf) => (
+                    <WorkflowCard key={wf.id} wf={wf} />
                   ))}
-              </div>
-            </section>
-          ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
       )}
     </div>
