@@ -9,6 +9,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/page-header';
+import { PageHero } from '@/components/page-hero';
 import { ErrorState } from '@/components/error-state';
 import { MarkdownContent } from '@/components/markdown-content';
 import { formatDateFr } from '@/lib/utils';
@@ -70,7 +71,7 @@ interface Briefing {
 function ModuleCardIcon({ icon: Icon }: { icon: React.ComponentType<{ className?: string }> }) {
   return (
     <div
-      className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground"
+      className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground ring-1 ring-inset ring-accent-foreground/10"
       aria-hidden="true"
     >
       <Icon className="size-4" />
@@ -101,14 +102,23 @@ export function CockpitPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Vue d'ensemble"
-        title="Cockpit"
-        description={
+      <PageHero
+        titleId="cockpit-title"
+        badge={
           data
-            ? `Brief du ${data.date} — la photo du jour de votre activité`
-            : 'Le brief du jour'
+            ? `Brief du ${new Date(data.date).toLocaleDateString('fr-FR', {
+                day: 'numeric',
+                month: 'long',
+                timeZone: 'Europe/Paris',
+              })}`
+            : 'Brief du jour'
         }
+        title={
+          <>
+            Votre activité, <span className="text-gradient-brand">en un coup d'œil</span>
+          </>
+        }
+        description="La photo du jour : veille, acquisition, facturation, comptabilité, CRM et agenda — réunis au même endroit."
       />
 
       {loading || !data ? (
@@ -119,9 +129,9 @@ export function CockpitPage() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100 fill-mode-backwards">
           {/* Veille — full width */}
-          <Card className="sm:col-span-2 hover:border-muted-foreground/20 transition-colors">
+          <Card className="sm:col-span-2 transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -155,7 +165,7 @@ export function CockpitPage() {
           </Card>
 
           {/* Acquisition */}
-          <Card className="hover:border-muted-foreground/20 transition-colors">
+          <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3">
@@ -173,7 +183,7 @@ export function CockpitPage() {
           </Card>
 
           {/* Workflows */}
-          <Card className="hover:border-muted-foreground/20 transition-colors">
+          <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-3">
                 <ModuleCardIcon icon={Workflow} />
@@ -197,7 +207,7 @@ export function CockpitPage() {
           </Card>
 
           {/* Facturation */}
-          <Card className="hover:border-muted-foreground/20 transition-colors">
+          <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3">
@@ -225,7 +235,7 @@ export function CockpitPage() {
           </Card>
 
           {/* Comptabilité */}
-          <Card className="hover:border-muted-foreground/20 transition-colors">
+          <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3">
@@ -251,7 +261,7 @@ export function CockpitPage() {
           </Card>
 
           {/* CRM */}
-          <Card className="hover:border-muted-foreground/20 transition-colors">
+          <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-3">
@@ -279,7 +289,7 @@ export function CockpitPage() {
           </Card>
 
           {/* Agenda */}
-          <Card className="hover:border-muted-foreground/20 transition-colors">
+          <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-3">
                 <ModuleCardIcon icon={CalendarDays} />

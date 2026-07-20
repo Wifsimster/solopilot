@@ -3,6 +3,7 @@ import { useApi } from '@/hooks/use-api';
 import { StatusBadge } from '@/components/status-badge';
 import { StatCard } from '@/components/stat-card';
 import { PageHeader } from '@/components/page-header';
+import { PageHero } from '@/components/page-hero';
 import { ErrorState } from '@/components/error-state';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -142,37 +143,23 @@ export function DashboardPage() {
         {liveMessage}
       </output>
 
-      <section
-        aria-labelledby="dashboard-title"
-        className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-xs animate-in fade-in slide-in-from-bottom-2 duration-500"
-      >
-        <div className="pointer-events-none absolute inset-0 bg-brand-aurora" aria-hidden="true" />
-        <div className="pointer-events-none absolute inset-0 bg-grid-fade" aria-hidden="true" />
-        <div className="relative flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0 max-w-2xl space-y-4">
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/8 px-3 py-1 text-xs font-medium text-primary dark:border-primary/30 dark:bg-primary/15">
-              <span className="relative flex size-1.5" aria-hidden="true">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
-                <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
-              </span>
-              {running
-                ? 'Run en cours…'
-                : nextRunLabel
-                  ? `Veille active · prochain run dans ${nextRunLabel}`
-                  : 'Veille active'}
-            </span>
-            <h1
-              id="dashboard-title"
-              className="text-3xl font-semibold tracking-tight sm:text-4xl"
-            >
-              Votre veille,{' '}
-              <span className="text-gradient-brand">en pilote automatique</span>
-            </h1>
-            <p className="max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Collecte automatique des sources, synthèse IA chaque matin. Tout
-              se pilote d'ici, d'un coup d'œil.
-            </p>
-          </div>
+      <PageHero
+        titleId="dashboard-title"
+        badge={
+          running
+            ? 'Run en cours…'
+            : nextRunLabel
+              ? `Veille active · prochain run dans ${nextRunLabel}`
+              : 'Veille active'
+        }
+        title={
+          <>
+            Votre veille,{' '}
+            <span className="text-gradient-brand">en pilote automatique</span>
+          </>
+        }
+        description="Collecte automatique des sources, synthèse IA chaque matin. Tout se pilote d'ici, d'un coup d'œil."
+        actions={
           <ConfirmDialog
             trigger={
               <Button
@@ -190,8 +177,8 @@ export function DashboardPage() {
             confirmLabel="Lancer le run"
             onConfirm={handleTrigger}
           />
-        </div>
-      </section>
+        }
+      />
 
       {cookiesExpired && (
         <Alert variant="destructive" role="alert">
