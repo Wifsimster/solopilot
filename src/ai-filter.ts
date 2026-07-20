@@ -1,5 +1,6 @@
 import type { Config } from './config.js';
 import type { Item } from './ports.js';
+import type { ProductView } from './product-service.js';
 import { createAiClient } from './ai-client.js';
 import { logger } from './logger.js';
 
@@ -20,6 +21,45 @@ Your task:
 Each top-level section header should be on its own line, in bold uppercase (e.g. **X (TWITTER)**, **REDDIT**, **HACKER NEWS**), separated by blank lines.
 
 If no item across all sources is related to AI or tech, respond with exactly: NO_TECH_NEWS_FOUND`;
+
+/**
+ * Builds the digest system prompt. When the product has a theme (description or
+ * target audience), the digest is curated, filtered and titled for THAT product's
+ * domain — so each product's Discord gets an on-theme digest instead of the same
+ * generic AI/tech feed. Products without a theme (e.g. `default`) fall back to the
+ * generic AI/tech curator prompt.
+ */
+function buildSystemPrompt(product?: ProductView): string {
+  const hasTheme = product && (product.product_description || product.target_audience);
+  if (!hasTheme) return SYSTEM_PROMPT;
+
+  const language = product.content_language === 'en' ? 'English' : 'French';
+  const valueProps =
+    product.value_props && product.value_props.length > 0
+      ? `\n- Value propositions: ${product.value_props.join('; ')}`
+      : '';
+
+  return `You are a news & tech curator working for ONE specific product. You receive a list of items aggregated from multiple sources (X / Twitter, Reddit and Hacker News).
+
+PRODUCT CONTEXT
+- Name: ${product.name}
+- Description: ${product.product_description ?? '(n/a)'}
+- Target audience: ${product.target_audience ?? '(n/a)'}${valueProps}
+
+Your task:
+1. From the items, SELECT those relevant to THIS product's domain, its target audience's interests and pain points, its market and competitors, or adjacent themes this audience genuinely cares about. Prioritize product-relevant items; drop items unrelated to this product or its audience — even if they are popular AI/tech news.
+2. If very few items are directly on-theme, broaden to the items this specific audience would most likely find interesting. Do NOT return an empty digest just because nothing is a perfect match.
+3. Write a concise digest (under 2000 characters) in ${language}.
+4. Structure the digest into the source sections that have relevant items, in this exact order:
+   - "X (Twitter)" — bullets from X
+   - "Reddit" — bullets from Reddit
+   - "Hacker News" — bullets from Hacker News
+   Omit a section entirely if it has zero relevant items. Each top-level header on its own line, in bold uppercase (e.g. **X (TWITTER)**, **REDDIT**, **HACKER NEWS**), separated by blank lines. Inside each section use short bullets with clickable source links where available.
+5. Start with a title line themed to the PRODUCT's domain — NOT a generic "AI & Tech" title — including the date provided by the user. Derive a fitting emoji + theme from the product description (e.g. a gaming product → "🎮 VEILLE GAMING & CULTURE VIDÉOLUDIQUE — <date>", a parenting/health product → "🧩 VEILLE TDAH & PARENTALITÉ — <date>").
+6. Use a professional but engaging tone.
+
+Only if NOTHING across all sources is of any interest to this product or its audience, respond with exactly: NO_TECH_NEWS_FOUND`;
+}
 
 const MONTHLY_SYSTEM_PROMPT = `You are a tech news analyst. You receive several daily AI & tech news summaries.
 
@@ -42,7 +82,11 @@ export function createAIFilter(config: Config) {
 
   return { filterAndSummarize, synthesizeMonthlySummary };
 
-  async function filterAndSummarize(items: Item[], dateOverride?: Date): Promise<string | null> {
+  async function filterAndSummarize(
+    items: Item[],
+    opts: { product?: ProductView; date?: Date } = {},
+  ): Promise<string | null> {
+    const { product, date } = opts;
     const groups: Record<'x' | 'reddit' | 'hn', Item[]> = { x: [], reddit: [], hn: [] };
     for (const item of items) {
       groups[item.source].push(item);
@@ -73,10 +117,10 @@ export function createAIFilter(config: Config) {
       model: config.AI_MODEL,
       max_tokens: 1024,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: buildSystemPrompt(product) },
         {
           role: 'user',
-          content: `Date: ${(dateOverride ?? new Date()).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}\n\nVoici les éléments collectés sur les ${config.TWEETS_LOOKBACK_DAYS} derniers jours, groupés par source :\n\n${sections}`,
+          content: `Date: ${(date ?? new Date()).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}\n\nVoici les éléments collectés sur les ${config.TWEETS_LOOKBACK_DAYS} derniers jours, groupés par source :\n\n${sections}`,
         },
       ],
     });

@@ -6,6 +6,7 @@ import { getUnpublishedTweets, markTweetsAsUsed } from './tweet-store.js';
 import { getTodayDateParis } from './date-utils.js';
 import { DEFAULT_PRODUCT_ID } from './db.js';
 import { collectTweets } from './collect-service.js';
+import { getProduct, toProductView } from './product-service.js';
 
 export async function run(
   config: Config,
@@ -72,8 +73,13 @@ export async function run(
     });
   }
 
+  // Theme the digest to this product (description / audience) so each product's
+  // Discord gets an on-theme digest instead of the same generic AI/tech feed.
+  const productRecord = getProduct(productId);
+  const product = productRecord ? toProductView(productRecord) : undefined;
+
   const aiFilter = createAIFilter(config);
-  const summary = await aiFilter.filterAndSummarize(itemsForSummary);
+  const summary = await aiFilter.filterAndSummarize(itemsForSummary, { product });
   if (runId && summary) updateRunStats(runId, { summary });
 
   if (!summary) {
