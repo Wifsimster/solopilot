@@ -212,14 +212,63 @@
   .bg-brand-aurora {
     background-image: radial-gradient(
         60% 120% at 0% 0%,
-        oklch(0.545 0.218 277.2 / 0.08),
+        oklch(0.545 0.218 277.2 / 0.1),
         transparent 60%
       ),
       radial-gradient(
         50% 120% at 100% 0%,
-        oklch(0.66 0.18 292 / 0.06),
+        oklch(0.66 0.18 292 / 0.08),
         transparent 55%
+      ),
+      radial-gradient(
+        45% 90% at 60% 100%,
+        oklch(0.7 0.15 230 / 0.05),
+        transparent 60%
       );
+  }
+
+  .dark .bg-brand-aurora {
+    background-image: radial-gradient(
+        60% 120% at 0% 0%,
+        oklch(0.64 0.19 277.5 / 0.16),
+        transparent 60%
+      ),
+      radial-gradient(
+        50% 120% at 100% 0%,
+        oklch(0.72 0.17 292 / 0.12),
+        transparent 55%
+      ),
+      radial-gradient(
+        45% 90% at 60% 100%,
+        oklch(0.74 0.14 230 / 0.07),
+        transparent 60%
+      );
+  }
+
+  /* Faint blueprint grid, masked so it fades out toward the bottom-right */
+  .bg-grid-fade {
+    background-image: linear-gradient(
+        to right,
+        oklch(0.21 0.02 277 / 0.04) 1px,
+        transparent 1px
+      ),
+      linear-gradient(to bottom, oklch(0.21 0.02 277 / 0.04) 1px, transparent 1px);
+    background-size: 32px 32px;
+    -webkit-mask-image: radial-gradient(
+      80% 110% at 25% 0%,
+      black 25%,
+      transparent 78%
+    );
+    mask-image: radial-gradient(80% 110% at 25% 0%, black 25%, transparent 78%);
+  }
+
+  .dark .bg-grid-fade {
+    background-image: linear-gradient(
+        to right,
+        oklch(1 0 0 / 0.055) 1px,
+        transparent 1px
+      ),
+      linear-gradient(to bottom, oklch(1 0 0 / 0.055) 1px, transparent 1px);
   }
 
   .text-gradient-brand {
