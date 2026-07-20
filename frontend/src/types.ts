@@ -253,4 +253,6 @@ export interface VeilleItem {
   /** 1 = AI flagged buying intent; 0 = no; null = not evaluated. */
   triage_high_intent: number | null;
   crm_bridged_at: number | null;
+  /** How the item was collected: topical veille vs brand-mention search. */
+  origin: 'topic' | 'mention';
 }

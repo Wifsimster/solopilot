@@ -14,6 +14,7 @@ import {
   Check,
   ExternalLink,
   Flame,
+  Megaphone,
   Radar,
   RotateCcw,
   Target,
@@ -127,6 +128,12 @@ function MentionCard({
                 Lead potentiel
               </Badge>
             )}
+            {item.origin === 'mention' && (
+              <Badge variant="warning" className="gap-1 text-[10px] px-1.5 py-0">
+                <Megaphone className="size-3" aria-hidden="true" />
+                Mention directe
+              </Badge>
+            )}
             {item.triaged_at === null && (
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
                 En attente d'analyse IA
@@ -215,12 +222,16 @@ function MentionFilterBar({
   onCategoryChange,
   urgentOnly,
   onUrgentToggle,
+  mentionOnly,
+  onMentionToggle,
 }: {
   categories: { value: string; count: number }[];
   activeCategory: string;
   onCategoryChange: (value: string) => void;
   urgentOnly: boolean;
   onUrgentToggle: () => void;
+  mentionOnly: boolean;
+  onMentionToggle: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -232,6 +243,15 @@ function MentionFilterBar({
       >
         <Flame className="size-3.5 mr-1" aria-hidden="true" />
         Urgentes
+      </Button>
+      <Button
+        variant={mentionOnly ? 'default' : 'outline'}
+        size="sm"
+        className="h-7 text-xs"
+        onClick={onMentionToggle}
+      >
+        <Megaphone className="size-3.5 mr-1" aria-hidden="true" />
+        Mentions directes
       </Button>
       {categories.length > 0 && (
         <>
@@ -300,6 +320,7 @@ export function MentionsPage() {
   const [activeTab, setActiveTab] = useState<VeilleItemStatus>('new');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [urgentOnly, setUrgentOnly] = useState(false);
+  const [mentionOnly, setMentionOnly] = useState(false);
 
   // One request per status so tab badges show counts; the "new" tab is served
   // urgency-first (that is the work queue), the others chronologically.
@@ -405,6 +426,7 @@ export function MentionsPage() {
           // never opens on an empty filtered list with no visible chip.
           setCategoryFilter('all');
           setUrgentOnly(false);
+          setMentionOnly(false);
         }}
       >
         <div className="overflow-x-auto pb-1">
@@ -429,6 +451,8 @@ export function MentionsPage() {
             onCategoryChange={setCategoryFilter}
             urgentOnly={urgentOnly}
             onUrgentToggle={() => setUrgentOnly((v) => !v)}
+            mentionOnly={mentionOnly}
+            onMentionToggle={() => setMentionOnly((v) => !v)}
           />
         </div>
 
@@ -440,10 +464,11 @@ export function MentionsPage() {
             ? items.filter(
                 (item) =>
                   (categoryFilter === 'all' || item.triage_category === categoryFilter) &&
-                  (!urgentOnly || (item.triage_urgency ?? 0) >= URGENT_THRESHOLD),
+                  (!urgentOnly || (item.triage_urgency ?? 0) >= URGENT_THRESHOLD) &&
+                  (!mentionOnly || item.origin === 'mention'),
               )
             : items;
-          const filtered = isActive && (categoryFilter !== 'all' || urgentOnly);
+          const filtered = isActive && (categoryFilter !== 'all' || urgentOnly || mentionOnly);
           return (
             <TabsContent key={tab.id} value={tab.id} className="mt-4">
               {anyLoading && !req.data ? (

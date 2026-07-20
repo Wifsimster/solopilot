@@ -53,6 +53,9 @@ export interface ProductRecord {
   hn_keywords: string | null;
   youtube_enabled: number;
   youtube_keywords: string | null;
+  // Brand-mention monitoring (Stalkr-style): product name/aliases, competitor
+  // names, founder name… JSON string array. Non-empty = mention pass active.
+  mention_keywords: string | null;
   intent_enabled: number;
   intent_keywords: string | null;
   // Boolean refinement of intent matching (Syften-style): a post is skipped if it
@@ -237,6 +240,7 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'products', 'hn_keywords', `TEXT`);
   addColumnIfMissing(database, 'products', 'youtube_enabled', `INTEGER NOT NULL DEFAULT 0`);
   addColumnIfMissing(database, 'products', 'youtube_keywords', `TEXT`);
+  addColumnIfMissing(database, 'products', 'mention_keywords', `TEXT`);
   addColumnIfMissing(database, 'products', 'intent_enabled', `INTEGER NOT NULL DEFAULT 0`);
   addColumnIfMissing(database, 'products', 'intent_keywords', `TEXT`);
   addColumnIfMissing(database, 'products', 'intent_exclude_keywords', `TEXT`);
@@ -275,6 +279,10 @@ function runProductMigrations(database: Database.Database) {
   // not evaluated). crm_bridged_at marks the item consumed by the CRM bridge.
   addColumnIfMissing(database, 'tweets', 'triage_high_intent', `INTEGER`);
   addColumnIfMissing(database, 'tweets', 'crm_bridged_at', `INTEGER`);
+  // How the item was collected: 'topic' (subreddits / topical keywords) or
+  // 'mention' (brand-mention keyword search). Mentions bypass the digest's
+  // news-relevance filter.
+  addColumnIfMissing(database, 'tweets', 'origin', `TEXT NOT NULL DEFAULT 'topic'`);
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_tweets_triage ON tweets(product_id, triaged_at, triage_urgency)`,
   );
