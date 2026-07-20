@@ -26,6 +26,11 @@ const youtubeSearchSchema = z.object({
 export interface YoutubeReaderOptions {
   /** YouTube Data API v3 key. */
   apiKey: string;
+  /**
+   * Explicit keyword list. When set, it is used as-is (e.g. the brand-mention
+   * pass); when omitted, the product's `youtube_keywords` are used.
+   */
+  keywords?: string[];
 }
 
 /**
@@ -46,13 +51,15 @@ export function createYoutubeReader(options: YoutubeReaderOptions): SourceReader
     sinceTs: number,
     _opts: SourceOpts,
   ): Promise<Item[]> {
-    const record = getProduct(productId);
-    if (!record) {
-      logger.info('YouTube: product not found', { productId });
-      return [];
+    let keywords = options.keywords;
+    if (!keywords) {
+      const record = getProduct(productId);
+      if (!record) {
+        logger.info('YouTube: product not found', { productId });
+        return [];
+      }
+      keywords = toProductView(record).youtube_keywords;
     }
-    const product = toProductView(record);
-    const keywords = product.youtube_keywords;
     if (!keywords || keywords.length === 0) {
       logger.info('YouTube: no keywords configured for product', { productId });
       return [];

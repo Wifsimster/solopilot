@@ -1,5 +1,8 @@
 export type ItemSource = 'x' | 'reddit' | 'hn' | 'youtube';
 
+/** How an item entered the store: topical collection vs brand-mention search. */
+export type ItemOrigin = 'topic' | 'mention';
+
 export interface Item {
   id: string;
   source: ItemSource;
@@ -10,6 +13,8 @@ export interface Item {
   fetchedAt: string;
   productId: string;
   urls: string[];
+  /** Set by the store when reading back; collection passes set it at insert. */
+  origin?: ItemOrigin;
 }
 
 export interface SourceOpts {

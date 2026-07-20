@@ -265,6 +265,92 @@ export async function verifySubredditsExist(
   return verified;
 }
 
+type RedditChild = z.infer<typeof redditChildSchema>;
+
+function mapRedditChildren(
+  children: RedditChild[],
+  productId: string,
+  sinceTs: number,
+  fetchedAt: string,
+): Item[] {
+  const items: Item[] = [];
+  for (const child of children) {
+    const post = child.data;
+    if (sinceTs > 0 && post.created_utc < sinceTs) continue;
+
+    const selftext = (post.selftext ?? '').trim();
+    const text = selftext ? `${post.title}\n\n${selftext}` : post.title;
+    // react-doctor-disable-next-line react-doctor/js-set-map-lookups -- String.includes() substring test on a URL, not an array membership lookup
+    const externalUrl = post.url && !post.url.includes('reddit.com') ? post.url : undefined;
+
+    items.push({
+      id: `reddit:${post.id}`,
+      source: 'reddit',
+      text,
+      author: post.author ? `u/${post.author}` : 'u/unknown',
+      url: `https://www.reddit.com${post.permalink}`,
+      createdAt: new Date(post.created_utc * 1000).toISOString(),
+      fetchedAt,
+      productId,
+      urls: externalUrl ? [externalUrl] : [],
+    });
+  }
+  return items;
+}
+
+/**
+ * Sitewide Reddit post search for one keyword (brand-mention pass) — catches
+ * posts mentioning a product anywhere on Reddit, not just watched subreddits.
+ * Quoted phrase search, newest first. Returns [] on rate limit or parse issues.
+ */
+export async function searchRedditPosts(
+  keyword: string,
+  productId: string,
+  options: { userAgent?: string; sinceTs?: number; limit?: number } = {},
+): Promise<Item[]> {
+  const trimmed = keyword.trim();
+  if (!trimmed) return [];
+  const userAgent = options.userAgent ?? USER_AGENT;
+  const sinceTs = options.sinceTs ?? 0;
+  const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+
+  const params = new URLSearchParams({
+    q: `"${trimmed}"`,
+    sort: 'new',
+    limit: String(limit),
+    type: 'link',
+  });
+  const url = `https://www.reddit.com/search.json?${params.toString()}`;
+  const response = await fetch(url, {
+    headers: { 'User-Agent': userAgent, accept: 'application/json' },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+
+  if (response.status === 429) {
+    logger.warn('Reddit: mention search rate limited (HTTP 429)', { keyword: trimmed, productId });
+    return [];
+  }
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(
+      `Reddit: HTTP ${response.status} ${response.statusText}${body ? ` — ${body.slice(0, 200)}` : ''}`,
+    );
+  }
+
+  const json = (await response.json()) as unknown;
+  const parsed = redditListingSchema.safeParse(json);
+  if (!parsed.success) {
+    logger.warn('Reddit: failed to parse mention search listing', {
+      keyword: trimmed,
+      productId,
+      errors: parsed.error.issues.map((i) => i.message),
+    });
+    return [];
+  }
+
+  return mapRedditChildren(parsed.data.data.children, productId, sinceTs, new Date().toISOString());
+}
+
 export interface RedditReaderOptions {
   /** Subreddit names (without the r/ prefix). Validated against SUBREDDIT_PATTERN. */
   subreddits: string[];
@@ -359,28 +445,6 @@ export function createRedditReader(options: RedditReaderOptions): SourceReader {
       return [];
     }
 
-    const items: Item[] = [];
-    for (const child of parsed.data.data.children) {
-      const post = child.data;
-      if (sinceTs > 0 && post.created_utc < sinceTs) continue;
-
-      const selftext = (post.selftext ?? '').trim();
-      const text = selftext ? `${post.title}\n\n${selftext}` : post.title;
-      // react-doctor-disable-next-line react-doctor/js-set-map-lookups -- String.includes() substring test on a URL, not an array membership lookup
-      const externalUrl = post.url && !post.url.includes('reddit.com') ? post.url : undefined;
-
-      items.push({
-        id: `reddit:${post.id}`,
-        source: 'reddit',
-        text,
-        author: post.author ? `u/${post.author}` : 'u/unknown',
-        url: `https://www.reddit.com${post.permalink}`,
-        createdAt: new Date(post.created_utc * 1000).toISOString(),
-        fetchedAt,
-        productId,
-        urls: externalUrl ? [externalUrl] : [],
-      });
-    }
-    return items;
+    return mapRedditChildren(parsed.data.data.children, productId, sinceTs, fetchedAt);
   }
 }

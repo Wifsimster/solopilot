@@ -1,9 +1,10 @@
 import type { Config } from './config.js';
 import { logger } from './logger.js';
 import { createXClient } from './x-client.js';
-import { createRedditReader } from './adapters/reddit-reader.js';
+import { createRedditReader, searchRedditPosts } from './adapters/reddit-reader.js';
 import { createHnReader } from './adapters/hn-reader.js';
 import { createYoutubeReader } from './adapters/youtube-reader.js';
+import type { Item } from './ports.js';
 import { storeItems } from './tweet-store.js';
 import { getTodayDateParis } from './date-utils.js';
 import { DEFAULT_PRODUCT_ID } from './db.js';
@@ -148,6 +149,65 @@ export async function collectTweets(
     }
   } else if (youtubeEnabled && !youtubeConfigured) {
     logger.info('YouTube enabled but YOUTUBE_API_KEY missing — skipping', { productId });
+  }
+
+  // Brand-mention pass (Stalkr-style): sitewide keyword search on Reddit, HN
+  // and YouTube for the product's mention keywords (name, aliases, competitors,
+  // founder…). Stored with origin='mention' so the digest never filters them
+  // out as "not news". An item caught by both passes keeps origin='topic'
+  // (INSERT OR IGNORE, topic passes run first). X is not searched: the session
+  // scraper only reads the timeline. Zero behaviour change when the list is empty.
+  const mentionKeywords = product?.mention_keywords ?? [];
+  if (mentionKeywords.length > 0) {
+    const mentionItems = new Map<string, Item>();
+    for (const keyword of mentionKeywords) {
+      try {
+        // Sequential by design: Reddit 429s under concurrent load.
+        const found = await searchRedditPosts(keyword, productId);
+        for (const item of found) if (!mentionItems.has(item.id)) mentionItems.set(item.id, item);
+      } catch (err) {
+        logger.warn('Mention search failed on Reddit', {
+          productId,
+          keyword,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    try {
+      const hnMentionReader = createHnReader({ keywords: mentionKeywords });
+      const found = await hnMentionReader.fetchSince(productId, 0, { productId });
+      for (const item of found) if (!mentionItems.has(item.id)) mentionItems.set(item.id, item);
+    } catch (err) {
+      logger.warn('Mention search failed on Hacker News', {
+        productId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (config.YOUTUBE_API_KEY) {
+      try {
+        const ytMentionReader = createYoutubeReader({
+          apiKey: config.YOUTUBE_API_KEY,
+          keywords: mentionKeywords,
+        });
+        const found = await ytMentionReader.fetchSince(productId, 0, { productId });
+        for (const item of found) if (!mentionItems.has(item.id)) mentionItems.set(item.id, item);
+      } catch (err) {
+        logger.warn('Mention search failed on YouTube', {
+          productId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const items = Array.from(mentionItems.values());
+    const stored =
+      items.length > 0
+        ? storeItems(items, collectionDate, productId, 'mention')
+        : { inserted: 0, insertedIds: [] };
+    bySource.mentions = { fetched: items.length, new: stored.inserted };
+    totalFetched += items.length;
+    totalNew += stored.inserted;
+    allNewItemIds.push(...stored.insertedIds);
   }
 
   let intentSignals = 0;

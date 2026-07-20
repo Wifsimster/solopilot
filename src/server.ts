@@ -900,6 +900,9 @@ export function startServer(
       category: c.req.query('category'),
       minUrgency: c.req.query('minUrgency'),
       triaged: c.req.query('triaged'),
+      status: c.req.query('status'),
+      origin: c.req.query('origin'),
+      sort: c.req.query('sort'),
       limit: c.req.query('limit'),
     });
     if (!parsed.success) {

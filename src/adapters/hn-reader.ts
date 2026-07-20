@@ -41,6 +41,11 @@ function sanitizeStoryText(input: string): string {
 
 export interface HnReaderOptions {
   userAgent?: string;
+  /**
+   * Explicit keyword list. When set, it is used as-is (e.g. the brand-mention
+   * pass); when omitted, the product's `hn_keywords` are used.
+   */
+  keywords?: string[];
 }
 
 export function createHnReader(options: HnReaderOptions = {}): SourceReader {
@@ -56,13 +61,15 @@ export function createHnReader(options: HnReaderOptions = {}): SourceReader {
     sinceTs: number,
     _opts: SourceOpts,
   ): Promise<Item[]> {
-    const record = getProduct(productId);
-    if (!record) {
-      logger.info('Hacker News: product not found', { productId });
-      return [];
+    let keywords = options.keywords;
+    if (!keywords) {
+      const record = getProduct(productId);
+      if (!record) {
+        logger.info('Hacker News: product not found', { productId });
+        return [];
+      }
+      keywords = toProductView(record).hn_keywords;
     }
-    const product = toProductView(record);
-    const keywords = product.hn_keywords;
     if (!keywords || keywords.length === 0) {
       logger.info('Hacker News: no keywords configured for product', { productId });
       return [];

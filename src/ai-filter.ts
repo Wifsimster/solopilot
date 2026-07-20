@@ -18,10 +18,11 @@ Your task:
 5. Inside each section, use short bullets. Include clickable source links where available.
 6. Use a professional but engaging tone.
 7. Start with a title line that includes the date provided by the user (e.g. "📅 VEILLE IA & TECH — 16 mars 2025").
+8. If the input contains a "MENTIONS DIRECTES" group, ALWAYS add a final section "📣 MENTIONS" listing EVERY item from that group (short bullet + link). These are direct brand mentions — never drop one for lack of news value; summarize what is said about the brand/product.
 
 Each top-level section header should be on its own line, in bold uppercase (e.g. **X (TWITTER)**, **REDDIT**, **HACKER NEWS**, **YOUTUBE**), separated by blank lines.
 
-If no item across all sources is related to AI or tech, respond with exactly: NO_TECH_NEWS_FOUND`;
+If no item across all sources is related to AI or tech AND there is no "MENTIONS DIRECTES" group, respond with exactly: NO_TECH_NEWS_FOUND. As soon as a "MENTIONS DIRECTES" group exists, produce a digest (even if it only contains the 📣 MENTIONS section).`;
 
 /**
  * Builds the digest system prompt. When the product has a theme (description or
@@ -58,8 +59,9 @@ Your task:
    Omit a section entirely if it has zero relevant items. Each top-level header on its own line, in bold uppercase (e.g. **X (TWITTER)**, **REDDIT**, **HACKER NEWS**, **YOUTUBE**), separated by blank lines. Inside each section use short bullets with clickable source links where available.
 4. Start with a title line themed to the PRODUCT's domain — NOT a generic "AI & Tech" title — including the date provided by the user. Derive a fitting emoji + theme from the product description (e.g. a gaming product → "🎮 VEILLE GAMING & CULTURE VIDÉOLUDIQUE — <date>", a parenting/health product → "🧩 VEILLE TDAH & PARENTALITÉ — <date>").
 5. Use a professional but engaging tone.
+6. If the input contains a "MENTIONS DIRECTES" group, ALWAYS add a final section "📣 MENTIONS" listing EVERY item from that group (short bullet + link). These are direct mentions of the product/brand — the relevance rule of step 1 does NOT apply to them; never drop one, summarize what is said about the product.
 
-If NOTHING across all sources is genuinely relevant to this product or its audience, respond with exactly: NO_TECH_NEWS_FOUND. Do NOT pad the digest with generic or off-topic items — an empty digest is the expected, correct output when there is no on-theme news.`;
+If NOTHING across all sources is genuinely relevant to this product or its audience AND there is no "MENTIONS DIRECTES" group, respond with exactly: NO_TECH_NEWS_FOUND. Do NOT pad the digest with generic or off-topic items — an empty digest is the expected, correct output when there is no on-theme news. As soon as a "MENTIONS DIRECTES" group exists, produce a digest (even if it only contains the 📣 MENTIONS section).`;
 }
 
 const MONTHLY_SYSTEM_PROMPT = `You are a tech news analyst. You receive several daily AI & tech news summaries.
@@ -88,14 +90,21 @@ export function createAIFilter(config: Config) {
     opts: { product?: ProductView; date?: Date } = {},
   ): Promise<string | null> {
     const { product, date } = opts;
+    // Brand mentions get their own group, rendered last with an always-include
+    // instruction — the news-relevance filter must never drop them.
     const groups: Record<'x' | 'reddit' | 'hn' | 'youtube', Item[]> = {
       x: [],
       reddit: [],
       hn: [],
       youtube: [],
     };
+    const mentions: Item[] = [];
     for (const item of items) {
-      groups[item.source].push(item);
+      if (item.origin === 'mention') {
+        mentions.push(item);
+      } else {
+        groups[item.source].push(item);
+      }
     }
 
     const renderGroup = (label: string, group: Item[]) => {
@@ -116,6 +125,7 @@ export function createAIFilter(config: Config) {
       renderGroup('Reddit', groups.reddit),
       renderGroup('Hacker News', groups.hn),
       renderGroup('YouTube', groups.youtube),
+      renderGroup('MENTIONS DIRECTES', mentions),
     ]
       .filter((s) => s.length > 0)
       .join('\n\n');

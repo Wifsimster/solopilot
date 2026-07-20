@@ -106,6 +106,11 @@ const productBaseSchema = z.object({
     .max(20, { message: 'Trop de mots-cles YouTube (max 20).' })
     .optional()
     .nullable(),
+  mention_keywords: z
+    .array(intentKeywordSchema)
+    .max(30, { message: 'Trop de mots-cles de mention (max 30).' })
+    .optional()
+    .nullable(),
   intent_enabled: z.boolean().optional(),
   intent_keywords: z
     .array(intentKeywordSchema)
@@ -261,6 +266,7 @@ export interface ProductView extends Omit<
   | 'hn_keywords'
   | 'youtube_enabled'
   | 'youtube_keywords'
+  | 'mention_keywords'
   | 'intent_enabled'
   | 'intent_keywords'
   | 'intent_exclude_keywords'
@@ -280,6 +286,7 @@ export interface ProductView extends Omit<
   hn_keywords: string[];
   youtube_enabled: boolean;
   youtube_keywords: string[];
+  mention_keywords: string[];
   intent_enabled: boolean;
   intent_keywords: string[];
   intent_exclude_keywords: string[];
@@ -320,6 +327,7 @@ export function toProductView(product: ProductRecord): ProductView {
     hn_keywords: deserializeStringArray(product.hn_keywords),
     youtube_enabled: product.youtube_enabled === 1,
     youtube_keywords: deserializeStringArray(product.youtube_keywords),
+    mention_keywords: deserializeStringArray(product.mention_keywords),
     intent_enabled: product.intent_enabled === 1,
     intent_keywords: deserializeStringArray(product.intent_keywords),
     intent_exclude_keywords: deserializeStringArray(product.intent_exclude_keywords),
@@ -356,8 +364,8 @@ export function productExists(id: string): boolean {
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
-    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, youtube_enabled, youtube_keywords, intent_enabled, intent_keywords, intent_exclude_keywords, intent_require_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language, triage_enabled, triage_categories, alert_enabled, alert_threshold, crm_leads_enabled)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, youtube_enabled, youtube_keywords, mention_keywords, intent_enabled, intent_keywords, intent_exclude_keywords, intent_require_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language, triage_enabled, triage_categories, alert_enabled, alert_threshold, crm_leads_enabled)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.name,
@@ -377,6 +385,9 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
     input.youtube_enabled === true ? 1 : 0,
     input.youtube_keywords && input.youtube_keywords.length > 0
       ? JSON.stringify(input.youtube_keywords)
+      : null,
+    input.mention_keywords && input.mention_keywords.length > 0
+      ? JSON.stringify(input.mention_keywords)
       : null,
     input.intent_enabled === true ? 1 : 0,
     input.intent_keywords && input.intent_keywords.length > 0
@@ -475,6 +486,14 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
     values.push(
       patch.youtube_keywords && patch.youtube_keywords.length > 0
         ? JSON.stringify(patch.youtube_keywords)
+        : null,
+    );
+  }
+  if (patch.mention_keywords !== undefined) {
+    sets.push('mention_keywords = ?');
+    values.push(
+      patch.mention_keywords && patch.mention_keywords.length > 0
+        ? JSON.stringify(patch.mention_keywords)
         : null,
     );
   }

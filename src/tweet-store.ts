@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getDb, DEFAULT_PRODUCT_ID } from './db.js';
-import type { Item, ItemSource } from './ports.js';
+import type { Item, ItemSource, ItemOrigin } from './ports.js';
 import { logger } from './logger.js';
 
 export interface StoreItemsResult {
@@ -11,16 +11,18 @@ export interface StoreItemsResult {
 /**
  * Stores items with deduplication via INSERT OR IGNORE on item ID (source-prefixed).
  * Returns the count and IDs of newly inserted items (duplicates excluded).
+ * An item found by both passes keeps its first origin (topic pass runs first).
  */
 export function storeItems(
   items: Item[],
   collectionDate: string,
   productId: string = DEFAULT_PRODUCT_ID,
+  origin: ItemOrigin = 'topic',
 ): StoreItemsResult {
   const db = getDb();
   const insert = db.prepare(
-    `INSERT OR IGNORE INTO tweets (id, text, created_at, urls, collection_date, product_id, source, author, url)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO tweets (id, text, created_at, urls, collection_date, product_id, source, author, url, origin)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   const insertMany = db.transaction((rows: Item[]) => {
@@ -36,6 +38,7 @@ export function storeItems(
         item.source,
         item.author,
         item.url,
+        origin,
       );
       if (result.changes > 0) insertedIds.push(item.id);
     }
@@ -72,6 +75,7 @@ interface ItemRow {
   source: string;
   author: string;
   url: string;
+  origin: string;
 }
 
 /**
@@ -99,7 +103,7 @@ export function getUnpublishedTweets(
   }
   const rows = db
     .prepare(
-      `SELECT id, text, created_at, urls, source, author, url FROM tweets
+      `SELECT id, text, created_at, urls, source, author, url, origin FROM tweets
        WHERE ${clauses.join(' AND ')}
        ORDER BY created_at ASC`,
     )
@@ -177,7 +181,7 @@ export function getTweetsByRunId(
 
   const rows = db
     .prepare(
-      `SELECT id, text, created_at, urls, source, author, url, product_id FROM tweets
+      `SELECT id, text, created_at, urls, source, author, url, origin, product_id FROM tweets
        WHERE used_in_run_id = ?
        ORDER BY created_at ASC
        LIMIT ? OFFSET ?`,
@@ -238,6 +242,7 @@ export const veilleItemListQuerySchema = z.object({
     .optional(),
   triaged: z.enum(['true', 'false']).optional(),
   status: veilleItemStatusSchema.optional(),
+  origin: z.enum(['topic', 'mention']).optional(),
   sort: z.enum(['recent', 'urgency']).optional(),
   limit: z
     .preprocess((v) => (typeof v === 'string' ? Number(v) : v), z.number().int().min(1).max(500))
@@ -251,6 +256,7 @@ export interface VeilleItemListOptions {
   minUrgency?: number;
   triaged?: 'true' | 'false';
   status?: VeilleItemStatus;
+  origin?: ItemOrigin;
   sort?: 'recent' | 'urgency';
   limit?: number;
 }
@@ -274,6 +280,7 @@ export interface VeilleItemView {
   triage_status_at: number | null;
   triage_high_intent: number | null;
   crm_bridged_at: number | null;
+  origin: string;
 }
 
 /**
@@ -307,6 +314,10 @@ export function listVeilleItems(opts: VeilleItemListOptions = {}): VeilleItemVie
     clauses.push('triage_status = ?');
     params.push(opts.status);
   }
+  if (opts.origin) {
+    clauses.push('origin = ?');
+    params.push(opts.origin);
+  }
 
   const orderBy =
     opts.sort === 'urgency'
@@ -319,7 +330,7 @@ export function listVeilleItems(opts: VeilleItemListOptions = {}): VeilleItemVie
     .prepare(
       `SELECT id, product_id, source, text, author, url, created_at, collection_date,
               triage_category, triage_urgency, triage_relevance, triaged_at, triage_error, alerted_at,
-              triage_status, triage_status_at, triage_high_intent, crm_bridged_at
+              triage_status, triage_status_at, triage_high_intent, crm_bridged_at, origin
        FROM tweets
        WHERE ${clauses.join(' AND ')}
        ORDER BY ${orderBy}
@@ -346,7 +357,7 @@ export function updateVeilleItemStatus(
     .prepare(
       `SELECT id, product_id, source, text, author, url, created_at, collection_date,
               triage_category, triage_urgency, triage_relevance, triaged_at, triage_error, alerted_at,
-              triage_status, triage_status_at, triage_high_intent, crm_bridged_at
+              triage_status, triage_status_at, triage_high_intent, crm_bridged_at, origin
        FROM tweets WHERE id = ?`,
     )
     .get(id) as VeilleItemView;
@@ -358,6 +369,7 @@ function mapRowToItem(row: ItemRow, productId: string): Item {
   return {
     id: row.id,
     source,
+    origin: row.origin === 'mention' ? 'mention' : 'topic',
     text: row.text,
     author: row.author ?? '',
     url: row.url ?? '',
