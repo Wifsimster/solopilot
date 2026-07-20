@@ -3,6 +3,7 @@ import { logger } from './logger.js';
 import { createXClient } from './x-client.js';
 import { createRedditReader } from './adapters/reddit-reader.js';
 import { createHnReader } from './adapters/hn-reader.js';
+import { createYoutubeReader } from './adapters/youtube-reader.js';
 import { storeItems } from './tweet-store.js';
 import { getTodayDateParis } from './date-utils.js';
 import { DEFAULT_PRODUCT_ID } from './db.js';
@@ -41,6 +42,8 @@ export async function collectTweets(
     redditSubreddits: product?.reddit_subreddits?.length ?? 0,
     hnEnabled: product?.hn_enabled ?? false,
     hnKeywords: product?.hn_keywords?.length ?? 0,
+    youtubeEnabled: product?.youtube_enabled ?? false,
+    youtubeKeywords: product?.youtube_keywords?.length ?? 0,
   });
 
   const bySource: Record<string, { fetched: number; new: number }> = {};
@@ -117,6 +120,32 @@ export async function collectTweets(
       });
       bySource.hn = { fetched: 0, new: 0 };
     }
+  }
+
+  const youtubeEnabled = product?.youtube_enabled ?? false;
+  const youtubeKeywords = product?.youtube_keywords ?? [];
+  const youtubeConfigured = !!config.YOUTUBE_API_KEY;
+  if (youtubeEnabled && youtubeKeywords.length > 0 && youtubeConfigured) {
+    try {
+      const youtubeReader = createYoutubeReader({ apiKey: config.YOUTUBE_API_KEY! });
+      const items = await youtubeReader.fetchSince(productId, 0, { productId });
+      const stored =
+        items.length > 0
+          ? storeItems(items, collectionDate, productId)
+          : { inserted: 0, insertedIds: [] };
+      bySource.youtube = { fetched: items.length, new: stored.inserted };
+      totalFetched += items.length;
+      totalNew += stored.inserted;
+      allNewItemIds.push(...stored.insertedIds);
+    } catch (err) {
+      logger.error('YouTube collection failed', {
+        productId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      bySource.youtube = { fetched: 0, new: 0 };
+    }
+  } else if (youtubeEnabled && !youtubeConfigured) {
+    logger.info('YouTube enabled but YOUTUBE_API_KEY missing — skipping', { productId });
   }
 
   let intentSignals = 0;

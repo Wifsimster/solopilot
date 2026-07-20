@@ -682,9 +682,21 @@ export function startServer(
         : existing.reddit_enabled === 1;
     const effectiveHnEnabled =
       parsed.data.hn_enabled !== undefined ? parsed.data.hn_enabled : existing.hn_enabled === 1;
-    if (!effectiveXEnabled && !effectiveRedditEnabled && !effectiveHnEnabled) {
+    const effectiveYoutubeEnabled =
+      parsed.data.youtube_enabled !== undefined
+        ? parsed.data.youtube_enabled
+        : existing.youtube_enabled === 1;
+    if (
+      !effectiveXEnabled &&
+      !effectiveRedditEnabled &&
+      !effectiveHnEnabled &&
+      !effectiveYoutubeEnabled
+    ) {
       return c.json(
-        { success: false, message: 'Active au moins une source (X, Reddit ou Hacker News).' },
+        {
+          success: false,
+          message: 'Active au moins une source (X, Reddit, Hacker News ou YouTube).',
+        },
         400,
       );
     }
@@ -713,6 +725,22 @@ export function startServer(
           {
             success: false,
             message: 'Au moins un mot-cle est requis quand Hacker News est active.',
+          },
+          400,
+        );
+      }
+    }
+    if (parsed.data.youtube_enabled === true || parsed.data.youtube_keywords !== undefined) {
+      const existingKeywords = toProductView(existing).youtube_keywords;
+      const effectiveKeywords =
+        parsed.data.youtube_keywords !== undefined
+          ? (parsed.data.youtube_keywords ?? [])
+          : existingKeywords;
+      if (effectiveYoutubeEnabled && effectiveKeywords.length === 0) {
+        return c.json(
+          {
+            success: false,
+            message: 'Au moins un mot-cle est requis quand YouTube est active.',
           },
           400,
         );

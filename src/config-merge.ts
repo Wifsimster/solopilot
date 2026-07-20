@@ -29,5 +29,8 @@ export function buildMergedConfig(baseConfig: Config, overrides: Record<string, 
     ...(overrides.CRON_SCHEDULE && {
       CRON_SCHEDULE: overrides.CRON_SCHEDULE,
     }),
+    ...(overrides.YOUTUBE_API_KEY && {
+      YOUTUBE_API_KEY: overrides.YOUTUBE_API_KEY,
+    }),
   };
 }

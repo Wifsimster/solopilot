@@ -224,7 +224,7 @@ export const veilleItemPatchSchema = z.object({
 
 export const veilleItemListQuerySchema = z.object({
   productId: z.string().min(1).max(64).optional(),
-  source: z.enum(['x', 'reddit', 'hn']).optional(),
+  source: z.enum(['x', 'reddit', 'hn', 'youtube']).optional(),
   category: z
     .string()
     .min(1)
@@ -351,7 +351,8 @@ export function updateVeilleItemStatus(
 }
 
 function mapRowToItem(row: ItemRow, productId: string): Item {
-  const source: ItemSource = row.source === 'reddit' ? 'reddit' : row.source === 'hn' ? 'hn' : 'x';
+  const source: ItemSource =
+    row.source === 'reddit' || row.source === 'hn' || row.source === 'youtube' ? row.source : 'x';
   return {
     id: row.id,
     source,

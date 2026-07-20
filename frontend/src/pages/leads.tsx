@@ -57,6 +57,7 @@ const TABS: TabConfig[] = [
 function sourceLabel(source: IntentSignal['source']): string {
   if (source === 'reddit') return 'Reddit';
   if (source === 'hn') return 'HN';
+  if (source === 'youtube') return 'YouTube';
   return 'X';
 }
 

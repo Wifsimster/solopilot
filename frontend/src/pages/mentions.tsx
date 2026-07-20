@@ -53,7 +53,7 @@ const TABS: TabConfig[] = [
   },
 ];
 
-const SOURCE_LABELS: Record<string, string> = { x: 'X', reddit: 'Reddit', hn: 'HN' };
+const SOURCE_LABELS: Record<string, string> = { x: 'X', reddit: 'Reddit', hn: 'HN', youtube: 'YouTube' };
 
 /** Human labels for the default AI triage taxonomy; custom slugs fall through prettified. */
 const CATEGORY_LABELS: Record<string, string> = {

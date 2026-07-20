@@ -51,6 +51,8 @@ export interface ProductRecord {
   reddit_subreddits: string | null;
   hn_enabled: number;
   hn_keywords: string | null;
+  youtube_enabled: number;
+  youtube_keywords: string | null;
   intent_enabled: number;
   intent_keywords: string | null;
   // Boolean refinement of intent matching (Syften-style): a post is skipped if it
@@ -231,6 +233,8 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'products', 'reddit_subreddits', `TEXT`);
   addColumnIfMissing(database, 'products', 'hn_enabled', `INTEGER NOT NULL DEFAULT 0`);
   addColumnIfMissing(database, 'products', 'hn_keywords', `TEXT`);
+  addColumnIfMissing(database, 'products', 'youtube_enabled', `INTEGER NOT NULL DEFAULT 0`);
+  addColumnIfMissing(database, 'products', 'youtube_keywords', `TEXT`);
   addColumnIfMissing(database, 'products', 'intent_enabled', `INTEGER NOT NULL DEFAULT 0`);
   addColumnIfMissing(database, 'products', 'intent_keywords', `TEXT`);
   addColumnIfMissing(database, 'products', 'intent_exclude_keywords', `TEXT`);

@@ -15,6 +15,7 @@ const SOURCE_LABELS: Record<string, string> = {
   x: 'X (Twitter)',
   reddit: 'Reddit',
   hn: 'Hacker News',
+  youtube: 'YouTube',
 };
 
 export interface AlertResult {
