@@ -16,6 +16,7 @@ import {
   Flame,
   Radar,
   RotateCcw,
+  Target,
   X as XIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -118,6 +119,12 @@ function MentionCard({
             {item.triage_category && (
               <Badge variant="secondary" className="text-[11px]">
                 {categoryLabel(item.triage_category)}
+              </Badge>
+            )}
+            {item.triage_high_intent === 1 && (
+              <Badge variant="success" className="gap-1 text-[10px] px-1.5 py-0">
+                <Target className="size-3" aria-hidden="true" />
+                Lead potentiel
               </Badge>
             )}
             {item.triaged_at === null && (

@@ -164,6 +164,7 @@ const productBaseSchema = z.object({
     .optional()
     .nullable(),
   alert_enabled: z.boolean().optional(),
+  crm_leads_enabled: z.boolean().optional(),
   alert_threshold: z
     .number({ invalid_type_error: "Le seuil d'alerte doit etre un entier." })
     .int({ message: "Le seuil d'alerte doit etre un entier." })
@@ -270,6 +271,7 @@ export interface ProductView extends Omit<
   | 'triage_enabled'
   | 'triage_categories'
   | 'alert_enabled'
+  | 'crm_leads_enabled'
 > {
   x_enabled: boolean;
   reddit_enabled: boolean;
@@ -288,6 +290,7 @@ export interface ProductView extends Omit<
   triage_enabled: boolean;
   triage_categories: string[];
   alert_enabled: boolean;
+  crm_leads_enabled: boolean;
 }
 
 function deserializeStringArray(value: string | null): string[] {
@@ -327,6 +330,7 @@ export function toProductView(product: ProductRecord): ProductView {
     triage_enabled: product.triage_enabled === 1,
     triage_categories: deserializeStringArray(product.triage_categories),
     alert_enabled: product.alert_enabled === 1,
+    crm_leads_enabled: product.crm_leads_enabled === 1,
   };
 }
 
@@ -352,8 +356,8 @@ export function productExists(id: string): boolean {
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
-    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, youtube_enabled, youtube_keywords, intent_enabled, intent_keywords, intent_exclude_keywords, intent_require_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language, triage_enabled, triage_categories, alert_enabled, alert_threshold)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, youtube_enabled, youtube_keywords, intent_enabled, intent_keywords, intent_exclude_keywords, intent_require_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language, triage_enabled, triage_categories, alert_enabled, alert_threshold, crm_leads_enabled)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.name,
@@ -401,6 +405,7 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
       : null,
     input.alert_enabled === true ? 1 : 0,
     input.alert_threshold ?? null,
+    input.crm_leads_enabled === true ? 1 : 0,
   );
   logger.info('Product created', { productId: input.id });
   return getProduct(input.id)!;
@@ -562,6 +567,10 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
   if (patch.alert_threshold !== undefined) {
     sets.push('alert_threshold = ?');
     values.push(patch.alert_threshold ?? null);
+  }
+  if (patch.crm_leads_enabled !== undefined) {
+    sets.push('crm_leads_enabled = ?');
+    values.push(patch.crm_leads_enabled ? 1 : 0);
   }
 
   if (sets.length === 0) {

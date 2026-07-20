@@ -8,6 +8,7 @@
  */
 import { listStaleDeals } from '../modules/crm/store.js';
 import { draftFollowup, summarizeFollowups, type FollowupDraft } from '../modules/crm/followup.js';
+import { createLeadsFromMentions, type LeadBridgeResult } from '../modules/crm/lead-from-mention.js';
 import type { Step } from '../workflow/types.js';
 
 export interface FollowupOutput {
@@ -22,5 +23,18 @@ export const crmFollowupStep: Step<FollowupOutput> = {
     const drafts = stale.map(draftFollowup);
     ctx.log.info('crm.followup — stale deals', { activity: ctx.activityId, count: drafts.length });
     return { drafts, content: summarizeFollowups(drafts) };
+  },
+};
+
+/**
+ * Safety-net sweep for the veille → CRM lead bridge. The primary path runs
+ * inline after each collect; this step re-runs the same idempotent service so
+ * items skipped by an earlier failure are picked up, and enables manual runs
+ * via `npm run workflow -- crm.lead-from-mention`.
+ */
+export const crmLeadFromMentionStep: Step<LeadBridgeResult> = {
+  use: 'crm.leads-from-mentions-run',
+  run: async (ctx) => {
+    return createLeadsFromMentions(ctx.config, ctx.activityId);
   },
 };

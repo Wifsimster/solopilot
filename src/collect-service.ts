@@ -11,6 +11,7 @@ import { getProduct, toProductView } from './product-service.js';
 import { matchIntentForProduct } from './intent-service.js';
 import { triageNewItems } from './ai-triage.js';
 import { sendPendingAlerts } from './alert-service.js';
+import { createLeadsFromMentions } from './modules/crm/lead-from-mention.js';
 
 export interface CollectResult {
   fetched: number;
@@ -19,6 +20,7 @@ export interface CollectResult {
   intentSignals: number;
   triaged: number;
   alerted: number;
+  crmLeads: number;
 }
 
 /**
@@ -187,6 +189,19 @@ export async function collectTweets(
     });
   }
 
+  // Like alerts, the CRM bridge sweeps every collect so items skipped by an
+  // earlier failure are retried; crm_bridged_at keeps it idempotent.
+  let crmLeads = 0;
+  try {
+    const result = await createLeadsFromMentions(config, productId);
+    crmLeads = result.leads;
+  } catch (err) {
+    logger.warn('CRM lead bridging failed', {
+      productId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   logger.info('Item collection complete', {
     productId,
     collectionDate,
@@ -196,7 +211,16 @@ export async function collectTweets(
     intentSignals,
     triaged,
     alerted,
+    crmLeads,
   });
 
-  return { fetched: totalFetched, newTweets: totalNew, bySource, intentSignals, triaged, alerted };
+  return {
+    fetched: totalFetched,
+    newTweets: totalNew,
+    bySource,
+    intentSignals,
+    triaged,
+    alerted,
+    crmLeads,
+  };
 }

@@ -250,4 +250,7 @@ export interface VeilleItem {
   alerted_at: number | null;
   triage_status: VeilleItemStatus;
   triage_status_at: number | null;
+  /** 1 = AI flagged buying intent; 0 = no; null = not evaluated. */
+  triage_high_intent: number | null;
+  crm_bridged_at: number | null;
 }
