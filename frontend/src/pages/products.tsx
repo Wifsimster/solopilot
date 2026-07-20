@@ -39,10 +39,13 @@ function SourceBadges({ product }: { product: ProductRecord }) {
   const redditActive = product.reddit_enabled && subCount > 0;
   const hnCount = product.hn_keywords?.length ?? 0;
   const hnActive = product.hn_enabled && hnCount > 0;
+  const ytCount = product.youtube_keywords?.length ?? 0;
+  const ytActive = product.youtube_enabled && ytCount > 0;
+  const mentionCount = product.mention_keywords?.length ?? 0;
   const intentCount = product.intent_keywords?.length ?? 0;
   const intentActive = product.intent_enabled && intentCount > 0;
 
-  if (!xActive && !redditActive && !hnActive && !intentActive) {
+  if (!xActive && !redditActive && !hnActive && !ytActive && mentionCount === 0 && !intentActive) {
     return <span className="text-xs text-muted-foreground">Aucune</span>;
   }
 
@@ -69,6 +72,29 @@ function SourceBadges({ product }: { product: ProductRecord }) {
           aria-label={`${hnCount} mot${hnCount !== 1 ? 's' : ''}-clé${hnCount !== 1 ? 's' : ''} Hacker News : ${product.hn_keywords?.join(', ')}`}
         >
           hn:{hnCount}
+        </Badge>
+      )}
+      {ytActive && (
+        <Badge
+          variant="secondary"
+          className="text-xs"
+          aria-label={`${ytCount} mot${ytCount !== 1 ? 's' : ''}-clé${ytCount !== 1 ? 's' : ''} YouTube : ${product.youtube_keywords?.join(', ')}`}
+        >
+          yt:{ytCount}
+        </Badge>
+      )}
+      {mentionCount > 0 && (
+        <Badge
+          variant="warning"
+          className="text-xs"
+          aria-label={`${mentionCount} mot${mentionCount !== 1 ? 's' : ''}-clé${mentionCount !== 1 ? 's' : ''} de mention : ${product.mention_keywords?.join(', ')}`}
+        >
+          📣 {mentionCount}
+        </Badge>
+      )}
+      {product.triage_enabled && (
+        <Badge variant="success" className="text-xs" aria-label="Triage IA activé">
+          Triage IA
         </Badge>
       )}
       {intentActive && (

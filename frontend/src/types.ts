@@ -111,6 +111,12 @@ export interface ProductRecord {
   hn_keywords: string[] | null;
   youtube_enabled: boolean;
   youtube_keywords: string[] | null;
+  mention_keywords: string[] | null;
+  triage_enabled: boolean;
+  triage_categories: string[] | null;
+  alert_enabled: boolean;
+  alert_threshold: number | null;
+  crm_leads_enabled: boolean;
   intent_enabled: boolean;
   intent_keywords: string[];
   intent_exclude_keywords: string[];
