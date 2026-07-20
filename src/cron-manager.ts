@@ -63,18 +63,43 @@ function mergeProductConfig(
   return buildMergedConfig(baseConfig, overrides);
 }
 
+/** Stops and forgets every previously-registered per-product publish task. */
+function clearPublishTasks(): void {
+  for (const name of [...tasks.keys()]) {
+    if (name === 'publish' || name.startsWith('publish:')) {
+      tasks.get(name)?.stop();
+      tasks.delete(name);
+      schedules.delete(name);
+    }
+  }
+}
+
+/**
+ * Schedules the digest per product, honouring each product's own `publish_cron`
+ * and falling back to the global `schedule` when it has none. This lets, e.g.,
+ * toko run a weekly digest while the others stay daily. Re-invoked on hot-reload
+ * (global schedule change or a product's publish_cron change), so it first clears
+ * any stale per-product tasks. `schedule` is still recorded as the global default
+ * reported by getCurrentSchedule().
+ */
 export function schedulePublishCron(
   schedule: string,
   baseConfig: Config,
   buildMergedConfig: (base: Config, overrides: Record<string, string>) => Config,
 ): boolean {
-  return scheduleNamedCron('publish', schedule, async () => {
-    logger.info('Cron triggered — starting daily summary (publish) for all products');
-    const products = listProducts(false);
-    for (const product of products) {
+  clearPublishTasks();
+
+  const products = listProducts(false);
+  let allOk = true;
+  for (const product of products) {
+    const productSchedule = product.publish_cron?.trim() || schedule;
+    const ok = scheduleNamedCron(`publish:${product.id}`, productSchedule, async () => {
+      logger.info('Cron triggered — daily summary (publish)', {
+        productId: product.id,
+        schedule: productSchedule,
+      });
       try {
         const mergedConfig = mergeProductConfig(baseConfig, buildMergedConfig, product.id);
-        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: per-product publish runs must not hammer the shared X session concurrently
         await dispatchPublish(mergedConfig, product.id);
       } catch (err) {
         logger.error('Daily summary failed', {
@@ -83,8 +108,13 @@ export function schedulePublishCron(
           stack: err instanceof Error ? err.stack : undefined,
         });
       }
-    }
-  });
+    });
+    allOk = allOk && ok;
+  }
+
+  // Record the global default so getCurrentSchedule()/the API still report it.
+  schedules.set('publish', schedule);
+  return allOk;
 }
 
 export function scheduleCollectCron(
