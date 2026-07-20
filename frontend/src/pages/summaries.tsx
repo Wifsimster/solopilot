@@ -57,6 +57,7 @@ const SOURCE_PATTERNS: { key: string; label: string; re: RegExp }[] = [
   { key: "x", label: "X", re: /X\s*\(TWITTER\)/i },
   { key: "reddit", label: "Reddit", re: /\bREDDIT\b/i },
   { key: "hn", label: "Hacker News", re: /HACKER\s+NEWS/i },
+  { key: "youtube", label: "YouTube", re: /\bYOUTUBE\b/i },
 ];
 
 function detectSources(md: string | null | undefined): { key: string; label: string }[] {

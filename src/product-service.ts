@@ -100,6 +100,12 @@ const productBaseSchema = z.object({
     .max(20, { message: 'Trop de mots-cles Hacker News (max 20).' })
     .optional()
     .nullable(),
+  youtube_enabled: z.boolean().optional(),
+  youtube_keywords: z
+    .array(hnKeywordSchema)
+    .max(20, { message: 'Trop de mots-cles YouTube (max 20).' })
+    .optional()
+    .nullable(),
   intent_enabled: z.boolean().optional(),
   intent_keywords: z
     .array(intentKeywordSchema)
@@ -158,6 +164,7 @@ const productBaseSchema = z.object({
     .optional()
     .nullable(),
   alert_enabled: z.boolean().optional(),
+  crm_leads_enabled: z.boolean().optional(),
   alert_threshold: z
     .number({ invalid_type_error: "Le seuil d'alerte doit etre un entier." })
     .int({ message: "Le seuil d'alerte doit etre un entier." })
@@ -173,9 +180,13 @@ export const productCreateSchema = productBaseSchema
       const x = data.x_enabled !== false;
       const reddit = data.reddit_enabled === true;
       const hn = data.hn_enabled === true;
-      return x || reddit || hn;
+      const youtube = data.youtube_enabled === true;
+      return x || reddit || hn || youtube;
     },
-    { message: 'Active au moins une source (X, Reddit ou Hacker News).', path: ['x_enabled'] },
+    {
+      message: 'Active au moins une source (X, Reddit, Hacker News ou YouTube).',
+      path: ['x_enabled'],
+    },
   )
   .superRefine((data, ctx) => {
     if (
@@ -196,6 +207,16 @@ export const productCreateSchema = productBaseSchema
       });
     }
     if (
+      data.youtube_enabled === true &&
+      (!data.youtube_keywords || data.youtube_keywords.length === 0)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['youtube_keywords'],
+        message: 'Au moins un mot-cle est requis quand YouTube est active.',
+      });
+    }
+    if (
       data.intent_enabled === true &&
       (!data.intent_keywords || data.intent_keywords.length === 0)
     ) {
@@ -212,12 +233,20 @@ export const productUpdateSchema = productBaseSchema
   .omit({ id: true })
   .refine(
     (data) => {
-      if (data.x_enabled === false && data.reddit_enabled === false && data.hn_enabled === false) {
+      if (
+        data.x_enabled === false &&
+        data.reddit_enabled === false &&
+        data.hn_enabled === false &&
+        data.youtube_enabled === false
+      ) {
         return false;
       }
       return true;
     },
-    { message: 'Active au moins une source (X, Reddit ou Hacker News).', path: ['x_enabled'] },
+    {
+      message: 'Active au moins une source (X, Reddit, Hacker News ou YouTube).',
+      path: ['x_enabled'],
+    },
   );
 
 export type ProductCreateInput = z.infer<typeof productCreateSchema>;
@@ -230,6 +259,8 @@ export interface ProductView extends Omit<
   | 'reddit_enabled'
   | 'hn_enabled'
   | 'hn_keywords'
+  | 'youtube_enabled'
+  | 'youtube_keywords'
   | 'intent_enabled'
   | 'intent_keywords'
   | 'intent_exclude_keywords'
@@ -240,12 +271,15 @@ export interface ProductView extends Omit<
   | 'triage_enabled'
   | 'triage_categories'
   | 'alert_enabled'
+  | 'crm_leads_enabled'
 > {
   x_enabled: boolean;
   reddit_enabled: boolean;
   reddit_subreddits: string[];
   hn_enabled: boolean;
   hn_keywords: string[];
+  youtube_enabled: boolean;
+  youtube_keywords: string[];
   intent_enabled: boolean;
   intent_keywords: string[];
   intent_exclude_keywords: string[];
@@ -256,6 +290,7 @@ export interface ProductView extends Omit<
   triage_enabled: boolean;
   triage_categories: string[];
   alert_enabled: boolean;
+  crm_leads_enabled: boolean;
 }
 
 function deserializeStringArray(value: string | null): string[] {
@@ -283,6 +318,8 @@ export function toProductView(product: ProductRecord): ProductView {
     reddit_subreddits: deserializeStringArray(product.reddit_subreddits),
     hn_enabled: product.hn_enabled === 1,
     hn_keywords: deserializeStringArray(product.hn_keywords),
+    youtube_enabled: product.youtube_enabled === 1,
+    youtube_keywords: deserializeStringArray(product.youtube_keywords),
     intent_enabled: product.intent_enabled === 1,
     intent_keywords: deserializeStringArray(product.intent_keywords),
     intent_exclude_keywords: deserializeStringArray(product.intent_exclude_keywords),
@@ -293,6 +330,7 @@ export function toProductView(product: ProductRecord): ProductView {
     triage_enabled: product.triage_enabled === 1,
     triage_categories: deserializeStringArray(product.triage_categories),
     alert_enabled: product.alert_enabled === 1,
+    crm_leads_enabled: product.crm_leads_enabled === 1,
   };
 }
 
@@ -318,8 +356,8 @@ export function productExists(id: string): boolean {
 export function createProduct(input: ProductCreateInput): ProductRecord {
   const db = getDb();
   db.prepare(
-    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, intent_enabled, intent_keywords, intent_exclude_keywords, intent_require_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language, triage_enabled, triage_categories, alert_enabled, alert_threshold)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO products (id, name, x_query, discord_webhook, ai_prompt_override, collect_cron, publish_cron, created_at, x_enabled, reddit_enabled, reddit_subreddits, hn_enabled, hn_keywords, youtube_enabled, youtube_keywords, intent_enabled, intent_keywords, intent_exclude_keywords, intent_require_keywords, product_description, reply_voice, product_url, production_url, target_audience, value_props, call_to_actions, content_voice, content_language, triage_enabled, triage_categories, alert_enabled, alert_threshold, crm_leads_enabled)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.id,
     input.name,
@@ -336,6 +374,10 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
       : null,
     input.hn_enabled === true ? 1 : 0,
     input.hn_keywords && input.hn_keywords.length > 0 ? JSON.stringify(input.hn_keywords) : null,
+    input.youtube_enabled === true ? 1 : 0,
+    input.youtube_keywords && input.youtube_keywords.length > 0
+      ? JSON.stringify(input.youtube_keywords)
+      : null,
     input.intent_enabled === true ? 1 : 0,
     input.intent_keywords && input.intent_keywords.length > 0
       ? JSON.stringify(input.intent_keywords)
@@ -363,6 +405,7 @@ export function createProduct(input: ProductCreateInput): ProductRecord {
       : null,
     input.alert_enabled === true ? 1 : 0,
     input.alert_threshold ?? null,
+    input.crm_leads_enabled === true ? 1 : 0,
   );
   logger.info('Product created', { productId: input.id });
   return getProduct(input.id)!;
@@ -421,6 +464,18 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
     sets.push('hn_keywords = ?');
     values.push(
       patch.hn_keywords && patch.hn_keywords.length > 0 ? JSON.stringify(patch.hn_keywords) : null,
+    );
+  }
+  if (patch.youtube_enabled !== undefined) {
+    sets.push('youtube_enabled = ?');
+    values.push(patch.youtube_enabled ? 1 : 0);
+  }
+  if (patch.youtube_keywords !== undefined) {
+    sets.push('youtube_keywords = ?');
+    values.push(
+      patch.youtube_keywords && patch.youtube_keywords.length > 0
+        ? JSON.stringify(patch.youtube_keywords)
+        : null,
     );
   }
   if (patch.intent_enabled !== undefined) {
@@ -512,6 +567,10 @@ export function updateProduct(id: string, patch: ProductUpdateInput): ProductRec
   if (patch.alert_threshold !== undefined) {
     sets.push('alert_threshold = ?');
     values.push(patch.alert_threshold ?? null);
+  }
+  if (patch.crm_leads_enabled !== undefined) {
+    sets.push('crm_leads_enabled = ?');
+    values.push(patch.crm_leads_enabled ? 1 : 0);
   }
 
   if (sets.length === 0) {

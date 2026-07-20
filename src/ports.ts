@@ -1,4 +1,4 @@
-export type ItemSource = 'x' | 'reddit' | 'hn';
+export type ItemSource = 'x' | 'reddit' | 'hn' | 'youtube';
 
 export interface Item {
   id: string;

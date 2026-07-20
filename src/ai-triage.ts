@@ -29,6 +29,7 @@ const triagedItemSchema = z.object({
   category: z.string().min(1).max(60),
   urgency: z.number().int().min(0).max(100),
   relevance: z.number().int().min(0).max(100),
+  high_intent: z.boolean().catch(false),
 });
 
 const triageResponseSchema = z.object({
@@ -73,11 +74,12 @@ Pour CHAQUE item fourni, determine :
    - 40-79 = a regarder bientot (question directe, comparaison concurrent, retour negatif isole)
    - 0-39 = informatif, aucune action rapide requise (actualite, discussion generale)
 3. "relevance" — entier 0-100 : pertinence du post pour ce produit, son domaine et son audience (0 = hors sujet, 100 = directement lie).
+4. "high_intent" — booleen : true UNIQUEMENT si l'auteur exprime une intention d'achat ou un besoin que CE produit peut resoudre (cherche activement un outil, demande une alternative, se plaint d'un concurrent, demande une recommandation). Une simple actualite ou discussion generale = false.
 
 Reponds STRICTEMENT en JSON avec cette structure exacte :
 {
   "items": [
-    { "id": "<id de l'item, recopie tel quel>", "category": "<categorie>", "urgency": <entier>, "relevance": <entier> }
+    { "id": "<id de l'item, recopie tel quel>", "category": "<categorie>", "urgency": <entier>, "relevance": <entier>, "high_intent": <booleen> }
   ]
 }
 
@@ -163,7 +165,7 @@ export async function triageNewItems(
 
   const persist = db.prepare(
     `UPDATE tweets SET triage_category = ?, triage_urgency = ?, triage_relevance = ?,
-     triaged_at = ?, triage_error = NULL WHERE id = ?`,
+     triage_high_intent = ?, triaged_at = ?, triage_error = NULL WHERE id = ?`,
   );
 
   let triaged = 0;
@@ -233,7 +235,14 @@ export async function triageNewItems(
         const category = categories.includes(result.category)
           ? result.category
           : TRIAGE_FALLBACK_CATEGORY;
-        persist.run(category, result.urgency, result.relevance, now, row.id);
+        persist.run(
+          category,
+          result.urgency,
+          result.relevance,
+          result.high_intent ? 1 : 0,
+          now,
+          row.id,
+        );
         triaged++;
       }
     });

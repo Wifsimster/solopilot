@@ -55,6 +55,10 @@ const configSchema = z.object({
   // Optional: a calendar ICS feed URL (e.g. Google Calendar secret address) for
   // the Agenda module. When absent, Agenda works as a local event store.
   AGENDA_ICS_URL: z.string().url().optional(),
+
+  // Optional: YouTube Data API v3 key for the veille YouTube source. When
+  // absent, the YouTube reader is silently skipped (setup-mode friendly).
+  YOUTUBE_API_KEY: z.string().min(1).optional(),
   })
   .refine((c) => Boolean(c.AI_API_KEY ?? c.GITHUB_TOKEN), {
     message:

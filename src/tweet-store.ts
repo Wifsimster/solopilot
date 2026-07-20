@@ -224,7 +224,7 @@ export const veilleItemPatchSchema = z.object({
 
 export const veilleItemListQuerySchema = z.object({
   productId: z.string().min(1).max(64).optional(),
-  source: z.enum(['x', 'reddit', 'hn']).optional(),
+  source: z.enum(['x', 'reddit', 'hn', 'youtube']).optional(),
   category: z
     .string()
     .min(1)
@@ -272,6 +272,8 @@ export interface VeilleItemView {
   alerted_at: number | null;
   triage_status: string;
   triage_status_at: number | null;
+  triage_high_intent: number | null;
+  crm_bridged_at: number | null;
 }
 
 /**
@@ -317,7 +319,7 @@ export function listVeilleItems(opts: VeilleItemListOptions = {}): VeilleItemVie
     .prepare(
       `SELECT id, product_id, source, text, author, url, created_at, collection_date,
               triage_category, triage_urgency, triage_relevance, triaged_at, triage_error, alerted_at,
-              triage_status, triage_status_at
+              triage_status, triage_status_at, triage_high_intent, crm_bridged_at
        FROM tweets
        WHERE ${clauses.join(' AND ')}
        ORDER BY ${orderBy}
@@ -344,14 +346,15 @@ export function updateVeilleItemStatus(
     .prepare(
       `SELECT id, product_id, source, text, author, url, created_at, collection_date,
               triage_category, triage_urgency, triage_relevance, triaged_at, triage_error, alerted_at,
-              triage_status, triage_status_at
+              triage_status, triage_status_at, triage_high_intent, crm_bridged_at
        FROM tweets WHERE id = ?`,
     )
     .get(id) as VeilleItemView;
 }
 
 function mapRowToItem(row: ItemRow, productId: string): Item {
-  const source: ItemSource = row.source === 'reddit' ? 'reddit' : row.source === 'hn' ? 'hn' : 'x';
+  const source: ItemSource =
+    row.source === 'reddit' || row.source === 'hn' || row.source === 'youtube' ? row.source : 'x';
   return {
     id: row.id,
     source,

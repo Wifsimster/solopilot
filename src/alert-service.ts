@@ -15,6 +15,7 @@ const SOURCE_LABELS: Record<string, string> = {
   x: 'X (Twitter)',
   reddit: 'Reddit',
   hn: 'Hacker News',
+  youtube: 'YouTube',
 };
 
 export interface AlertResult {
@@ -31,7 +32,8 @@ interface AlertItemRow {
   triage_urgency: number;
 }
 
-function resolveDiscordWebhook(config: Config, productId: string): string | undefined {
+/** Product webhook > per-product setting > global setting > env — same order as the digest. */
+export function resolveDiscordWebhook(config: Config, productId: string): string | undefined {
   const product = getProduct(productId);
   if (product?.discord_webhook) return product.discord_webhook;
   const productSetting = getProductSetting(productId, 'DISCORD_WEBHOOK_URL');

@@ -70,7 +70,7 @@ export interface ApiMessage {
   message: string;
 }
 
-export type FeedItemSource = 'x' | 'reddit' | 'hn';
+export type FeedItemSource = 'x' | 'reddit' | 'hn' | 'youtube';
 
 export interface TweetRecord {
   id: string;
@@ -109,6 +109,8 @@ export interface ProductRecord {
   reddit_subreddits: string[] | null;
   hn_enabled: boolean;
   hn_keywords: string[] | null;
+  youtube_enabled: boolean;
+  youtube_keywords: string[] | null;
   intent_enabled: boolean;
   intent_keywords: string[];
   intent_exclude_keywords: string[];
@@ -248,4 +250,7 @@ export interface VeilleItem {
   alerted_at: number | null;
   triage_status: VeilleItemStatus;
   triage_status_at: number | null;
+  /** 1 = AI flagged buying intent; 0 = no; null = not evaluated. */
+  triage_high_intent: number | null;
+  crm_bridged_at: number | null;
 }

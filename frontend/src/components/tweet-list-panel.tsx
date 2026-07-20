@@ -82,7 +82,9 @@ export function TweetListPanel({ runId, tweetCount }: { runId: number; tweetCoun
                   ? 'Reddit'
                   : tweet.source === 'hn'
                     ? 'HN'
-                    : 'X'}
+                    : tweet.source === 'youtube'
+                      ? 'YouTube'
+                      : 'X'}
               </Badge>
               {tweet.urls.length > 0 && (
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0">

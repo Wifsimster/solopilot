@@ -31,6 +31,8 @@ const CREDENTIAL_KEYS = [
   'LINKEDIN_JSESSIONID',
   // Reddit auto-publish session cookie (reddit_session), used against old.reddit.
   'REDDIT_SESSION',
+  // YouTube Data API v3 key for the veille YouTube source.
+  'YOUTUBE_API_KEY',
 ] as const;
 
 export type EditableKey = (typeof EDITABLE_KEYS)[number];

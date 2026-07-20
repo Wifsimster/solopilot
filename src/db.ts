@@ -51,6 +51,8 @@ export interface ProductRecord {
   reddit_subreddits: string | null;
   hn_enabled: number;
   hn_keywords: string | null;
+  youtube_enabled: number;
+  youtube_keywords: string | null;
   intent_enabled: number;
   intent_keywords: string | null;
   // Boolean refinement of intent matching (Syften-style): a post is skipped if it
@@ -76,6 +78,8 @@ export interface ProductRecord {
   // default 80). Requires triage_enabled to produce anything.
   alert_enabled: number;
   alert_threshold: number | null;
+  // CRM bridge: opt-in flag — high-intent triaged mentions become CRM leads.
+  crm_leads_enabled: number;
 }
 
 export interface ContentDraftRecord {
@@ -231,6 +235,8 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'products', 'reddit_subreddits', `TEXT`);
   addColumnIfMissing(database, 'products', 'hn_enabled', `INTEGER NOT NULL DEFAULT 0`);
   addColumnIfMissing(database, 'products', 'hn_keywords', `TEXT`);
+  addColumnIfMissing(database, 'products', 'youtube_enabled', `INTEGER NOT NULL DEFAULT 0`);
+  addColumnIfMissing(database, 'products', 'youtube_keywords', `TEXT`);
   addColumnIfMissing(database, 'products', 'intent_enabled', `INTEGER NOT NULL DEFAULT 0`);
   addColumnIfMissing(database, 'products', 'intent_keywords', `TEXT`);
   addColumnIfMissing(database, 'products', 'intent_exclude_keywords', `TEXT`);
@@ -248,6 +254,7 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'products', 'triage_categories', `TEXT`);
   addColumnIfMissing(database, 'products', 'alert_enabled', `INTEGER NOT NULL DEFAULT 0`);
   addColumnIfMissing(database, 'products', 'alert_threshold', `INTEGER`);
+  addColumnIfMissing(database, 'products', 'crm_leads_enabled', `INTEGER NOT NULL DEFAULT 0`);
 
   // Per-item AI triage columns (Stalkr-style): each collected item gets a
   // category, an urgency score and a relevance score at collect time. NULL
@@ -264,6 +271,10 @@ function runProductMigrations(database: Database.Database) {
   // triage above: the AI scores, the owner works through the feed.
   addColumnIfMissing(database, 'tweets', 'triage_status', `TEXT NOT NULL DEFAULT 'new'`);
   addColumnIfMissing(database, 'tweets', 'triage_status_at', `INTEGER`);
+  // 1 = the AI flagged buying intent this product can serve (0 = no, NULL =
+  // not evaluated). crm_bridged_at marks the item consumed by the CRM bridge.
+  addColumnIfMissing(database, 'tweets', 'triage_high_intent', `INTEGER`);
+  addColumnIfMissing(database, 'tweets', 'crm_bridged_at', `INTEGER`);
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_tweets_triage ON tweets(product_id, triaged_at, triage_urgency)`,
   );

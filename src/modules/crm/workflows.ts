@@ -17,4 +17,19 @@ export const crmFollowupStale: Workflow = {
   steps: [{ use: 'crm.followup' }, { use: 'notify.discord' }],
 };
 
-export const crmWorkflows: Workflow[] = [crmFollowupStale];
+/**
+ * Hourly safety-net sweep for the veille → CRM lead bridge (offset from
+ * collect). The primary path runs inline after each collect; this retries
+ * items an earlier failure left pending. Idempotent via `crm_bridged_at`.
+ */
+export const crmLeadFromMention: Workflow = {
+  id: 'crm.lead-from-mention',
+  module: 'crm',
+  label: 'Leads depuis les mentions à forte intention',
+  trigger: { kind: 'cron', expr: '20 * * * *' },
+  version: 1,
+  enabled: true,
+  steps: [{ use: 'crm.leads-from-mentions-run' }],
+};
+
+export const crmWorkflows: Workflow[] = [crmFollowupStale, crmLeadFromMention];

@@ -14,7 +14,7 @@ import { notifyDiscordStep } from '../steps/notify.js';
 import { cockpitAggregateStep } from '../steps/cockpit.js';
 import { facturationRelanceStep, facturationSyncStep } from '../steps/facturation.js';
 import { comptaSeuilsStep, comptaEcheanceStep } from '../steps/comptabilite.js';
-import { crmFollowupStep } from '../steps/crm.js';
+import { crmFollowupStep, crmLeadFromMentionStep } from '../steps/crm.js';
 import { agendaSyncStep, agendaRappelsStep } from '../steps/agenda.js';
 import { veilleCollectRunStep, veillePublishRunStep, veilleAlertRunStep } from '../steps/veille.js';
 import { veilleWorkflows } from '../modules/veille/workflows.js';
@@ -39,6 +39,7 @@ export function registerSolopilot(): void {
   registerStep(comptaSeuilsStep);
   registerStep(comptaEcheanceStep);
   registerStep(crmFollowupStep);
+  registerStep(crmLeadFromMentionStep);
   registerStep(agendaSyncStep);
   registerStep(agendaRappelsStep);
   registerStep(veilleCollectRunStep);
