@@ -748,6 +748,12 @@ export function startServer(
       }
     }
 
+    // A product's publish_cron drives its own digest schedule — re-register the
+    // per-product publish crons so a changed frequency applies without a restart.
+    if (parsed.data.publish_cron !== undefined && config) {
+      reschedule(getCurrentSchedule() || config.CRON_SCHEDULE, config, buildMergedConfig);
+    }
+
     return c.json({
       success: true,
       product: updated ? maskProduct(updated) : null,

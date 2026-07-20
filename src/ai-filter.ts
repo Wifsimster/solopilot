@@ -47,18 +47,17 @@ PRODUCT CONTEXT
 - Target audience: ${product.target_audience ?? '(n/a)'}${valueProps}
 
 Your task:
-1. From the items, SELECT those relevant to THIS product's domain, its target audience's interests and pain points, its market and competitors, or adjacent themes this audience genuinely cares about. Prioritize product-relevant items; drop items unrelated to this product or its audience — even if they are popular AI/tech news.
-2. If very few items are directly on-theme, broaden to the items this specific audience would most likely find interesting. Do NOT return an empty digest just because nothing is a perfect match.
-3. Write a concise digest (under 2000 characters) in ${language}.
-4. Structure the digest into the source sections that have relevant items, in this exact order:
+1. From the items, SELECT ONLY those genuinely relevant to THIS product's domain, its target audience's interests and pain points, its market and competitors, or adjacent themes this audience genuinely cares about. Be strict — drop every item unrelated to this product or its audience, even if it is popular AI/tech news.
+2. Write a concise digest (under 2000 characters) in ${language}.
+3. Structure the digest into the source sections that have relevant items, in this exact order:
    - "X (Twitter)" — bullets from X
    - "Reddit" — bullets from Reddit
    - "Hacker News" — bullets from Hacker News
    Omit a section entirely if it has zero relevant items. Each top-level header on its own line, in bold uppercase (e.g. **X (TWITTER)**, **REDDIT**, **HACKER NEWS**), separated by blank lines. Inside each section use short bullets with clickable source links where available.
-5. Start with a title line themed to the PRODUCT's domain — NOT a generic "AI & Tech" title — including the date provided by the user. Derive a fitting emoji + theme from the product description (e.g. a gaming product → "🎮 VEILLE GAMING & CULTURE VIDÉOLUDIQUE — <date>", a parenting/health product → "🧩 VEILLE TDAH & PARENTALITÉ — <date>").
-6. Use a professional but engaging tone.
+4. Start with a title line themed to the PRODUCT's domain — NOT a generic "AI & Tech" title — including the date provided by the user. Derive a fitting emoji + theme from the product description (e.g. a gaming product → "🎮 VEILLE GAMING & CULTURE VIDÉOLUDIQUE — <date>", a parenting/health product → "🧩 VEILLE TDAH & PARENTALITÉ — <date>").
+5. Use a professional but engaging tone.
 
-Only if NOTHING across all sources is of any interest to this product or its audience, respond with exactly: NO_TECH_NEWS_FOUND`;
+If NOTHING across all sources is genuinely relevant to this product or its audience, respond with exactly: NO_TECH_NEWS_FOUND. Do NOT pad the digest with generic or off-topic items — an empty digest is the expected, correct output when there is no on-theme news.`;
 }
 
 const MONTHLY_SYSTEM_PROMPT = `You are a tech news analyst. You receive several daily AI & tech news summaries.
