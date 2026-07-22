@@ -76,7 +76,7 @@ function UrgencyBadge({ urgency }: { urgency: number | null }) {
   if (urgency === null) return null;
   const variant = urgency >= URGENT_THRESHOLD ? 'destructive' : urgency >= 40 ? 'warning' : 'secondary';
   return (
-    <Badge variant={variant} className="gap-1 text-[10px] px-1.5 py-0 tabular-nums">
+    <Badge variant={variant} className="gap-1 text-3xs px-1.5 py-0 tabular-nums">
       {urgency >= URGENT_THRESHOLD && <Flame className="size-3" aria-hidden="true" />}
       {urgency}/100
     </Badge>
@@ -113,29 +113,29 @@ function MentionCard({
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="brand" className="text-[10px] px-1.5 py-0">
+            <Badge variant="brand" className="text-3xs px-1.5 py-0">
               {SOURCE_LABELS[item.source] ?? item.source}
             </Badge>
             <UrgencyBadge urgency={item.triage_urgency} />
             {item.triage_category && (
-              <Badge variant="secondary" className="text-[11px]">
+              <Badge variant="secondary" className="text-2xs">
                 {categoryLabel(item.triage_category)}
               </Badge>
             )}
             {item.triage_high_intent === 1 && (
-              <Badge variant="success" className="gap-1 text-[10px] px-1.5 py-0">
+              <Badge variant="success" className="gap-1 text-3xs px-1.5 py-0">
                 <Target className="size-3" aria-hidden="true" />
                 Lead potentiel
               </Badge>
             )}
             {item.origin === 'mention' && (
-              <Badge variant="warning" className="gap-1 text-[10px] px-1.5 py-0">
+              <Badge variant="warning" className="gap-1 text-3xs px-1.5 py-0">
                 <Megaphone className="size-3" aria-hidden="true" />
                 Mention directe
               </Badge>
             )}
             {item.triaged_at === null && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground">
+              <Badge variant="outline" className="text-3xs px-1.5 py-0 text-muted-foreground">
                 En attente d'analyse IA
               </Badge>
             )}
@@ -272,7 +272,7 @@ function MentionFilterBar({
               onClick={() => onCategoryChange(cat.value)}
             >
               {categoryLabel(cat.value)}
-              <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0 tabular-nums">
+              <Badge variant="secondary" className="ml-1.5 text-3xs px-1.5 py-0 tabular-nums">
                 {cat.count}
               </Badge>
             </Button>
@@ -435,7 +435,7 @@ export function MentionsPage() {
               <TabsTrigger key={tab.id} value={tab.id} className="gap-1.5 shrink-0">
                 <span>{tab.label}</span>
                 {counts[tab.id] > 0 && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
+                  <Badge variant="secondary" className="text-3xs px-1.5 py-0 tabular-nums">
                     {counts[tab.id]}
                   </Badge>
                 )}

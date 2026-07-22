@@ -55,11 +55,11 @@ function UrgentMentionsCard({ productId }: { productId: string }) {
   const countLabel = items.length >= URGENT_FETCH_LIMIT ? `${URGENT_FETCH_LIMIT}+` : `${items.length}`;
 
   return (
-    <Alert role="status" className="border-destructive/40 bg-destructive/5">
+    <Alert role="status" className="border-destructive/30 bg-destructive/10">
       <Flame className="size-4 text-destructive" />
       <AlertTitle className="flex items-center gap-2">
         Mentions urgentes à traiter
-        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 tabular-nums">
+        <Badge variant="destructive" className="text-3xs px-1.5 py-0 tabular-nums">
           {countLabel}
         </Badge>
       </AlertTitle>
@@ -302,7 +302,7 @@ export function DashboardPage() {
 
           {lastRun.error_message && (
             <CardContent className="pt-0">
-              <details className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+              <details className="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
                 <summary className="cursor-pointer font-medium text-destructive text-sm select-none">
                   Détail de l'erreur
                 </summary>

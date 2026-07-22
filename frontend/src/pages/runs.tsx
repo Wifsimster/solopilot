@@ -94,7 +94,7 @@ function RunCard({ run }: { run: RunRecord }) {
         )}
 
         {run.error_message && (
-          <p className="rounded-md bg-destructive/5 border border-destructive/20 px-3 py-2 text-xs text-destructive line-clamp-2">
+          <p className="rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-xs text-destructive line-clamp-2">
             {run.error_message}
           </p>
         )}

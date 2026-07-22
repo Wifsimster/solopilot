@@ -49,6 +49,12 @@
   --shadow-sm: var(--shadow-sm-value);
   --shadow-md: var(--shadow-md-value);
   --shadow-lg: var(--shadow-lg-value);
+  /* Micro-type steps below `text-xs` (12px), for dense badges/labels/meta.
+   * Governed scale tokens so components stop reaching for arbitrary
+   * bracketed pixel values. Size-only by design (line-height inherits from
+   * context, matching the previous arbitrary-value behaviour). */
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-3xs: 0.625rem; /* 10px */
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }

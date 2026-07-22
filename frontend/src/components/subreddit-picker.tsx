@@ -112,7 +112,7 @@ function SubredditResultsList({
                   {formatSubscribers(result.subscribers)}
                 </span>
                 {result.over18 && (
-                  <span className="rounded bg-destructive/15 px-1 text-[10px] font-semibold uppercase text-destructive">
+                  <span className="rounded bg-destructive/12 px-1 text-3xs font-semibold uppercase text-destructive dark:bg-destructive/20">
                     NSFW
                   </span>
                 )}
