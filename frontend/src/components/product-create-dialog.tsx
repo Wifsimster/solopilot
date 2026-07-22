@@ -76,6 +76,11 @@ const HN_KEYWORDS_MAX = 20;
 const INTENT_KEYWORD_MIN = 2;
 const INTENT_KEYWORD_MAX = 128;
 const INTENT_KEYWORDS_MAX = 30;
+const YOUTUBE_KEYWORDS_MAX = 20;
+const MENTION_KEYWORDS_MAX = 30;
+const TRIAGE_CATEGORIES_MAX = 20;
+const TRIAGE_CATEGORY_PATTERN = /^[a-z0-9]+(_[a-z0-9]+)*$/;
+const ALERT_THRESHOLD_DEFAULT = 80;
 
 function slugify(input: string): string {
   return input
@@ -124,6 +129,25 @@ const parseIntentKeywords = makeLengthParser(
   (j) => `Mot-clé trop court : ${j} (min ${INTENT_KEYWORD_MIN} caractères).`,
   (j) => `Mot-clé trop long : ${j} (max ${INTENT_KEYWORD_MAX} caractères).`,
 );
+/** Triage categories are backend slugs: lowercase, digits, underscores (2-40). */
+function parseTriageCategories(raw: string): ChipParseResult {
+  const tokens = raw.split(/[,\n]+/).flatMap((t) => {
+    const trimmed = t.trim().toLowerCase().replaceAll(' ', '_');
+    return trimmed ? [trimmed] : [];
+  });
+  if (tokens.length === 0) return { ok: true, tokens: [] };
+  const bad = tokens.filter(
+    (t) => t.length < 2 || t.length > 40 || !TRIAGE_CATEGORY_PATTERN.test(t),
+  );
+  if (bad.length > 0) {
+    return {
+      ok: false,
+      error: `Catégorie invalide : ${bad.join(', ')} (minuscules, chiffres et underscores, 2 à 40 caractères).`,
+    };
+  }
+  return { ok: true, tokens };
+}
+
 const parseValueProps = makeLengthParser(
   VALUE_PROP_MIN,
   VALUE_PROP_MAX,
@@ -360,6 +384,14 @@ interface FormState {
   subreddits: string[];
   hnEnabled: boolean;
   hnKeywords: string[];
+  youtubeEnabled: boolean;
+  youtubeKeywords: string[];
+  mentionKeywords: string[];
+  triageEnabled: boolean;
+  triageCategories: string[];
+  alertEnabled: boolean;
+  alertThreshold: string;
+  crmLeadsEnabled: boolean;
   intentEnabled: boolean;
   intentKeywords: string[];
   intentExcludeKeywords: string[];
@@ -397,6 +429,17 @@ function buildInitialFormState(initialValues: ProductRecord | null): FormState {
     subreddits: initialValues?.reddit_subreddits ?? [],
     hnEnabled: initialValues?.hn_enabled ?? false,
     hnKeywords: initialValues?.hn_keywords ?? [],
+    youtubeEnabled: initialValues?.youtube_enabled ?? false,
+    youtubeKeywords: initialValues?.youtube_keywords ?? [],
+    mentionKeywords: initialValues?.mention_keywords ?? [],
+    triageEnabled: initialValues?.triage_enabled ?? false,
+    triageCategories: initialValues?.triage_categories ?? [],
+    alertEnabled: initialValues?.alert_enabled ?? false,
+    alertThreshold:
+      initialValues?.alert_threshold !== null && initialValues?.alert_threshold !== undefined
+        ? String(initialValues.alert_threshold)
+        : '',
+    crmLeadsEnabled: initialValues?.crm_leads_enabled ?? false,
     intentEnabled: initialValues?.intent_enabled ?? false,
     intentKeywords: initialValues?.intent_keywords ?? [],
     intentExcludeKeywords: initialValues?.intent_exclude_keywords ?? [],
@@ -435,6 +478,9 @@ type Setter = <K extends keyof FormState>(field: K, value: FormState[K]) => void
 interface SubmitFlushers {
   subreddit: SubredditPickerHandle | null;
   hn: ChipInputHandle | null;
+  youtube: ChipInputHandle | null;
+  mention: ChipInputHandle | null;
+  triageCategory: ChipInputHandle | null;
   intent: ChipInputHandle | null;
   intentExclude: ChipInputHandle | null;
   intentRequire: ChipInputHandle | null;
@@ -485,7 +531,7 @@ async function submitProduct({
   }
 
   // At least one source must be enabled
-  if (!state.xEnabled && !state.redditEnabled && !state.hnEnabled) {
+  if (!state.xEnabled && !state.redditEnabled && !state.hnEnabled && !state.youtubeEnabled) {
     set('error', 'Active au moins une source.');
     return;
   }
@@ -525,6 +571,61 @@ async function submitProduct({
   if (state.hnEnabled && pendingHnKeywords.length > HN_KEYWORDS_MAX) {
     set('error', `Maximum ${HN_KEYWORDS_MAX} mots-clés Hacker News par produit.`);
     return;
+  }
+
+  // Flush pending YouTube keyword input
+  let pendingYoutubeKeywords = state.youtubeKeywords;
+  if (state.youtubeEnabled) {
+    const flushed = flushers.youtube?.flush();
+    if (flushed === null || flushed === undefined) {
+      set('error', 'Corrige les mots-clés YouTube invalides avant de continuer.');
+      return;
+    }
+    pendingYoutubeKeywords = flushed;
+  }
+
+  if (state.youtubeEnabled && pendingYoutubeKeywords.length === 0) {
+    set('error', 'Renseigne au moins un mot-clé lorsque YouTube est activé.');
+    return;
+  }
+
+  if (state.youtubeEnabled && pendingYoutubeKeywords.length > YOUTUBE_KEYWORDS_MAX) {
+    set('error', `Maximum ${YOUTUBE_KEYWORDS_MAX} mots-clés YouTube par produit.`);
+    return;
+  }
+
+  // Flush pending mention keyword input (optional field — empty disables the pass)
+  const pendingMentionKeywords = flushers.mention?.flush();
+  if (pendingMentionKeywords === null || pendingMentionKeywords === undefined) {
+    set('error', 'Corrige les mots-clés de mention invalides avant de continuer.');
+    return;
+  }
+  if (pendingMentionKeywords.length > MENTION_KEYWORDS_MAX) {
+    set('error', `Maximum ${MENTION_KEYWORDS_MAX} mots-clés de mention par produit.`);
+    return;
+  }
+
+  // Flush pending triage category input (optional — empty keeps the default taxonomy)
+  const pendingTriageCategories = flushers.triageCategory?.flush();
+  if (pendingTriageCategories === null || pendingTriageCategories === undefined) {
+    set('error', 'Corrige les catégories de triage invalides avant de continuer.');
+    return;
+  }
+  if (pendingTriageCategories.length > TRIAGE_CATEGORIES_MAX) {
+    set('error', `Maximum ${TRIAGE_CATEGORIES_MAX} catégories de triage par produit.`);
+    return;
+  }
+
+  // Alert threshold: blank = backend default (80), else integer 0-100.
+  let alertThresholdValue: number | null = null;
+  const trimmedThreshold = state.alertThreshold.trim();
+  if (trimmedThreshold) {
+    const parsedThreshold = Number(trimmedThreshold);
+    if (!Number.isInteger(parsedThreshold) || parsedThreshold < 0 || parsedThreshold > 100) {
+      set('error', "Le seuil d'alerte doit être un entier entre 0 et 100.");
+      return;
+    }
+    alertThresholdValue = parsedThreshold;
   }
 
   // Flush pending intent keyword input
@@ -628,7 +729,11 @@ async function submitProduct({
       x_enabled: state.xEnabled,
       reddit_enabled: state.redditEnabled,
       hn_enabled: state.hnEnabled,
+      youtube_enabled: state.youtubeEnabled,
       intent_enabled: state.intentEnabled,
+      triage_enabled: state.triageEnabled,
+      alert_enabled: state.alertEnabled,
+      crm_leads_enabled: state.crmLeadsEnabled,
     };
     if (!isEdit) {
       body.id = trimmedId;
@@ -659,6 +764,21 @@ async function submitProduct({
     // the current array (never null — validated above); when disabled,
     // explicitly clear with null.
     body.hn_keywords = state.hnEnabled ? pendingHnKeywords : null;
+
+    // YouTube keywords follow the same toggle rule.
+    body.youtube_keywords = state.youtubeEnabled ? pendingYoutubeKeywords : null;
+
+    // Mention keywords have no toggle: the chip count is the switch (empty =
+    // mention pass off). Always sent so clearing chips clears the column.
+    body.mention_keywords = pendingMentionKeywords.length > 0 ? pendingMentionKeywords : null;
+
+    // Custom triage categories: empty = default taxonomy (null resets it).
+    body.triage_categories =
+      pendingTriageCategories.length > 0 ? pendingTriageCategories : null;
+
+    // Alert threshold: null = backend default (80). Always sent so clearing
+    // the field restores the default.
+    body.alert_threshold = alertThresholdValue;
 
     // Intent keywords: when enabled, send the current array (validated above);
     // when disabled, explicitly clear with null.
@@ -783,10 +903,11 @@ interface SourcesSectionProps {
   set: Setter;
   subredditRef: Ref<SubredditPickerHandle>;
   hnRef: Ref<ChipInputHandle>;
+  youtubeRef: Ref<ChipInputHandle>;
 }
 
-/** "Sources" card: X (Twitter), Reddit (subreddit picker) and Hacker News. */
-function SourcesSection({ state, set, subredditRef, hnRef }: SourcesSectionProps) {
+/** "Sources" card: X (Twitter), Reddit (subreddit picker), Hacker News and YouTube. */
+function SourcesSection({ state, set, subredditRef, hnRef, youtubeRef }: SourcesSectionProps) {
   return (
     <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
       <div>
@@ -898,6 +1019,194 @@ function SourcesSection({ state, set, subredditRef, hnRef }: SourcesSectionProps
             {HN_KEYWORDS_MAX} max).
           </p>
         </div>
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* YouTube row */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="source-youtube-enabled" className="flex flex-col gap-0.5">
+            <span>YouTube</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              Recherche par mots-clés via l'API Data v3.
+            </span>
+          </Label>
+          <Switch
+            id="source-youtube-enabled"
+            checked={state.youtubeEnabled}
+            onCheckedChange={(v) => set('youtubeEnabled', v)}
+            aria-label="Activer la source YouTube"
+          />
+        </div>
+        <Label htmlFor="product-youtube-keywords" className="text-xs">
+          Mots-clés
+        </Label>
+        <div className={cn(!state.youtubeEnabled && 'opacity-50 pointer-events-none')}>
+          <div className="mt-1">
+            <ChipInput
+              ref={youtubeRef}
+              id="product-youtube-keywords"
+              ariaLabel="Ajouter un mot-clé YouTube"
+              value={state.youtubeKeywords}
+              onChange={(next) => set('youtubeKeywords', next)}
+              parse={parseHnKeywords}
+              max={YOUTUBE_KEYWORDS_MAX}
+              maxError={`Maximum ${YOUTUBE_KEYWORDS_MAX} mots-clés par produit.`}
+              removeLabel={(kw) => `Retirer ${kw}`}
+              placeholder="agents IA, no-code, ..."
+              disabled={!state.youtubeEnabled}
+            />
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Nécessite une clé YOUTUBE_API_KEY dans les Paramètres — sinon la source est ignorée.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface VeilleSectionProps {
+  state: FormState;
+  set: Setter;
+  mentionRef: Ref<ChipInputHandle>;
+  triageCategoryRef: Ref<ChipInputHandle>;
+}
+
+/**
+ * "Veille intelligente" card: per-item AI triage, real-time urgency alerts,
+ * CRM lead bridge and brand-mention keywords.
+ */
+function VeilleSection({ state, set, mentionRef, triageCategoryRef }: VeilleSectionProps) {
+  return (
+    <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
+      <div>
+        <h3 className="text-sm font-semibold tracking-tight">Veille intelligente</h3>
+        <p className="text-xs text-muted-foreground">
+          Triage IA de chaque mention, alertes urgentes et création de leads.
+        </p>
+      </div>
+
+      {/* Triage row */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="triage-enabled" className="flex flex-col gap-0.5">
+            <span>Triage IA des mentions</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              Catégorie, urgence et pertinence pour chaque item collecté (coût IA horaire).
+            </span>
+          </Label>
+          <Switch
+            id="triage-enabled"
+            checked={state.triageEnabled}
+            onCheckedChange={(v) => set('triageEnabled', v)}
+            aria-label="Activer le triage IA"
+          />
+        </div>
+        <div className={cn(!state.triageEnabled && 'opacity-50 pointer-events-none')}>
+          <Label htmlFor="product-triage-categories" className="text-xs">
+            Catégories personnalisées (optionnel)
+          </Label>
+          <div className="mt-1">
+            <ChipInput
+              ref={triageCategoryRef}
+              id="product-triage-categories"
+              ariaLabel="Ajouter une catégorie de triage"
+              value={state.triageCategories}
+              onChange={(next) => set('triageCategories', next)}
+              parse={parseTriageCategories}
+              max={TRIAGE_CATEGORIES_MAX}
+              maxError={`Maximum ${TRIAGE_CATEGORIES_MAX} catégories.`}
+              removeLabel={(cat) => `Retirer ${cat}`}
+              placeholder="bug, avis_client, concurrent"
+              disabled={!state.triageEnabled}
+            />
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Vide = taxonomie par défaut (bug, témoignage, demande, objection, question, actualité).
+          </p>
+        </div>
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* Alerts row */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="alert-enabled" className="flex flex-col gap-0.5">
+            <span>Alertes Discord urgentes</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              Ping immédiat quand une mention dépasse le seuil d'urgence.
+            </span>
+          </Label>
+          <Switch
+            id="alert-enabled"
+            checked={state.alertEnabled}
+            onCheckedChange={(v) => set('alertEnabled', v)}
+            aria-label="Activer les alertes urgentes"
+          />
+        </div>
+        <div className={cn(!state.alertEnabled && 'opacity-50 pointer-events-none')}>
+          <Label htmlFor="product-alert-threshold" className="text-xs">
+            Seuil d'urgence (0-100)
+          </Label>
+          <Input
+            id="product-alert-threshold"
+            type="number"
+            min={0}
+            max={100}
+            value={state.alertThreshold}
+            onChange={(e) => set('alertThreshold', e.target.value)}
+            placeholder={`${ALERT_THRESHOLD_DEFAULT} (défaut)`}
+            disabled={!state.alertEnabled}
+            className="mt-1 w-32"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Nécessite le triage IA activé pour scorer les mentions.
+          </p>
+        </div>
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* CRM leads row */}
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="crm-leads-enabled" className="flex flex-col gap-0.5">
+          <span>Leads CRM automatiques</span>
+          <span className="text-xs font-normal text-muted-foreground">
+            Les mentions à forte intention créent un contact CRM (source « veille »).
+          </span>
+        </Label>
+        <Switch
+          id="crm-leads-enabled"
+          checked={state.crmLeadsEnabled}
+          onCheckedChange={(v) => set('crmLeadsEnabled', v)}
+          aria-label="Activer la création de leads CRM"
+        />
+      </div>
+
+      <div className="border-t border-border" />
+
+      {/* Mention keywords row */}
+      <div className="space-y-2">
+        <Label htmlFor="product-mention-keywords">Mots-clés de mention</Label>
+        <ChipInput
+          ref={mentionRef}
+          id="product-mention-keywords"
+          ariaLabel="Ajouter un mot-clé de mention"
+          value={state.mentionKeywords}
+          onChange={(next) => set('mentionKeywords', next)}
+          parse={parseIntentKeywords}
+          max={MENTION_KEYWORDS_MAX}
+          maxError={`Maximum ${MENTION_KEYWORDS_MAX} mots-clés de mention.`}
+          removeLabel={(kw) => `Retirer ${kw}`}
+          placeholder="nom du produit, concurrent, fondateur"
+        />
+        <p className="text-xs text-muted-foreground">
+          Recherche chaque heure sur Reddit, HN et YouTube les posts qui te citent sans te taguer.
+          Vide = désactivé.
+        </p>
       </div>
     </div>
   );
@@ -1272,6 +1581,9 @@ function ProductForm({
   // Imperative flush handles let handleSubmit force-commit pending chip input.
   const subredditRef = useRef<SubredditPickerHandle>(null);
   const hnRef = useRef<ChipInputHandle>(null);
+  const youtubeRef = useRef<ChipInputHandle>(null);
+  const mentionRef = useRef<ChipInputHandle>(null);
+  const triageCategoryRef = useRef<ChipInputHandle>(null);
   const intentRef = useRef<ChipInputHandle>(null);
   const intentExcludeRef = useRef<ChipInputHandle>(null);
   const intentRequireRef = useRef<ChipInputHandle>(null);
@@ -1295,6 +1607,9 @@ function ProductForm({
       flushers: {
         subreddit: subredditRef.current,
         hn: hnRef.current,
+        youtube: youtubeRef.current,
+        mention: mentionRef.current,
+        triageCategory: triageCategoryRef.current,
         intent: intentRef.current,
         intentExclude: intentExcludeRef.current,
         intentRequire: intentRequireRef.current,
@@ -1382,9 +1697,22 @@ function ProductForm({
       <StudioSection state={state} set={set} valuePropRef={valuePropRef} ctaRef={ctaRef} />
       </div>
 
-      {/* Column 3 — sources de collecte et détection d'intention */}
+      {/* Column 3 — sources de collecte, veille intelligente et détection d'intention */}
       <div className="space-y-4">
-      <SourcesSection state={state} set={set} subredditRef={subredditRef} hnRef={hnRef} />
+      <SourcesSection
+        state={state}
+        set={set}
+        subredditRef={subredditRef}
+        hnRef={hnRef}
+        youtubeRef={youtubeRef}
+      />
+
+      <VeilleSection
+        state={state}
+        set={set}
+        mentionRef={mentionRef}
+        triageCategoryRef={triageCategoryRef}
+      />
 
       <IntentSection
         state={state}
