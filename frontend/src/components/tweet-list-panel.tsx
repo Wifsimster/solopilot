@@ -77,7 +77,7 @@ export function TweetListPanel({ runId, tweetCount }: { runId: number; tweetCoun
               <span className="text-xs text-muted-foreground">
                 {formatTweetDate(tweet.createdAt)}
               </span>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+              <Badge variant="secondary" className="text-3xs px-1.5 py-0">
                 {tweet.source === 'reddit'
                   ? 'Reddit'
                   : tweet.source === 'hn'
@@ -87,7 +87,7 @@ export function TweetListPanel({ runId, tweetCount }: { runId: number; tweetCoun
                       : 'X'}
               </Badge>
               {tweet.urls.length > 0 && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                <Badge variant="outline" className="text-3xs px-1.5 py-0">
                   {tweet.urls.length} lien{tweet.urls.length > 1 ? "s" : ""}
                 </Badge>
               )}

@@ -24,7 +24,7 @@ export function PageHeader({
     >
       <div className="min-w-0 space-y-1">
         {eyebrow && (
-          <p className="inline-flex items-center rounded-full border border-primary/20 bg-primary/8 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-primary dark:border-primary/30 dark:bg-primary/15">
+          <p className="inline-flex items-center rounded-full border border-primary/25 bg-primary/8 px-2.5 py-0.5 text-2xs font-semibold uppercase tracking-wider text-primary dark:border-primary/30 dark:bg-primary/15">
             {eyebrow}
           </p>
         )}

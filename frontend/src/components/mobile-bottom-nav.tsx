@@ -17,7 +17,7 @@ const ITEMS = [
 
 function itemClass({ isActive }: { isActive: boolean }) {
   return cn(
-    'flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition-colors',
+    'flex flex-1 flex-col items-center justify-center gap-1 py-2 text-2xs font-medium transition-colors',
     isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
   );
 }
@@ -49,7 +49,7 @@ export function MobileBottomNav({ onMore }: MobileBottomNavProps) {
         <button
           type="button"
           onClick={onMore}
-          className="flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+          className="flex flex-1 flex-col items-center justify-center gap-1 py-2 text-2xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           aria-label="Plus d'options"
         >
           <span className="flex h-7 w-12 items-center justify-center rounded-full">

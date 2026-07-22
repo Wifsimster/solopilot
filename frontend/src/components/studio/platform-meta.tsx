@@ -108,7 +108,7 @@ export function splitIntoThread(text: string, limit = PLATFORM_LIMITS.x): string
 export function SourceBadge({ source }: { source: TargetSource | null }) {
   if (source === null) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0 text-[10px] font-medium text-muted-foreground">
+      <span className="inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0 text-3xs font-medium text-muted-foreground">
         Source ?
       </span>
     );
@@ -116,7 +116,7 @@ export function SourceBadge({ source }: { source: TargetSource | null }) {
   const meta = SOURCE_META[source];
   const { Icon } = meta;
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0 text-[10px] font-medium text-foreground">
+    <span className="inline-flex items-center gap-1 rounded-full border border-border px-1.5 py-0 text-3xs font-medium text-foreground">
       <Icon className={cn('size-3', meta.textClass)} />
       {meta.label}
     </span>

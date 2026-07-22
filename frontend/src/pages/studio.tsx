@@ -481,11 +481,11 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
           <div className="flex flex-wrap items-center gap-1.5">
             <SourceBadge source={draft.target_source} />
             {draft.angle && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+              <Badge variant="outline" className="text-3xs px-1.5 py-0">
                 {draft.angle}
               </Badge>
             )}
-            <Badge variant={statusBadgeVariant(draft.status)} className="text-[10px] px-1.5 py-0">
+            <Badge variant={statusBadgeVariant(draft.status)} className="text-3xs px-1.5 py-0">
               {statusLabel(draft.status)}
             </Badge>
           </div>
@@ -705,7 +705,7 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
               <Repeat2 className="size-3.5" />
               {draft.metrics.reposts ?? '—'}
             </span>
-            <span className="text-[10px]">
+            <span className="text-3xs">
               maj {formatRelativeFr(draft.metrics.fetched_at)}
             </span>
           </div>
@@ -763,7 +763,7 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
                 <div className="max-h-60 space-y-2 overflow-y-auto">
                   {thread.map((tweet, i) => (
                     <div key={i} className="rounded-lg border border-border bg-muted/40 p-3">
-                      <div className="mb-1 text-[10px] font-medium text-muted-foreground tabular-nums">
+                      <div className="mb-1 text-3xs font-medium text-muted-foreground tabular-nums">
                         {i + 1}/{thread.length}
                       </div>
                       <div className="whitespace-pre-wrap text-sm">{tweet}</div>
@@ -1098,7 +1098,7 @@ function ConnectionsCard({
               <div className="flex items-center gap-2">
                 <Plug className="size-4 text-muted-foreground" />
                 <span className="text-sm font-medium">{label}</span>
-                <Badge variant={meta.variant} className="text-[10px] px-1.5 py-0">
+                <Badge variant={meta.variant} className="text-3xs px-1.5 py-0">
                   {meta.label}
                 </Badge>
               </div>
@@ -1316,7 +1316,7 @@ function AnglePerformanceCard({
       </CardHeader>
       <CardContent>
         <div className="space-y-1.5">
-          <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 gap-y-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 gap-y-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
             <span>Angle</span>
             <span className="text-right">Publiées</span>
             <span className="text-right">Utilisées</span>
@@ -1707,7 +1707,7 @@ export function StudioPage() {
               <TabsTrigger key={tab.id} value={tab.id} className="gap-1.5 shrink-0">
                 <span>{tab.label}</span>
                 {counts[tab.id] > 0 && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
+                  <Badge variant="secondary" className="text-3xs px-1.5 py-0 tabular-nums">
                     {counts[tab.id]}
                   </Badge>
                 )}

@@ -69,21 +69,21 @@ function ReplyVariantCard({
     <div
       className={[
         'rounded-lg border bg-muted/30 p-3 space-y-2 transition-colors',
-        reply.used ? 'border-l-4 border-l-success bg-success/5' : 'border-border',
+        reply.used ? 'border-l-4 border-l-success bg-success/10' : 'border-border',
       ].join(' ')}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         {reply.angle ? (
           <Badge
             variant={reply.used ? 'success' : 'outline'}
-            className="text-[10px] px-1.5 py-0"
+            className="text-3xs px-1.5 py-0"
           >
             {reply.used && <Check className="size-3 mr-1" />}
             {reply.angle}
           </Badge>
         ) : (
           reply.used && (
-            <Badge variant="success" className="text-[10px] px-1.5 py-0">
+            <Badge variant="success" className="text-3xs px-1.5 py-0">
               <Check className="size-3 mr-1" />
               Utilisée
             </Badge>
@@ -376,20 +376,20 @@ function LeadAiAnalyzed({
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge
             variant={scoreBadgeVariant(signal.ai_score ?? 0)}
-            className="text-[11px] tabular-nums"
+            className="text-2xs tabular-nums"
           >
             Intention : {signal.ai_score}/100
           </Badge>
           {signal.ai_icp_score !== null && (
             <Badge
               variant={scoreBadgeVariant(signal.ai_icp_score)}
-              className="text-[11px] tabular-nums"
+              className="text-2xs tabular-nums"
             >
               Profil cible : {signal.ai_icp_score}/100
             </Badge>
           )}
           {(signal.ai_score ?? 0) >= 70 && (signal.ai_icp_score ?? 0) >= 70 && (
-            <Badge variant="success" className="text-[11px]">
+            <Badge variant="success" className="text-2xs">
               🎯 Prioritaire
             </Badge>
           )}
@@ -561,7 +561,7 @@ export function LeadAiSection({
   const aiNotYetAnalyzed = !aiAnalyzed && !aiHasError;
 
   return (
-    <div className="rounded-xl border border-border bg-muted/30 p-3 space-y-2">
+    <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
       {aiNotYetAnalyzed && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
@@ -599,7 +599,7 @@ export function LeadAiSection({
       )}
 
       {aiHasError && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2.5 space-y-2">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 space-y-2">
           <p className="text-xs text-destructive">
             <span className="font-semibold">Échec de l'analyse : </span>
             {signal.ai_error}

@@ -120,7 +120,7 @@ function CategoryFilterBar({
           onClick={() => onChange(cat.value)}
         >
           {categoryLabel(cat.value)}
-          <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0 tabular-nums">
+          <Badge variant="secondary" className="ml-1.5 text-3xs px-1.5 py-0 tabular-nums">
             {cat.count}
           </Badge>
         </Button>
@@ -161,7 +161,7 @@ function LeadCard({
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="brand" className="text-[10px] px-1.5 py-0">
+            <Badge variant="brand" className="text-3xs px-1.5 py-0">
               {sourceLabel(signal.source)}
             </Badge>
             <span className="text-sm font-medium">{signal.author || 'Anonyme'}</span>
@@ -186,12 +186,12 @@ function LeadCard({
         {(signal.matched_pattern || signal.ai_intent_category) && (
           <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
             {signal.matched_pattern && (
-              <Badge variant="success" className="font-mono text-[11px]">
+              <Badge variant="success" className="font-mono text-2xs">
                 motif : {signal.matched_pattern}
               </Badge>
             )}
             {signal.ai_intent_category && (
-              <Badge variant="secondary" className="text-[11px]">
+              <Badge variant="secondary" className="text-2xs">
                 {categoryLabel(signal.ai_intent_category)}
               </Badge>
             )}
@@ -432,7 +432,7 @@ export function LeadsPage() {
               <TabsTrigger key={tab.id} value={tab.id} className="gap-1.5 shrink-0">
                 <span>{tab.label}</span>
                 {counts[tab.id] > 0 && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 tabular-nums">
+                  <Badge variant="secondary" className="text-3xs px-1.5 py-0 tabular-nums">
                     {counts[tab.id]}
                   </Badge>
                 )}
