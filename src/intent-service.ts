@@ -123,6 +123,19 @@ function normalizeFilterTerms(terms: string[]): string[] {
 }
 
 /**
+ * Guardrail for ADR-0009's deliberately-boring substring matcher: intent
+ * keywords are matched with a literal `includes()`, so a keyword written as a
+ * full natural-language sentence (e.g. "outil pour suivre les symptômes TDAH de
+ * mon enfant") will essentially never appear verbatim in a post and silently
+ * matches nothing. Flag keywords whose word count exceeds `maxWords` so the
+ * misconfiguration surfaces instead of failing silently. This does NOT change
+ * matching behaviour — it only powers warnings (collect logs, cockpit brief).
+ */
+export function findSentenceLikeKeywords(keywords: string[], maxWords = 6): string[] {
+  return keywords.filter((kw) => kw.trim().split(/\s+/).filter(Boolean).length > maxWords);
+}
+
+/**
  * Syften-style boolean gate applied before the include-keyword pass:
  * - reject if the post contains ANY exclude term;
  * - if require terms exist, the post must contain AT LEAST ONE of them.
@@ -200,6 +213,17 @@ export function matchIntentForProduct(
   const matched = insertMany(rows);
   if (matched > 0) {
     logger.info('Intent signals matched', { productId, matched, items: rows.length });
+  } else if (rows.length > 0) {
+    // Zero matches over a non-empty batch is the exact symptom of the
+    // sentence-as-keyword misconfiguration (see ADR-0009). Surface it instead
+    // of failing silently.
+    const suspicious = findSentenceLikeKeywords(product.intent_keywords);
+    if (suspicious.length > 0) {
+      logger.warn(
+        'Intent matched nothing and some keywords look like natural-language sentences; the substring matcher will rarely fire on them',
+        { productId, scanned: rows.length, suspiciousKeywords: suspicious },
+      );
+    }
   }
   return { matched };
 }
