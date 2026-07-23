@@ -10,6 +10,68 @@ const USER_AGENT = 'web:solopilot:1.0 (by /u/solopilot)';
 const FETCH_TIMEOUT_MS = 30_000;
 const SUBREDDIT_PATTERN = /^[A-Za-z0-9_]{2,21}$/;
 
+/** Optional Reddit app-only OAuth credentials. */
+export interface RedditAuth {
+  clientId?: string;
+  clientSecret?: string;
+}
+
+// App-only OAuth token cache, keyed by clientId. Reddit tokens last ~24h; we
+// refresh a minute early. Authenticated requests go to oauth.reddit.com, which
+// (unlike the public *.json endpoints) is not IP-blocked from datacenters.
+const tokenCache = new Map<string, { token: string; expiresAt: number }>();
+
+async function getAppOnlyToken(auth: RedditAuth, userAgent: string): Promise<string | null> {
+  const { clientId, clientSecret } = auth;
+  if (!clientId || !clientSecret) return null;
+
+  const cached = tokenCache.get(clientId);
+  if (cached && cached.expiresAt > Date.now()) return cached.token;
+
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const response = await fetch('https://www.reddit.com/api/v1/access_token', {
+    method: 'POST',
+    headers: {
+      authorization: `Basic ${basic}`,
+      'content-type': 'application/x-www-form-urlencoded',
+      'User-Agent': userAgent,
+    },
+    body: 'grant_type=client_credentials',
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(
+      `Reddit: OAuth token request failed: HTTP ${response.status}${body ? ` — ${body.slice(0, 160)}` : ''}`,
+    );
+  }
+  const json = (await response.json()) as { access_token?: string; expires_in?: number };
+  if (!json.access_token) throw new Error('Reddit: OAuth token response missing access_token');
+
+  tokenCache.set(clientId, {
+    token: json.access_token,
+    expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 - 60_000,
+  });
+  return json.access_token;
+}
+
+/**
+ * GETs a Reddit API path. With OAuth credentials it hits oauth.reddit.com with a
+ * Bearer token (the sanctioned, non-IP-blocked path); without, it falls back to
+ * the public www.reddit.com *.json endpoint. `path` starts with `/`.
+ */
+async function redditGet(
+  path: string,
+  userAgent: string,
+  auth: RedditAuth = {},
+): Promise<Response> {
+  const token = await getAppOnlyToken(auth, userAgent);
+  const base = token ? 'https://oauth.reddit.com' : 'https://www.reddit.com';
+  const headers: Record<string, string> = { 'User-Agent': userAgent, accept: 'application/json' };
+  if (token) headers.authorization = `Bearer ${token}`;
+  return fetch(`${base}${path}`, { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+}
+
 const redditChildSchema = z.object({
   kind: z.string().optional(),
   data: z.object({
@@ -71,17 +133,15 @@ type SubredditSearchChild = z.infer<typeof subredditSearchChildSchema>;
  * block (e.g. HTTP 403) surfaces as an error rather than a silent empty result.
  */
 async function fetchSubredditChildren(
-  url: string,
+  path: string,
   userAgent: string,
   query: string,
+  auth: RedditAuth = {},
 ): Promise<SubredditSearchChild[]> {
-  const response = await fetch(url, {
-    headers: { 'User-Agent': userAgent, accept: 'application/json' },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  const response = await redditGet(path, userAgent, auth);
 
   if (response.status === 429) {
-    logger.warn('Reddit: subreddit search rate limited (HTTP 429)', { query, url });
+    logger.warn('Reddit: subreddit search rate limited (HTTP 429)', { query, path });
     return [];
   }
   if (!response.ok) {
@@ -96,7 +156,7 @@ async function fetchSubredditChildren(
   if (!parsed.success) {
     logger.warn('Reddit: failed to parse subreddit search listing', {
       query,
-      url,
+      path,
       errors: parsed.error.issues.map((i) => i.message),
     });
     return [];
@@ -139,7 +199,7 @@ function mapSubredditResults(children: SubredditSearchChild[]): SubredditSearchR
 
 export async function searchSubreddits(
   query: string,
-  options: { limit?: number; userAgent?: string; includeNsfw?: boolean } = {},
+  options: { limit?: number; userAgent?: string; includeNsfw?: boolean; auth?: RedditAuth } = {},
 ): Promise<SubredditSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
@@ -147,6 +207,7 @@ export async function searchSubreddits(
   const limit = Math.min(Math.max(options.limit ?? 8, 1), 25);
   const userAgent = options.userAgent ?? USER_AGENT;
   const includeNsfw = options.includeNsfw ?? false;
+  const auth = options.auth ?? {};
 
   // The typeahead endpoint is what reddit.com's own search box uses and is the
   // most permissive for unauthenticated prefix queries; the classic search
@@ -164,23 +225,23 @@ export async function searchSubreddits(
     include_over_18: includeNsfw ? 'on' : 'off',
     sort: 'relevance',
   });
-  const candidateUrls = [
-    `https://www.reddit.com/api/subreddit_autocomplete_v2.json?${autocompleteParams.toString()}`,
-    `https://www.reddit.com/subreddits/search.json?${searchParams.toString()}`,
+  const candidatePaths = [
+    `/api/subreddit_autocomplete_v2.json?${autocompleteParams.toString()}`,
+    `/subreddits/search.json?${searchParams.toString()}`,
   ];
 
   let lastError: Error | null = null;
-  for (const url of candidateUrls) {
+  for (const path of candidatePaths) {
     try {
       // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: only hit the fallback endpoint when the primary fails
-      const children = await fetchSubredditChildren(url, userAgent, trimmed);
+      const children = await fetchSubredditChildren(path, userAgent, trimmed, auth);
       const mapped = mapSubredditResults(children);
       if (mapped.length > 0) return mapped;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       logger.warn('Reddit: subreddit search endpoint failed, trying fallback', {
         query: trimmed,
-        url,
+        path,
         error: lastError.message,
       });
     }
@@ -306,7 +367,7 @@ function mapRedditChildren(
 export async function searchRedditPosts(
   keyword: string,
   productId: string,
-  options: { userAgent?: string; sinceTs?: number; limit?: number } = {},
+  options: { userAgent?: string; sinceTs?: number; limit?: number; auth?: RedditAuth } = {},
 ): Promise<Item[]> {
   const trimmed = keyword.trim();
   if (!trimmed) return [];
@@ -320,11 +381,7 @@ export async function searchRedditPosts(
     limit: String(limit),
     type: 'link',
   });
-  const url = `https://www.reddit.com/search.json?${params.toString()}`;
-  const response = await fetch(url, {
-    headers: { 'User-Agent': userAgent, accept: 'application/json' },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  const response = await redditGet(`/search.json?${params.toString()}`, userAgent, options.auth ?? {});
 
   if (response.status === 429) {
     logger.warn('Reddit: mention search rate limited (HTTP 429)', { keyword: trimmed, productId });
@@ -356,6 +413,8 @@ export interface RedditReaderOptions {
   subreddits: string[];
   /** Override the default User-Agent string. */
   userAgent?: string;
+  /** App-only OAuth credentials — required to read from datacenter IPs. */
+  auth?: RedditAuth;
 }
 
 export function createRedditReader(options: RedditReaderOptions): SourceReader {
@@ -366,6 +425,7 @@ export function createRedditReader(options: RedditReaderOptions): SourceReader {
   }
 
   const userAgent = options.userAgent ?? USER_AGENT;
+  const auth = options.auth ?? {};
 
   return {
     source: 'reddit',
@@ -416,11 +476,7 @@ export function createRedditReader(options: RedditReaderOptions): SourceReader {
     sinceTs: number,
     fetchedAt: string,
   ): Promise<Item[]> {
-    const url = `https://www.reddit.com/r/${subreddit}/new.json?limit=100`;
-    const response = await fetch(url, {
-      headers: { 'User-Agent': userAgent, accept: 'application/json' },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
+    const response = await redditGet(`/r/${subreddit}/new.json?limit=100`, userAgent, auth);
 
     if (response.status === 429) {
       logger.warn('Reddit: rate limited (HTTP 429)', { subreddit, productId });
