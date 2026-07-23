@@ -59,6 +59,15 @@ const configSchema = z.object({
   // Optional: YouTube Data API v3 key for the veille YouTube source. When
   // absent, the YouTube reader is silently skipped (setup-mode friendly).
   YOUTUBE_API_KEY: z.string().min(1).optional(),
+
+  // Optional: Reddit app-only OAuth credentials (create a "script" app at
+  // https://www.reddit.com/prefs/apps). When both are set, the Reddit reader
+  // authenticates via oauth.reddit.com — required from datacenter IPs, which
+  // Reddit blocks (HTTP 403) on the unauthenticated *.json endpoints. When
+  // absent, it falls back to the public *.json endpoints (works from
+  // residential IPs only).
+  REDDIT_CLIENT_ID: z.string().min(1).optional(),
+  REDDIT_CLIENT_SECRET: z.string().min(1).optional(),
   })
   .refine((c) => Boolean(c.AI_API_KEY ?? c.GITHUB_TOKEN), {
     message:

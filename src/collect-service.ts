@@ -83,7 +83,13 @@ export async function collectTweets(
   const redditSubreddits = product?.reddit_subreddits ?? [];
   if (redditEnabled && redditSubreddits.length > 0) {
     try {
-      const redditReader = createRedditReader({ subreddits: redditSubreddits });
+      const redditReader = createRedditReader({
+        subreddits: redditSubreddits,
+        auth: {
+          clientId: config.REDDIT_CLIENT_ID,
+          clientSecret: config.REDDIT_CLIENT_SECRET,
+        },
+      });
       const items = await redditReader.fetchSince(productId, 0, { productId });
       const stored =
         items.length > 0
@@ -163,7 +169,12 @@ export async function collectTweets(
     for (const keyword of mentionKeywords) {
       try {
         // Sequential by design: Reddit 429s under concurrent load.
-        const found = await searchRedditPosts(keyword, productId);
+        const found = await searchRedditPosts(keyword, productId, {
+          auth: {
+            clientId: config.REDDIT_CLIENT_ID,
+            clientSecret: config.REDDIT_CLIENT_SECRET,
+          },
+        });
         for (const item of found) if (!mentionItems.has(item.id)) mentionItems.set(item.id, item);
       } catch (err) {
         logger.warn('Mention search failed on Reddit', {

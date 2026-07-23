@@ -874,7 +874,14 @@ export function startServer(
     const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 25) : 8;
     const includeNsfw = c.req.query('includeNsfw') === 'true';
     try {
-      const results = await searchSubreddits(q, { limit, includeNsfw });
+      const results = await searchSubreddits(q, {
+        limit,
+        includeNsfw,
+        auth: {
+          clientId: config?.REDDIT_CLIENT_ID,
+          clientSecret: config?.REDDIT_CLIENT_SECRET,
+        },
+      });
       return c.json({ results });
     } catch (err) {
       logger.warn('Reddit subreddit search failed', {
