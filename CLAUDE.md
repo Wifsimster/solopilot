@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+## Communication Style
+
+Think in big pictures, answer in few words. Skip filler, context restatement, and over-explanation.
+
 ## Project Overview
 
 Solopilot (anciennement « X AI Weekly Bot ») — the autonomous back-office for the company of one. A full-stack TypeScript application that runs an auto-entrepreneur's recurring administrative work as AI-driven **workflows**: veille, acquisition, CRM, invoicing, accounting/URSSAF, and agenda — surfaced as a single daily briefing.
