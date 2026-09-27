@@ -1,6 +1,6 @@
 # 0025. Veille — slow-moving watch sources, weekly brief, digest health
 
-Date: 2026-09-26
+Date: 2026-09-26 (amended 2026-09-27: consolidated veille channel)
 
 ## Status
 
@@ -68,6 +68,18 @@ no production caller and runs only for `DEFAULT_PRODUCT_ID` (`:37`). Per-product
 veille dispatch lives in `cron-manager.ts` (`runWorkflowById(..., { guard: false })`
 under `WORKFLOW_SCHEDULER`, `:23-37`, ADR-0020). The runner guard is keyed
 `module:activity` (`src/workflow/runner.ts:48-56`), so guarded `veille.*` runs collide.
+
+**Discord consolidation.** The human is replacing the eight `#veille-*` channels (one
+per product) with **one marketing channel**. A parallel PR
+(`feat/veille-consolidated-digest`) adds a global webhook `VEILLE_DISCORD_WEBHOOK_URL`
+(env + DB setting via the usual config merge, masked in API/UI) and a switch
+`VEILLE_DIGEST_MODE=consolidated|per-product` (default `per-product`). In
+`consolidated` mode the daily digest is one message with a section per product (1–3
+top items with links, or "Rien de notable"), split into as few messages as Discord
+allows (10 embeds and 6,000 chars per message, 4,096 per embed description). Today
+every veille post resolves a per-product webhook (`resolveDiscordWebhook`,
+`run-service.ts:24-30`; same order in `alert-service.ts:36`), so anything this ADR
+adds on that resolver would keep posting to channels that are about to be deleted.
 
 ## Decision
 
@@ -172,7 +184,8 @@ CREATE INDEX IF NOT EXISTS idx_page_snapshots_target ON page_snapshots(target_id
 A failing target never aborts the others; alerting on it belongs to `veille.health`.
 
 **Policy/regulation alerts.** An item from a `policy`/`regulation` target is alerted
-immediately to the product's existing channel through the **existing alert path**
+immediately to the product's veille channel (the consolidated channel in
+`consolidated` mode, §4) through the **existing alert path**
 (`sendPendingAlerts` in `src/alert-service.ts`, the `veille.alert` sweep,
 `alerted_at`). The watch step stores it pre-triaged without AI (`triaged_at = now`,
 `triage_category = kind`, `triage_urgency = 100`, above the default threshold 80,
@@ -185,8 +198,9 @@ an earlier hash is not re-alerted.
 
 ### 2. `veille.weekly-brief`: per product, Sunday 18:00 Europe/Paris
 
-Same webhook/channel as the daily digest (`resolveDiscordWebhook`,
-`run-service.ts:24-30`). Inputs: the last 7 days of `tweets` (all sources and kinds,
+Same channel as the daily digest, resolved as in §4: the product's webhook
+(`resolveDiscordWebhook`, `run-service.ts:24-30`) in `per-product` mode, one
+consolidated message in `consolidated` mode. Generation stays per product. Inputs: the last 7 days of `tweets` (all sources and kinds,
 used flag ignored) plus that week's `success` digest summaries, capped by characters
 as in `monthly-summary-service.ts:8-9`. The AI returns **structured JSON**, validated
 with Zod:
@@ -265,10 +279,14 @@ CREATE TABLE IF NOT EXISTS veille_health_incidents (
 
 **Dedup.** At most one open incident exists per (product, condition, subject). An
 incident alerts once. When its condition clears, `resolved_at` is set and a single
-`✅ rétabli` line is posted. Alerts go to one ops webhook: setting
-`VEILLE_OPS_WEBHOOK_URL`, falling back to the global `DISCORD_WEBHOOK_URL`, the same
-fallback the canary uses (`cron-manager.ts:168`). The health check is observation
-only: no auto-retry or restart.
+`✅ rétabli` line is posted. Each health tick sends **one consolidated alert**: all
+newly opened incidents grouped by product (product name, condition, subject), plus
+the resolutions of that tick; no message when nothing changed. Destination depends
+on the mode (§4): `per-product` → one ops webhook, `VEILLE_OPS_WEBHOOK_URL` falling
+back to the global `DISCORD_WEBHOOK_URL`, the same fallback the canary uses
+(`cron-manager.ts:168`); `consolidated` → `VEILLE_DISCORD_WEBHOOK_URL` only, the same
+channel as the digest and the brief. The health check is observation only: no
+auto-retry or restart.
 
 **Also decided, as small independent changes:**
 
@@ -279,6 +297,44 @@ only: no auto-retry or restart.
   `createProduct`, as the `PUT` branch does (`server.ts:791`).
 - **Persist per-source counts.** `triggerCollect` writes `result.bySource` to
   `runs.source_counts`, which `source_silent` needs.
+
+### 4. Delivery mode: one consolidated veille channel
+
+Brief and health follow the digest's `VEILLE_DIGEST_MODE` (no second switch), so a
+single flip moves every veille post. One mode-aware resolver is shared by the digest
+(parallel PR), the weekly brief, the health alerts and `sendPendingAlerts`:
+
+| Mode                    | Digest / brief / watch alerts                      | Health alerts                                     |
+| ----------------------- | -------------------------------------------------- | ------------------------------------------------- |
+| `per-product` (default) | Per-product webhook, `resolveDiscordWebhook` order | `VEILLE_OPS_WEBHOOK_URL` → `DISCORD_WEBHOOK_URL`  |
+| `consolidated`          | `VEILLE_DISCORD_WEBHOOK_URL`                       | `VEILLE_DISCORD_WEBHOOK_URL`                      |
+
+`per-product` is today's behaviour and this ADR's original design, unchanged.
+
+**Consolidated weekly brief.** The cron tick generates and validates each product's
+brief as in §2 (one `weekly_briefs` row per product), then posts **one message**:
+header `📊 Veille hebdo — semaine du {début} au {fin}`, then one embed per product
+(name, its ranked findings in the §2 format, or the `Rien de notable cette semaine`
+line). A product whose generation failed gets a one-line `Brief indisponible`
+section; `brief_failed` still reports it. The post outcome is written to
+`notification_status` on every included row.
+
+**Discord limits.** Brief and health messages reuse the digest PR's packer: one embed
+per product section, packed in product order into as few messages as possible
+(≤ 10 embeds and ≤ 6,000 chars per message). A section is never split across
+messages; one that exceeds 4,096 chars drops its lowest-ranked findings and ends with
+`+{n} autres`. Eight products fit in one message when briefs are short; a full week
+(8 × 5 findings) takes two or three.
+
+**Unset global webhook in `consolidated` mode: skip, never fall back.** The post is
+not sent, a `warn` is logged, and the rows get `notification_status='skipped'`. There
+is **no** fallback to per-product webhooks or to `DISCORD_WEBHOOK_URL`. Reasons:
+those channels are being deleted, so a fallback would either hit dead webhooks
+(`failed` noise) or post into an unrelated channel; silent re-routing would also hide
+the misconfiguration. `skipped` is visible in runs and fires `notify_failed`. Health
+alerts in that state cannot be delivered either; they are logged at `error` and stay
+unalerted (`alerted_at` NULL), so they go out on the first tick after the webhook is
+set.
 
 ### Per-product watch profile
 
@@ -365,6 +421,11 @@ robots/ToS terms.
 3. **Weekly brief.** Ship `weekly_briefs` and `veille.weekly-brief`. Run it manually
    (`npm run workflow -- veille.weekly-brief`) for 2 weeks before enabling the cron.
 
+**Channel migration** (independent of the phases): set `VEILLE_DISCORD_WEBHOOK_URL`,
+flip `VEILLE_DIGEST_MODE=consolidated`, and check that a digest, a health alert and
+(once shipped) a brief land in the marketing channel. Then the eight `#veille-*`
+channels can be deleted, and the per-product webhooks become dead config.
+
 ## Consequences
 
 ### Positive
@@ -374,6 +435,8 @@ robots/ToS terms.
 - Slow sources get cadence, conditional fetches and a failure budget without touching
   the hourly collect. Watch items reuse `tweets` (no new read path) with
   product-scoped ids. `watch_targets` stops the per-source column sprawl (ADR-0007).
+- In `consolidated` mode all veille output (digest, brief, health, watch alerts)
+  lands in one channel from one webhook; the eight `#veille-*` channels can go.
 
 ### Negative / Risks
 
@@ -387,6 +450,15 @@ robots/ToS terms.
 - Nothing watches `veille.health` itself; the weekly brief is a weak heartbeat.
 - The global `tweets.id` defect remains for legacy sources until the follow-up ADR.
 - 4 new tables and 3 new columns, all additive and idempotent (`addColumnIfMissing`).
+- `consolidated` mode makes `VEILLE_DISCORD_WEBHOOK_URL` a single point of failure:
+  if it is deleted or rotated, digest, brief and health alerts go quiet together, and
+  the health alert about it cannot be delivered. Only `runs.notification_status`
+  and the `error` logs show it. This is the ADR's "nothing watches the watcher" risk,
+  made sharper.
+- Once the `#veille-*` channels are deleted, going back to `per-product` needs new
+  channels and webhooks: the switch stays in code, but in practice it is one-way.
+- `sendPendingAlerts` becomes mode-aware, so intent urgency alerts also move to the
+  consolidated channel (see Open questions).
 
 ### Neutral
 
@@ -419,7 +491,9 @@ checkable in one DB.
 
 ## Open questions
 
-1. **Ops channel**: dedicated `#veille-ops` webhook, the global webhook, a DM or email?
+1. **Ops channel**: in `consolidated` mode health alerts share the marketing channel
+   (decided above). Keep it that way, or add a separate ops webhook, DM or email so
+   that the webhook's own failure can still be reported?
 2. **Brief timing**: Sunday 18:00 or Monday morning? Post 1–2 findings (proposed) or
    fall back to "Rien de notable" (PO spec)?
 3. **Play Developer API**: set up service-account access for our own apps? Which apps?
@@ -428,6 +502,10 @@ checkable in one DB.
 5. **PISTE**: will we create a PISTE account and accept the CGU for Légifrance?
 6. **Product ids**: confirm the `products.id` of each row in the watch-profile table,
    and whether every product has its own row in production.
+7. **Intent urgency alerts** (`sendPendingAlerts`): should they follow veille into
+   the consolidated channel (proposed, otherwise they break when the `#veille-*`
+   channels are deleted), or go to a separate leads channel? The parallel digest PR
+   should confirm it does not already cover this path.
 
 ## Participants
 
