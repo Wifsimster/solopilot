@@ -11,7 +11,7 @@ import { DEFAULT_PRODUCT_ID } from './db.js';
 import { getProduct, toProductView } from './product-service.js';
 import { matchIntentForProduct } from './intent-service.js';
 import { triageNewItems } from './ai-triage.js';
-import { sendPendingAlerts } from './alert-service.js';
+import { sendPendingAlerts, type AlertResult } from './alert-service.js';
 import { createLeadsFromMentions } from './modules/crm/lead-from-mention.js';
 
 export interface CollectResult {
@@ -21,6 +21,8 @@ export interface CollectResult {
   intentSignals: number;
   triaged: number;
   alerted: number;
+  /** Why urgency alerts were not sent this run (e.g. no webhook in consolidated mode). */
+  alertSkipped?: AlertResult['skipped'];
   crmLeads: number;
 }
 
@@ -239,9 +241,11 @@ export async function collectTweets(
   // Alerts run every collect (not only when new items arrived) so items left
   // pending by an earlier failed webhook call are retried within the hour.
   let alerted = 0;
+  let alertSkipped: AlertResult['skipped'];
   try {
     const result = await sendPendingAlerts(config, productId);
     alerted = result.alerted;
+    alertSkipped = result.skipped;
   } catch (err) {
     logger.warn('Urgency alerting failed', {
       productId,
@@ -271,6 +275,7 @@ export async function collectTweets(
     intentSignals,
     triaged,
     alerted,
+    ...(alertSkipped && { alertSkipped }),
     crmLeads,
   });
 
@@ -281,6 +286,7 @@ export async function collectTweets(
     intentSignals,
     triaged,
     alerted,
+    ...(alertSkipped && { alertSkipped }),
     crmLeads,
   };
 }
