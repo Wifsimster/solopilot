@@ -469,6 +469,11 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
                   Discord
                 </Badge>
               )}
+              {notifStatus === "consolidated" && (
+                <Badge variant="secondary" className="text-xs">
+                  Digest consolidé
+                </Badge>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">

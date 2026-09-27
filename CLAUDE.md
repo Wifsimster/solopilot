@@ -70,6 +70,8 @@ npm run build        # Build backend (tsc) + frontend (vite)
 npm run dev          # Run scheduler with .env loading
 npm run dev:once     # One-shot run (no cron)
 npm run lint         # ESLint on src/
+npm test             # Unit tests (node --test on test/*.test.mjs, against dist/)
+npm run test:workflow # Workflow engine smoke test
 npm run format       # Prettier formatting
 npm run start        # Production start (scheduler)
 ```
@@ -112,4 +114,5 @@ npm run start        # Production start (scheduler)
 - Two cron schedules: `COLLECT_CRON_SCHEDULE` (default `0 * * * *`) and `CRON_SCHEDULE` (default `30 7 * * *`)
 - Workflow engine lives in `src/workflow/` (Trigger/Step/Workflow/Run); business modules in `src/modules/<module>/` are folders of workflows. Run one with `npm run workflow -- <id>`.
 - **Veille flip (ADR-0020):** set `WORKFLOW_SCHEDULER=true` to dispatch the veille crons through the engine (behaviour-identical, adds `workflow_runs`). Default off keeps the legacy path.
+- **Veille digest mode:** `VEILLE_DIGEST_MODE=per-product` (default, one Discord message per product) or `consolidated` (workflow `veille.digest-consolidated`, `src/modules/veille/consolidated-*.ts`: publishes global-schedule products in sequence, then ONE digest with a section per product, split per Discord limits). Consolidated posts to `VEILLE_DISCORD_WEBHOOK_URL` → `DISCORD_WEBHOOK_URL` → skip; per-product runs get `notification_status='consolidated'`; sends are logged in `veille_digest_deliveries`. Mode is read at each tick (no restart).
 - All dates use Europe/Paris timezone for consistency

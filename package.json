@@ -25,6 +25,7 @@
     "dev:frontend": "cd frontend && npx vite",
     "generate:pwa-icons": "node scripts/generate-pwa-icons.mjs",
     "lint": "eslint src/",
+    "test": "npm run build:backend && node --test \"test/**/*.test.mjs\"",
     "test:workflow": "npm run build:backend && node scripts/workflow-smoke.mjs",
     "format": "prettier --write src/",
     "docker:build": "docker build --build-arg VERSION=$(node -p \"require('./package.json').version\") --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) -t ghcr.io/wifsimster/solopilot:latest .",

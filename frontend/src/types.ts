@@ -9,7 +9,7 @@ export interface RunRecord {
   thread_ids: string | null;
   summary: string | null;
   error_message: string | null;
-  notification_status: 'pending' | 'sent' | 'failed' | 'skipped' | null;
+  notification_status: 'pending' | 'sent' | 'failed' | 'skipped' | 'consolidated' | null;
 }
 
 export interface SettingRecord {
@@ -33,6 +33,8 @@ export interface ConfigResponse {
     authTokenMasked: string;
     csrfTokenMasked: string;
     discordWebhookMasked: string;
+    veilleDiscordWebhookMasked: string;
+    veilleWebhookSource: 'VEILLE_DISCORD_WEBHOOK_URL' | 'DISCORD_WEBHOOK_URL' | 'none';
     hasAuth: boolean;
   };
 }

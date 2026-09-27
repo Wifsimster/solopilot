@@ -1,6 +1,7 @@
 import cron, { type ScheduledTask } from 'node-cron';
 import { logger } from './logger.js';
-import { triggerRun, triggerCollect } from './run-service.js';
+import { triggerRun, triggerCollect, getVeilleDelivery } from './run-service.js';
+import { runConsolidatedDigest } from './modules/veille/consolidated-service.js';
 import { getSettingsMap, getProductSettingsMap, getSetting } from './settings-service.js';
 import { listProducts } from './product-service.js';
 import { runWorkflowById } from './workflow/runner.js';
@@ -33,6 +34,24 @@ async function dispatchPublish(config: Config, productId: string): Promise<void>
     await runWorkflowById('veille.digest', { config, activityId: productId, trigger: 'cron', guard: false });
   } else {
     await triggerRun(config, 'cron', productId);
+  }
+}
+
+/**
+ * Consolidated digest dispatch (VEILLE_DIGEST_MODE=consolidated). Same flag
+ * split as the per-product dispatch: engine path records a workflow_runs trace,
+ * legacy path calls the service directly. Both no-op in per-product mode.
+ * `baseConfig` is un-merged; each product's config is merged inside.
+ */
+async function dispatchConsolidatedDigest(baseConfig: Config): Promise<void> {
+  if (workflowSchedulerEnabled()) {
+    await runWorkflowById('veille.digest-consolidated', {
+      config: baseConfig,
+      trigger: 'cron',
+      guard: false,
+    });
+  } else {
+    await runConsolidatedDigest(baseConfig, 'cron');
   }
 }
 
@@ -92,8 +111,18 @@ export function schedulePublishCron(
   const products = listProducts(false);
   let allOk = true;
   for (const product of products) {
+    const ownSchedule = Boolean(product.publish_cron?.trim());
     const productSchedule = product.publish_cron?.trim() || schedule;
     const ok = scheduleNamedCron(`publish:${product.id}`, productSchedule, async () => {
+      // Consolidated mode: global-schedule products are published, in sequence,
+      // by the consolidated task below. Checked at tick time so switching mode
+      // in Settings applies without a reschedule.
+      if (!ownSchedule && getVeilleDelivery().mode === 'consolidated') {
+        logger.info('Per-product publish skipped — handled by the consolidated digest', {
+          productId: product.id,
+        });
+        return;
+      }
       logger.info('Cron triggered — daily summary (publish)', {
         productId: product.id,
         schedule: productSchedule,
@@ -111,6 +140,19 @@ export function schedulePublishCron(
     });
     allOk = allOk && ok;
   }
+
+  // Consolidated digest on the global schedule (no-op in per-product mode).
+  const consolidatedOk = scheduleNamedCron('publish:consolidated', schedule, async () => {
+    try {
+      await dispatchConsolidatedDigest(baseConfig);
+    } catch (err) {
+      logger.error('Consolidated digest failed', {
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+    }
+  });
+  allOk = allOk && consolidatedOk;
 
   // Record the global default so getCurrentSchedule()/the API still report it.
   schedules.set('publish', schedule);

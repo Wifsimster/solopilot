@@ -27,6 +27,15 @@ Deux options :
 
 L'URL est sauvegardee en base de donnees et masquee dans l'interface (seuls les 4 derniers caracteres sont visibles).
 
+### Digest consolide (un seul message pour tous les produits)
+
+Par defaut (`VEILLE_DIGEST_MODE=per-product`), chaque produit envoie son propre resume sur son webhook. En mode `consolidated`, un seul run quotidien (au cron de publication global) publie chaque produit a la suite, puis envoie **un** digest avec une section par produit (3 elements max avec liens, ou « Rien de notable »).
+
+- Destination : `VEILLE_DISCORD_WEBHOOK_URL`, sinon `DISCORD_WEBHOOK_URL`, sinon aucun envoi (log d'avertissement). Les webhooks par produit ne sont jamais utilises dans ce mode.
+- Limites Discord : 10 embeds et 6 000 caracteres par message, 4 096 par description. Au-dela, le digest est decoupe en un minimum de messages (« (1/2) », « (2/2) ») ; une section trop longue est tronquee proprement.
+- Les produits ayant leur propre `publish_cron` gardent leur planning (sans message Discord individuel) ; leur section reprend le resume du jour s'il existe.
+- Configuration : page Parametres, carte « Digest de veille Discord », ou variables d'environnement.
+
 ## Fonctionnement
 
 ```mermaid
