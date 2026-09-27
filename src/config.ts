@@ -1,5 +1,18 @@
 import { z, type ZodIssue } from 'zod';
 
+/** Discord webhook URL — shared by every webhook setting (global, veille). */
+export const discordWebhookUrlSchema = z
+  .string()
+  .url()
+  .refine((u) => u.startsWith('https://discord.com/api/webhooks/'), {
+    message: 'Must be a Discord webhook URL (https://discord.com/api/webhooks/...)',
+  });
+
+export const VEILLE_DIGEST_MODES = ['consolidated', 'per-product'] as const;
+export const veilleDigestModeSchema = z.enum(VEILLE_DIGEST_MODES);
+export type VeilleDigestMode = z.infer<typeof veilleDigestModeSchema>;
+export const DEFAULT_VEILLE_DIGEST_MODE: VeilleDigestMode = 'per-product';
+
 const configSchema = z.object({
   X_USERNAME: z.string().min(1),
 
@@ -35,13 +48,15 @@ const configSchema = z.object({
   WEB_PORT: z.coerce.number().int().positive().default(3000),
   CRON_SCHEDULE: z.string().default('30 7 * * *'),
   COLLECT_CRON_SCHEDULE: z.string().default('0 * * * *'),
-  DISCORD_WEBHOOK_URL: z
-    .string()
-    .url()
-    .refine((u) => u.startsWith('https://discord.com/api/webhooks/'), {
-      message: 'Must be a Discord webhook URL (https://discord.com/api/webhooks/...)',
-    })
-    .optional(),
+  DISCORD_WEBHOOK_URL: discordWebhookUrlSchema.optional(),
+
+  // Veille delivery (consolidated daily digest). VEILLE_DISCORD_WEBHOOK_URL is
+  // the dedicated channel for the consolidated digest; VEILLE_DIGEST_MODE picks
+  // between one message per product (default, legacy behaviour) and a single
+  // consolidated message. An invalid mode degrades to the safe default instead
+  // of failing the whole config (see modules/veille/delivery.ts).
+  VEILLE_DISCORD_WEBHOOK_URL: discordWebhookUrlSchema.optional(),
+  VEILLE_DIGEST_MODE: veilleDigestModeSchema.catch(DEFAULT_VEILLE_DIGEST_MODE),
 
   // Optional: Stripe secret key for the Facturation module. When absent, the
   // module works as a local invoice ledger and Stripe sync degrades gracefully.

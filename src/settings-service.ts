@@ -17,11 +17,16 @@ const EDITABLE_KEYS = [
   'PUBLISH_CANARY_CRON',
   'PUBLISH_QUEUE_CRON',
   'PUBLISH_METRICS_CRON',
+  // Veille delivery mode: 'per-product' (default) or 'consolidated'.
+  'VEILLE_DIGEST_MODE',
 ] as const;
 const CREDENTIAL_KEYS = [
   'X_SESSION_AUTH_TOKEN',
   'X_SESSION_CSRF_TOKEN',
   'DISCORD_WEBHOOK_URL',
+  // Dedicated webhook for the consolidated veille digest (no fallback: unset
+  // means the consolidated post is skipped).
+  'VEILLE_DISCORD_WEBHOOK_URL',
   // AI provider API key (OpenRouter sk-or-... or any OpenAI-compatible key).
   // Falls back to GITHUB_TOKEN when unset.
   'AI_API_KEY',

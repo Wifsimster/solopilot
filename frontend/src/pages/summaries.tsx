@@ -466,7 +466,7 @@ function SummaryCard({ run, discordConfigured, onMutate }: { run: RunRecord; dis
               {notifStatus === "sent" && (
                 <Badge variant="success" className="gap-1">
                   <Check className="size-3" aria-hidden="true" />
-                  Discord
+                  {run.digest_delivery_id ? "Discord · digest consolidé" : "Discord"}
                 </Badge>
               )}
             </div>

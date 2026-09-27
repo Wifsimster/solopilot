@@ -10,6 +10,10 @@
  */
 import { triggerCollect, triggerRun } from '../run-service.js';
 import { sendPendingAlerts } from '../alert-service.js';
+import {
+  runConsolidatedDigest,
+  type ConsolidatedDigestResult,
+} from '../modules/veille/consolidated-service.js';
 import type { Step } from '../workflow/types.js';
 
 export interface VeilleCollectOutput {
@@ -53,4 +57,15 @@ export const veilleAlertRunStep: Step<VeilleAlertOutput> = {
   run: async (ctx) => {
     return sendPendingAlerts(ctx.config, ctx.activityId);
   },
+};
+
+/**
+ * Consolidated daily digest: sequences every global-schedule product's publish
+ * (same triggerRun as veille.publish-run) then posts ONE cross-product digest.
+ * `ctx.config` must be the un-merged base config — each product's config is
+ * merged inside, exactly like cron-manager does. No-op in per-product mode.
+ */
+export const veilleConsolidatedDigestStep: Step<ConsolidatedDigestResult> = {
+  use: 'veille.consolidated-digest-run',
+  run: async (ctx) => runConsolidatedDigest(ctx.config, 'cron'),
 };

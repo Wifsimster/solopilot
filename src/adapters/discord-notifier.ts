@@ -3,6 +3,20 @@ import { logger } from '../logger.js';
 const DISCORD_MAX_CONTENT = 2000;
 const DISCORD_MAX_EMBED_DESC = 4096;
 
+/**
+ * Discord webhook limits (https://discord.com/developers/docs/resources/message#embed-object-embed-limits).
+ * `totalEmbedChars` is the combined title/description/footer/... budget across
+ * every embed of ONE message.
+ */
+export const DISCORD_LIMITS = {
+  content: DISCORD_MAX_CONTENT,
+  embedsPerMessage: 10,
+  totalEmbedChars: 6000,
+  embedTitle: 256,
+  embedDescription: DISCORD_MAX_EMBED_DESC,
+  embedFooter: 2048,
+} as const;
+
 export interface DiscordEmbed {
   title?: string;
   url?: string;
@@ -10,6 +24,12 @@ export interface DiscordEmbed {
   color?: number;
   footer?: { text: string };
   timestamp?: string;
+}
+
+/** A webhook message: optional plain content plus up to 10 embeds. */
+export interface DiscordMessage {
+  content?: string;
+  embeds: DiscordEmbed[];
 }
 
 interface DiscordPayload {
@@ -25,8 +45,9 @@ export interface NotifyResult {
 
 /**
  * Sanitize text to prevent Discord mention injection (@everyone, @here, role/user mentions).
+ * Idempotent, so callers may pre-sanitize (e.g. to measure lengths) safely.
  */
-function sanitize(text: string): string {
+export function sanitize(text: string): string {
   return text
     .replace(/@everyone/gi, '@\u200Beveryone')
     .replace(/@here/gi, '@\u200Bhere')
@@ -130,6 +151,29 @@ export async function sendDiscordEmbeds(
     ...(e.description ? { description: truncate(sanitize(e.description), DISCORD_MAX_EMBED_DESC) } : {}),
   }));
   return postDiscordPayload(webhookUrl, { embeds: safeEmbeds, allowed_mentions: { parse: [] } });
+}
+
+/**
+ * Send one pre-built message (content + embeds). Callers are expected to have
+ * respected Discord's limits already (see modules/veille/consolidated-digest);
+ * sanitizing and truncating here is only a defensive last line.
+ */
+export async function sendDiscordMessage(
+  webhookUrl: string,
+  message: DiscordMessage,
+): Promise<NotifyResult> {
+  const embeds = message.embeds.slice(0, DISCORD_LIMITS.embedsPerMessage).map((e) => ({
+    ...e,
+    ...(e.title ? { title: truncate(sanitize(e.title), DISCORD_LIMITS.embedTitle) } : {}),
+    ...(e.description
+      ? { description: truncate(sanitize(e.description), DISCORD_MAX_EMBED_DESC) }
+      : {}),
+  }));
+  return postDiscordPayload(webhookUrl, {
+    ...(message.content ? { content: truncate(sanitize(message.content), DISCORD_MAX_CONTENT) } : {}),
+    embeds,
+    allowed_mentions: { parse: [] },
+  });
 }
 
 /**
