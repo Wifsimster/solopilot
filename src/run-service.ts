@@ -124,14 +124,12 @@ export async function triggerRun(
     const finalRun = db.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as RunRecord;
     if (status === 'success' && finalRun.summary) {
       // Consolidated mode: the per-product digest is kept (runs.summary) but not
-      // posted — the consolidated digest (veille.digest-consolidated) sends it.
+      // posted here. It stays 'pending' until the consolidated digest
+      // (veille.digest-consolidated) writes its real outcome (sent/failed/skipped).
       const consolidated = getVeilleDelivery().mode === 'consolidated';
       const webhookUrl = consolidated ? undefined : resolveDiscordWebhook(config, productId);
       if (consolidated) {
-        db.prepare('UPDATE runs SET notification_status = ? WHERE id = ?').run(
-          'consolidated',
-          runId,
-        );
+        db.prepare('UPDATE runs SET notification_status = ? WHERE id = ?').run('pending', runId);
       } else if (webhookUrl) {
         try {
           const notifResult = await sendDiscordNotification(webhookUrl, finalRun.summary, runId);

@@ -31,8 +31,9 @@ L'URL est sauvegardee en base de donnees et masquee dans l'interface (seuls les 
 
 Par defaut (`VEILLE_DIGEST_MODE=per-product`), chaque produit envoie son propre resume sur son webhook. En mode `consolidated`, un seul run quotidien (au cron de publication global) publie chaque produit a la suite, puis envoie **un** digest avec une section par produit (3 elements max avec liens, ou « Rien de notable »).
 
-- Destination : `VEILLE_DISCORD_WEBHOOK_URL`, sinon `DISCORD_WEBHOOK_URL`, sinon aucun envoi (log d'avertissement). Les webhooks par produit ne sont jamais utilises dans ce mode.
-- Limites Discord : 10 embeds et 6 000 caracteres par message, 4 096 par description. Au-dela, le digest est decoupe en un minimum de messages (« (1/2) », « (2/2) ») ; une section trop longue est tronquee proprement.
+- Destination : `VEILLE_DISCORD_WEBHOOK_URL` **uniquement** (variable d'environnement, surchargee par le parametre en base). S'il n'est pas defini : aucun envoi, log d'avertissement, `notification_status='skipped'`. Aucun repli sur `DISCORD_WEBHOOK_URL` ni sur les webhooks par produit (ADR-0025).
+- Statut : le resultat de l'envoi (`sent`, `failed`, `skipped`) est ecrit dans `runs.notification_status` de chaque run de publication du jour des produits inclus (un produit est `sent` si le message qui porte sa section a ete accepte). `runs.digest_delivery_id` pointe vers l'envoi dans `veille_digest_deliveries` (journal).
+- Limites Discord : 10 embeds et 6 000 caracteres par message, 4 096 par description. Au-dela, le digest est decoupe en un minimum de messages (« (1/2) », « (2/2) ») ; une section n'est jamais coupee entre deux messages. Une section de plus de 4 096 caracteres perd ses elements les moins bien classes et se termine par `+{n} autres` ; le texte n'est tronque qu'en dernier recours (element unique demesure).
 - Les produits ayant leur propre `publish_cron` gardent leur planning (sans message Discord individuel) ; leur section reprend le resume du jour s'il existe.
 - Configuration : page Parametres, carte « Digest de veille Discord », ou variables d'environnement.
 

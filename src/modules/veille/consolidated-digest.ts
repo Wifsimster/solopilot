@@ -11,9 +11,10 @@
  * (next-fit): an embed goes into the current message unless it would break the
  * embed-count or total-chars limit, in which case a new message starts. For an
  * order-preserving split with additive limits, next-fit yields the minimum
- * number of messages. A section that alone exceeds the description limit is
- * truncated at an item boundary (with a "N élément(s) masqué(s)" marker), and
- * hard-truncated only if a single item is itself oversized.
+ * number of messages. A section is never split across messages. One that alone
+ * exceeds the description limit drops its lowest-ranked items (the tail — items
+ * are in rank order) and ends with `+{n} autres` (ADR-0025 §4); text is
+ * hard-truncated only as a last resort, when the top item alone is oversized.
  *
  * No I/O: safe to unit-test (see test/consolidated-digest.test.mjs).
  */
@@ -95,17 +96,25 @@ function renderItem(item: DigestItem): string {
   return `• ${text}${url}`;
 }
 
-/** Fit rendered lines into `max` chars, dropping whole trailing lines first. */
-function fitLines(lines: string[], max: number): string {
+/** Marker line ending a section whose lowest-ranked items were dropped. */
+export function moreItemsMarker(dropped: number): string {
+  return `+${dropped} autres`;
+}
+
+/**
+ * Fit rank-ordered rendered lines into `max` chars: drop the lowest-ranked
+ * lines first and end with `+{n} autres` (n = dropped lines). Only when the
+ * top line alone cannot fit is its text hard-truncated (last resort).
+ */
+export function fitSectionLines(lines: string[], max: number): string {
   const full = lines.join('\n');
   if (full.length <= max) return full;
   for (let keep = lines.length - 1; keep >= 1; keep -= 1) {
-    const hidden = lines.length - keep;
-    const marker = `${ELLIPSIS} (${hidden} élément(s) masqué(s))`;
-    const candidate = [...lines.slice(0, keep), marker].join('\n');
+    const candidate = [...lines.slice(0, keep), moreItemsMarker(lines.length - keep)].join('\n');
     if (candidate.length <= max) return candidate;
   }
-  return cut(lines[0], max);
+  const marker = lines.length > 1 ? `\n${moreItemsMarker(lines.length - 1)}` : '';
+  return cut(lines[0], max - marker.length) + marker;
 }
 
 function sectionEmbed(section: DigestSection): DiscordEmbed {
@@ -114,7 +123,7 @@ function sectionEmbed(section: DigestSection): DiscordEmbed {
   const description =
     items.length === 0
       ? NOTHING_NOTABLE
-      : fitLines(items.map(renderItem), DISCORD_LIMITS.embedDescription);
+      : fitSectionLines(items.map(renderItem), DISCORD_LIMITS.embedDescription);
   return {
     title: cut(sanitize(name), DISCORD_LIMITS.embedTitle),
     description,

@@ -28,8 +28,7 @@ const MODE_OPTIONS: { value: DigestMode; label: string }[] = [
 
 const SOURCE_LABELS: Record<ConfigResponse['credentialInfo']['veilleWebhookSource'], string> = {
   VEILLE_DISCORD_WEBHOOK_URL: 'webhook de veille ci-dessous',
-  DISCORD_WEBHOOK_URL: 'webhook Discord global (repli)',
-  none: 'aucun webhook — le digest consolidé ne sera pas envoyé',
+  none: 'aucun webhook de veille — le digest consolidé ne sera pas envoyé (statut « skipped »)',
 };
 
 export function VeilleDigestCard({ mode, credentialInfo, onSaved }: VeilleDigestCardProps) {
@@ -156,7 +155,7 @@ export function VeilleDigestCard({ mode, credentialInfo, onSaved }: VeilleDigest
                   </code>
                 </>
               ) : (
-                'Non configuré — le webhook Discord global est utilisé en repli.'
+                "Non configuré — en mode consolidé, le digest n'est pas envoyé (aucun repli sur le webhook Discord global ni sur ceux des produits)."
               )}
             </p>
           </div>

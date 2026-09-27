@@ -6,6 +6,7 @@ const {
   buildConsolidatedDigest,
   extractTopItems,
   embedLength,
+  fitSectionLines,
   NOTHING_NOTABLE,
   MAX_ITEMS_PER_SECTION,
 } = await import('../dist/modules/veille/consolidated-digest.js');
@@ -90,17 +91,53 @@ test('more than 6000 chars splits greedily into the fewest messages', () => {
   assert.equal(messages.flatMap((m) => m.embeds).length, 9, 'no section lost');
 });
 
-test('single oversize section is truncated safely below 4096', () => {
+test('oversize section (>4096) drops lowest-ranked items and ends with "+{n} autres"', () => {
+  // Long URLs are appended verbatim, so three ~1,900-char items exceed 4,096.
+  const long = (i) => ({ text: `Item ${i}`, url: `https://ex.com/${i}/${'x'.repeat(1900)}` });
+  const messages = buildConsolidatedDigest([section(1, [long(1), long(2), long(3)]), section(2)], {
+    date: DATE,
+  });
+  assertWithinLimits(messages);
+  const desc = messages[0].embeds[0].description;
+  assert.ok(desc.length <= 4096);
+  const lines = desc.split('\n');
+  assert.equal(lines.length, 3, 'two items kept + marker');
+  assert.match(lines[0], /^• Item 1 — https:\/\/ex\.com\/1\//, 'top-ranked item kept whole');
+  assert.match(lines[1], /^• Item 2 — https:\/\/ex\.com\/2\//);
+  assert.ok(!desc.includes('Item 3'), 'lowest-ranked item dropped');
+  assert.ok(desc.endsWith('+1 autres'));
+  assert.ok(!desc.includes('…'), 'no hard cut when dropping items suffices');
+  assert.equal(messages[0].embeds[1].title, 'Produit 2', 'next section unaffected');
+});
+
+test('fitSectionLines: drops the tail, counts dropped items, keeps as many as fit', () => {
+  const lines = ['a'.repeat(100), 'b'.repeat(100), 'c'.repeat(100), 'd'.repeat(100)];
+  assert.equal(fitSectionLines(lines, 1000), lines.join('\n'), 'fits → unchanged, no marker');
+  const two = fitSectionLines(lines, 215);
+  assert.equal(two, `${'a'.repeat(100)}\n${'b'.repeat(100)}\n+2 autres`);
+  const one = fitSectionLines(lines, 120);
+  assert.equal(one, `${'a'.repeat(100)}\n+3 autres`);
+});
+
+test('fitSectionLines: hard-cut only as a last resort (single enormous top item)', () => {
+  const alone = fitSectionLines(['a'.repeat(5000)], 4096);
+  assert.equal(alone.length, 4096);
+  assert.ok(alone.endsWith('…'));
+  const withTail = fitSectionLines(['a'.repeat(5000), 'short'], 4096);
+  assert.ok(withTail.length <= 4096);
+  assert.ok(withTail.endsWith('…\n+1 autres'), 'cut top item, still reports dropped items');
+});
+
+test('single enormous item through the builder: last-resort cut, within limits', () => {
   const huge = [
-    { text: 'a'.repeat(5000), url: 'https://ex.com/huge' },
-    { text: 'b'.repeat(5000) },
+    { text: 'a'.repeat(5000), url: `https://ex.com/huge/${'y'.repeat(4500)}` },
+    { text: 'b'.repeat(50) },
   ];
   const messages = buildConsolidatedDigest([section(1, huge), section(2)], { date: DATE });
   assertWithinLimits(messages);
   const desc = messages[0].embeds[0].description;
-  assert.ok(desc.length <= 4096);
-  assert.ok(desc.includes('https://ex.com/huge'), 'link survives item truncation');
-  assert.equal(messages[0].embeds[1].title, 'Produit 2', 'next section unaffected');
+  assert.ok(desc.endsWith('+1 autres'));
+  assert.equal(messages.flatMap((m) => m.embeds)[1].title, 'Produit 2', 'next section unaffected');
 });
 
 test('oversize product name is truncated to 256 chars; mentions are neutralised', () => {

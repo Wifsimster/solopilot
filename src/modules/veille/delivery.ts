@@ -7,9 +7,11 @@
  * never throw — they are ignored with a warning so a typo in Settings can never
  * take the daily digest (or the boot path) down.
  *
- * Consolidated mode posts to VEILLE_DISCORD_WEBHOOK_URL, else the global
- * DISCORD_WEBHOOK_URL, else nothing (skip + warn). Per-product webhooks are
- * deliberately never used in consolidated mode: they belong to per-product mode.
+ * Consolidated mode posts to VEILLE_DISCORD_WEBHOOK_URL ONLY (ADR-0025 §4).
+ * When it is unset the post is skipped (warn + notification_status='skipped'):
+ * there is deliberately no fallback to DISCORD_WEBHOOK_URL or to per-product
+ * webhooks — those channels are being retired, and silently re-routing would
+ * hide the misconfiguration.
  */
 import {
   DEFAULT_VEILLE_DIGEST_MODE,
@@ -18,15 +20,12 @@ import {
   type VeilleDigestMode,
 } from '../../config.js';
 
-export type VeilleDeliveryKey =
-  | 'VEILLE_DIGEST_MODE'
-  | 'VEILLE_DISCORD_WEBHOOK_URL'
-  | 'DISCORD_WEBHOOK_URL';
+export type VeilleDeliveryKey = 'VEILLE_DIGEST_MODE' | 'VEILLE_DISCORD_WEBHOOK_URL';
 
 /** A layer of raw string values (process.env, or the settings table map). */
 export type VeilleDeliveryLayer = Partial<Record<VeilleDeliveryKey, string | undefined>>;
 
-export type VeilleWebhookSource = 'VEILLE_DISCORD_WEBHOOK_URL' | 'DISCORD_WEBHOOK_URL' | 'none';
+export type VeilleWebhookSource = 'VEILLE_DISCORD_WEBHOOK_URL' | 'none';
 
 export interface VeilleDelivery {
   mode: VeilleDigestMode;
@@ -72,10 +71,6 @@ export function resolveVeilleDelivery(
   const veilleWebhook = pick('VEILLE_DISCORD_WEBHOOK_URL', env, settings, isWebhook, warnings);
   if (veilleWebhook) {
     return { mode, webhookUrl: veilleWebhook, webhookSource: 'VEILLE_DISCORD_WEBHOOK_URL', warnings };
-  }
-  const globalWebhook = pick('DISCORD_WEBHOOK_URL', env, settings, isWebhook, warnings);
-  if (globalWebhook) {
-    return { mode, webhookUrl: globalWebhook, webhookSource: 'DISCORD_WEBHOOK_URL', warnings };
   }
   return { mode, webhookSource: 'none', warnings };
 }

@@ -40,17 +40,24 @@ test('empty DB value does not override env', () => {
   assert.equal(d.mode, 'consolidated');
 });
 
-test('fallback order: veille webhook → global DISCORD_WEBHOOK_URL → none', () => {
+test('VEILLE_DISCORD_WEBHOOK_URL only: env base, DB overrides', () => {
+  assert.equal(resolveVeilleDelivery({ VEILLE_DISCORD_WEBHOOK_URL: VEILLE }, {}).webhookUrl, VEILLE);
   assert.equal(
-    resolveVeilleDelivery({ DISCORD_WEBHOOK_URL: GLOBAL }, { VEILLE_DISCORD_WEBHOOK_URL: VEILLE_DB }).webhookUrl,
+    resolveVeilleDelivery({ VEILLE_DISCORD_WEBHOOK_URL: VEILLE }, { VEILLE_DISCORD_WEBHOOK_URL: VEILLE_DB }).webhookUrl,
     VEILLE_DB,
   );
-  const g = resolveVeilleDelivery({}, { DISCORD_WEBHOOK_URL: GLOBAL });
-  assert.equal(g.webhookUrl, GLOBAL);
-  assert.equal(g.webhookSource, 'DISCORD_WEBHOOK_URL');
-  // Env global also counts.
-  assert.equal(resolveVeilleDelivery({ DISCORD_WEBHOOK_URL: GLOBAL }, {}).webhookSource, 'DISCORD_WEBHOOK_URL');
-  assert.equal(resolveVeilleDelivery({}, {}).webhookSource, 'none');
+});
+
+test('no fallback to the global DISCORD_WEBHOOK_URL (env or DB) — unset means none', () => {
+  for (const [env, settings] of [
+    [{ DISCORD_WEBHOOK_URL: GLOBAL }, {}],
+    [{}, { DISCORD_WEBHOOK_URL: GLOBAL }],
+    [{ VEILLE_DIGEST_MODE: 'consolidated', DISCORD_WEBHOOK_URL: GLOBAL }, { DISCORD_WEBHOOK_URL: GLOBAL }],
+  ]) {
+    const d = resolveVeilleDelivery(env, settings);
+    assert.equal(d.webhookUrl, undefined);
+    assert.equal(d.webhookSource, 'none');
+  }
 });
 
 test('invalid mode falls back to env, then default, with a warning', () => {
@@ -62,13 +69,19 @@ test('invalid mode falls back to env, then default, with a warning', () => {
   assert.equal(def.warnings.length, 1);
 });
 
-test('invalid (non-Discord) webhook is ignored, falls through, never leaks the URL', () => {
+test('invalid (non-Discord) webhook is ignored, falls back to env only, never leaks the URL', () => {
   const secret = 'https://evil.example.com/hook-secret-token';
+  const fromEnv = resolveVeilleDelivery(
+    { VEILLE_DISCORD_WEBHOOK_URL: VEILLE },
+    { VEILLE_DISCORD_WEBHOOK_URL: secret },
+  );
+  assert.equal(fromEnv.webhookUrl, VEILLE);
   const d = resolveVeilleDelivery(
     { DISCORD_WEBHOOK_URL: GLOBAL },
     { VEILLE_DISCORD_WEBHOOK_URL: secret },
   );
-  assert.equal(d.webhookUrl, GLOBAL);
+  assert.equal(d.webhookUrl, undefined, 'never the global webhook');
+  assert.equal(d.webhookSource, 'none');
   assert.equal(d.warnings.length, 1);
   assert.ok(!d.warnings.join(' ').includes('secret-token'));
 });

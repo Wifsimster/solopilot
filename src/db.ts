@@ -17,7 +17,9 @@ export interface RunRecord {
   thread_ids: string | null;
   summary: string | null;
   error_message: string | null;
-  notification_status: 'pending' | 'sent' | 'failed' | 'skipped' | 'consolidated' | null;
+  notification_status: 'pending' | 'sent' | 'failed' | 'skipped' | null;
+  /** Consolidated digest that delivered this run (veille_digest_deliveries.id), else null. */
+  digest_delivery_id: number | null;
 }
 
 export interface MonthlySummaryRecord {
@@ -452,9 +454,11 @@ function runWorkflowMigrations(database: Database.Database) {
 }
 
 // Consolidated veille digest deliveries (VEILLE_DIGEST_MODE=consolidated). One
-// row per consolidated send — the cross-product counterpart of
-// runs.notification_status, which stays per product. Idempotent.
+// row per consolidated send (the send log). The send outcome is ALSO written to
+// runs.notification_status of every participating run (ADR-0025 notify_failed);
+// runs.digest_delivery_id links a run to the delivery that carried it. Idempotent.
 function runVeilleDigestMigrations(database: Database.Database) {
+  addColumnIfMissing(database, 'runs', 'digest_delivery_id', 'INTEGER DEFAULT NULL');
   database.exec(`CREATE TABLE IF NOT EXISTS veille_digest_deliveries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     digest_date TEXT NOT NULL,

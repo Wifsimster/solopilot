@@ -17,11 +17,24 @@ const { runConsolidatedDigest, listDigestDeliveries } = await import(
   '../dist/modules/veille/consolidated-service.js'
 );
 
+const GLOBAL = 'https://discord.com/api/webhooks/7/global';
 const posts = [];
+let httpStatus = 204;
 globalThis.fetch = async (url, init) => {
   posts.push({ url: String(url), body: JSON.parse(init.body) });
-  return new Response(null, { status: 204 });
+  return new Response(httpStatus === 204 ? null : 'boom', { status: httpStatus });
 };
+
+/** notification_status / digest_delivery_id of today's publish runs, per product. */
+function todaysRuns(productId) {
+  return getDb()
+    .prepare(
+      `SELECT id, notification_status, digest_delivery_id FROM runs
+       WHERE product_id = ? AND trigger_type IN ('cron', 'manual')
+         AND started_at >= datetime('now', '-1 hour') ORDER BY id`,
+    )
+    .all(productId);
+}
 
 before(() => {
   const db = getDb();
@@ -48,13 +61,24 @@ test('per-product mode (default): no-op, nothing sent', async () => {
   assert.equal(posts.length, 0);
 });
 
-test('consolidated mode without any webhook: skipped + recorded', async () => {
+test('consolidated mode without VEILLE webhook: skipped, no fallback to DISCORD_WEBHOOK_URL, runs marked skipped', async () => {
   setSetting('VEILLE_DIGEST_MODE', 'consolidated');
+  // The global webhook is configured, but must NOT be used.
+  setSetting('DISCORD_WEBHOOK_URL', GLOBAL);
   const res = await runConsolidatedDigest({}, 'manual');
   assert.equal(res.status, 'skipped');
   assert.equal(res.reason, 'no_webhook');
-  assert.equal(posts.length, 0);
-  assert.equal(listDigestDeliveries(1)[0].status, 'skipped');
+  assert.equal(posts.length, 0, 'nothing posted anywhere');
+  const [delivery] = listDigestDeliveries(1);
+  assert.equal(delivery.status, 'skipped');
+  assert.equal(delivery.webhook_source, 'none');
+  const alpha = todaysRuns('alpha');
+  assert.ok(alpha.length >= 2, 'seeded run + run published by the consolidated digest');
+  for (const run of alpha) {
+    assert.equal(run.notification_status, 'skipped');
+    assert.equal(run.digest_delivery_id, delivery.id);
+  }
+  deleteSetting('DISCORD_WEBHOOK_URL');
 });
 
 test('consolidated mode: one message, a section per product, recorded as sent', async () => {
@@ -81,5 +105,30 @@ test('consolidated mode: one message, a section per product, recorded as sent', 
     .all()
     .map((r) => r.product_id);
   assert.ok(runs.includes('alpha') && !runs.includes('beta'));
+
+  // Outcome written on every participating run of the day (never 'consolidated').
+  for (const run of todaysRuns('alpha')) {
+    assert.equal(run.notification_status, 'sent');
+    assert.equal(run.digest_delivery_id, delivery.id);
+  }
+  // beta has no run today (only a 2-day-old one): untouched.
+  assert.equal(todaysRuns('beta').length, 0);
+});
+
+test('consolidated mode, webhook rejects: runs marked failed', async () => {
+  httpStatus = 500;
+  posts.length = 0;
+  const res = await runConsolidatedDigest({}, 'manual');
+  assert.equal(res.status, 'failed');
+  assert.equal(posts.length, 1);
+  const [delivery] = listDigestDeliveries(1);
+  assert.equal(delivery.status, 'failed');
+  const alpha = todaysRuns('alpha');
+  assert.ok(alpha.length >= 3);
+  for (const run of alpha) {
+    assert.equal(run.notification_status, 'failed');
+    assert.equal(run.digest_delivery_id, delivery.id);
+  }
+  httpStatus = 204;
   deleteSetting('VEILLE_DISCORD_WEBHOOK_URL');
 });

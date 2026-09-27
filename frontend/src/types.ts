@@ -9,7 +9,9 @@ export interface RunRecord {
   thread_ids: string | null;
   summary: string | null;
   error_message: string | null;
-  notification_status: 'pending' | 'sent' | 'failed' | 'skipped' | 'consolidated' | null;
+  notification_status: 'pending' | 'sent' | 'failed' | 'skipped' | null;
+  /** Set when the run was delivered by a consolidated veille digest (veille_digest_deliveries.id). */
+  digest_delivery_id: number | null;
 }
 
 export interface SettingRecord {
@@ -34,7 +36,7 @@ export interface ConfigResponse {
     csrfTokenMasked: string;
     discordWebhookMasked: string;
     veilleDiscordWebhookMasked: string;
-    veilleWebhookSource: 'VEILLE_DISCORD_WEBHOOK_URL' | 'DISCORD_WEBHOOK_URL' | 'none';
+    veilleWebhookSource: 'VEILLE_DISCORD_WEBHOOK_URL' | 'none';
     hasAuth: boolean;
   };
 }

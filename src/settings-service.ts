@@ -24,8 +24,8 @@ const CREDENTIAL_KEYS = [
   'X_SESSION_AUTH_TOKEN',
   'X_SESSION_CSRF_TOKEN',
   'DISCORD_WEBHOOK_URL',
-  // Dedicated webhook for the consolidated veille digest (falls back to
-  // DISCORD_WEBHOOK_URL when unset).
+  // Dedicated webhook for the consolidated veille digest (no fallback: unset
+  // means the consolidated post is skipped).
   'VEILLE_DISCORD_WEBHOOK_URL',
   // AI provider API key (OpenRouter sk-or-... or any OpenAI-compatible key).
   // Falls back to GITHUB_TOKEN when unset.
