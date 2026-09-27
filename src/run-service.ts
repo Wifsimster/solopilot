@@ -4,7 +4,8 @@ import { logger } from './logger.js';
 import { run } from './index.js';
 import { collectTweets } from './collect-service.js';
 import { sendDiscordNotification } from './adapters/discord-notifier.js';
-import { getSetting, getProductSetting } from './settings-service.js';
+import { getSetting, getProductSetting, getSettingsMap } from './settings-service.js';
+import { resolveVeilleDelivery, type VeilleDelivery } from './modules/veille/delivery.js';
 import { releaseTweetsForRun, getCollectionDateForRun } from './tweet-store.js';
 import { deleteMonthlySummariesReferencingRun } from './monthly-summary-service.js';
 import { getProduct } from './product-service.js';
@@ -27,6 +28,19 @@ function resolveDiscordWebhook(config: Config, productId: string): string | unde
   const productSetting = getProductSetting(productId, 'DISCORD_WEBHOOK_URL');
   if (productSetting) return productSetting;
   return getSetting('DISCORD_WEBHOOK_URL') ?? config.DISCORD_WEBHOOK_URL;
+}
+
+/**
+ * Effective veille delivery (mode + consolidated webhook) from env + global DB
+ * settings. Read on every call so a change in Settings applies to the next run
+ * without a restart. Product-level settings are intentionally not consulted.
+ */
+export function getVeilleDelivery(): VeilleDelivery {
+  const delivery = resolveVeilleDelivery(process.env, getSettingsMap());
+  for (const warning of delivery.warnings) {
+    logger.warn('Veille delivery setting ignored', { warning });
+  }
+  return delivery;
 }
 
 /**
@@ -109,8 +123,14 @@ export async function triggerRun(
 
     const finalRun = db.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as RunRecord;
     if (status === 'success' && finalRun.summary) {
-      const webhookUrl = resolveDiscordWebhook(config, productId);
-      if (webhookUrl) {
+      // Consolidated mode: the per-product digest is kept (runs.summary) but not
+      // posted here. It stays 'pending' until the consolidated digest
+      // (veille.digest-consolidated) writes its real outcome (sent/failed/skipped).
+      const consolidated = getVeilleDelivery().mode === 'consolidated';
+      const webhookUrl = consolidated ? undefined : resolveDiscordWebhook(config, productId);
+      if (consolidated) {
+        db.prepare('UPDATE runs SET notification_status = ? WHERE id = ?').run('pending', runId);
+      } else if (webhookUrl) {
         try {
           const notifResult = await sendDiscordNotification(webhookUrl, finalRun.summary, runId);
           const notifStatus = notifResult.success ? 'sent' : 'failed';

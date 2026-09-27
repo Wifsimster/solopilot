@@ -77,20 +77,27 @@ assert(all.length === 4, `all four runs listed (got ${all.length})`);
 console.log('bootstrap (real steps + veille workflows):');
 resetRegistry();
 registerSolopilot();
-for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate', 'facturation.relance', 'facturation.sync', 'compta.seuils', 'compta.echeance', 'crm.followup', 'agenda.sync', 'agenda.rappels', 'veille.collect-run', 'veille.publish-run']) {
+for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate', 'facturation.relance', 'facturation.sync', 'compta.seuils', 'compta.echeance', 'crm.followup', 'agenda.sync', 'agenda.rappels', 'veille.collect-run', 'veille.publish-run', 'veille.consolidated-digest-run']) {
   assert(getStep(use) !== undefined, `step registered: ${use}`);
 }
 const registered = listWorkflows();
 const veille = registered.filter((w) => w.module === 'veille');
-assert(veille.length === 2, `two veille workflows registered (got ${veille.length})`);
+assert(veille.length === 4, `four veille workflows registered (got ${veille.length})`);
+assert(registered.some((w) => w.id === 'veille.digest-consolidated'), 'veille.digest-consolidated registered');
 assert(registered.some((w) => w.id === 'cockpit.daily-briefing'), 'cockpit.daily-briefing registered');
 assert(registered.filter((w) => w.module === 'facturation').length === 2, 'two facturation workflows registered');
 assert(registered.filter((w) => w.module === 'compta').length === 2, 'two compta workflows registered');
-assert(registered.filter((w) => w.module === 'crm').length === 1, 'one crm workflow registered');
+assert(registered.filter((w) => w.module === 'crm').length === 2, 'two crm workflows registered');
 assert(registered.filter((w) => w.module === 'agenda').length === 2, 'two agenda workflows registered');
-// Only the veille workflows are enabled (the flip); every other module ships disabled.
+// Only the veille workflows are enabled (the flip), plus crm.lead-from-mention
+// (enabled upstream; the generic workflow scheduler is not wired at boot, so it
+// is only run on demand). Every other module ships disabled.
 assert(veille.every((w) => w.enabled), 'veille workflows are enabled (flip-ready)');
-assert(registered.filter((w) => w.module !== 'veille').every((w) => !w.enabled), 'non-veille workflows ship disabled (no prod impact)');
+const enabledOthers = registered.filter((w) => w.module !== 'veille' && w.enabled);
+assert(
+  enabledOthers.every((w) => w.id === 'crm.lead-from-mention'),
+  `non-veille workflows ship disabled except crm.lead-from-mention (enabled: ${enabledOthers.map((w) => w.id).join(',') || 'none'})`,
+);
 const unresolved = registered.flatMap((w) => w.steps).filter((s) => getStep(s.use) === undefined);
 assert(unresolved.length === 0, `every step resolves (unresolved: ${unresolved.map((s) => s.use).join(',') || 'none'})`);
 
@@ -169,6 +176,11 @@ const collectRun = await runWorkflowById('veille.collect', { config: cfg, trigge
 assert(collectRun.status === 'success' && collectRun.trace[0].step === 'veille.collect-run', 'veille.collect delegates and succeeds');
 const digestRun = await runWorkflowById('veille.digest', { config: cfg, trigger: 'cron', guard: false });
 assert(digestRun.status === 'success' && digestRun.trace[0].step === 'veille.publish-run', 'veille.digest delegates and succeeds');
+const consolidatedRun = await runWorkflowById('veille.digest-consolidated', { config: cfg, trigger: 'cron', guard: false });
+assert(
+  consolidatedRun.status === 'success' && consolidatedRun.trace[0].step === 'veille.consolidated-digest-run',
+  'veille.digest-consolidated runs (no-op in default per-product mode)',
+);
 
 resetRegistry();
 console.log(failures === 0 ? '\nALL PASSED' : `\n${failures} FAILED`);

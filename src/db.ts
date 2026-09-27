@@ -18,6 +18,8 @@ export interface RunRecord {
   summary: string | null;
   error_message: string | null;
   notification_status: 'pending' | 'sent' | 'failed' | 'skipped' | null;
+  /** Consolidated digest that delivered this run (veille_digest_deliveries.id), else null. */
+  digest_delivery_id: number | null;
 }
 
 export interface MonthlySummaryRecord {
@@ -451,6 +453,43 @@ function runWorkflowMigrations(database: Database.Database) {
   );
 }
 
+// Consolidated veille digest deliveries (VEILLE_DIGEST_MODE=consolidated). One
+// row per consolidated send (the send log). The send outcome is ALSO written to
+// runs.notification_status of every participating run (ADR-0025 notify_failed);
+// runs.digest_delivery_id links a run to the delivery that carried it. Idempotent.
+function runVeilleDigestMigrations(database: Database.Database) {
+  addColumnIfMissing(database, 'runs', 'digest_delivery_id', 'INTEGER DEFAULT NULL');
+  database.exec(`CREATE TABLE IF NOT EXISTS veille_digest_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    digest_date TEXT NOT NULL,
+    trigger_type TEXT NOT NULL DEFAULT 'cron',
+    status TEXT NOT NULL DEFAULT 'running',
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at TEXT,
+    products_count INTEGER NOT NULL DEFAULT 0,
+    products_with_items INTEGER NOT NULL DEFAULT 0,
+    messages_count INTEGER NOT NULL DEFAULT 0,
+    messages_sent INTEGER NOT NULL DEFAULT 0,
+    webhook_source TEXT,
+    error_message TEXT
+  )`);
+}
+
+export interface VeilleDigestDeliveryRecord {
+  id: number;
+  digest_date: string;
+  trigger_type: string;
+  status: 'running' | 'sent' | 'partial' | 'failed' | 'skipped' | 'error';
+  started_at: string;
+  finished_at: string | null;
+  products_count: number;
+  products_with_items: number;
+  messages_count: number;
+  messages_sent: number;
+  webhook_source: string | null;
+  error_message: string | null;
+}
+
 // Content auto-publish migrations. Idempotent. One row per publish attempt for
 // retry/audit; idempotency_key prevents double-posting the same draft text.
 function runPublishMigrations(database: Database.Database) {
@@ -762,6 +801,7 @@ export function getDb(): Database.Database {
     runProductMigrations(db);
     runPublishMigrations(db);
     runWorkflowMigrations(db);
+    runVeilleDigestMigrations(db);
     runFacturationMigrations(db);
     runComptaMigrations(db);
     runCrmMigrations(db);

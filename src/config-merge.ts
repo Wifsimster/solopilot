@@ -1,4 +1,4 @@
-import type { Config } from './config.js';
+import { veilleDigestModeSchema, type Config } from './config.js';
 
 export function buildMergedConfig(baseConfig: Config, overrides: Record<string, string>): Config {
   return {
@@ -22,6 +22,14 @@ export function buildMergedConfig(baseConfig: Config, overrides: Record<string, 
     }),
     ...(overrides.DISCORD_WEBHOOK_URL && {
       DISCORD_WEBHOOK_URL: overrides.DISCORD_WEBHOOK_URL,
+    }),
+    ...(overrides.VEILLE_DISCORD_WEBHOOK_URL && {
+      VEILLE_DISCORD_WEBHOOK_URL: overrides.VEILLE_DISCORD_WEBHOOK_URL,
+    }),
+    ...(overrides.VEILLE_DIGEST_MODE && {
+      VEILLE_DIGEST_MODE: veilleDigestModeSchema
+        .catch(baseConfig.VEILLE_DIGEST_MODE)
+        .parse(overrides.VEILLE_DIGEST_MODE),
     }),
     ...(overrides.COLLECT_CRON_SCHEDULE && {
       COLLECT_CRON_SCHEDULE: overrides.COLLECT_CRON_SCHEDULE,

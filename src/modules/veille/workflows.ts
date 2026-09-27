@@ -33,6 +33,22 @@ export const veilleDigest: Workflow = {
 };
 
 /**
+ * Consolidated daily digest (VEILLE_DIGEST_MODE=consolidated): publishes every
+ * product in sequence, then posts ONE Discord digest with a section per
+ * product. Dispatched by cron-manager on the global publish schedule; a no-op
+ * in per-product mode (the default), so registering it changes nothing.
+ */
+export const veilleDigestConsolidated: Workflow = {
+  id: 'veille.digest-consolidated',
+  module: 'veille',
+  label: 'Résumé quotidien de veille consolidé (tous produits)',
+  trigger: { kind: 'cron', expr: '30 7 * * *' },
+  version: 1,
+  enabled: true,
+  steps: [{ use: 'veille.consolidated-digest-run' }],
+};
+
+/**
  * Hourly safety-net sweep for high-urgency alerts (offset from collect). The
  * primary alert path runs inline at the end of each collect; this workflow
  * retries items a failed webhook call left pending and enables manual runs.
@@ -48,4 +64,9 @@ export const veilleAlert: Workflow = {
   steps: [{ use: 'veille.alert-run' }],
 };
 
-export const veilleWorkflows: Workflow[] = [veilleCollect, veilleDigest, veilleAlert];
+export const veilleWorkflows: Workflow[] = [
+  veilleCollect,
+  veilleDigest,
+  veilleDigestConsolidated,
+  veilleAlert,
+];

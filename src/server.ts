@@ -11,6 +11,7 @@ import {
   getRunHistory,
   getLastRun,
   isRunning,
+  getVeilleDelivery,
   isCollecting,
   triggerRun,
   triggerCollect,
@@ -42,7 +43,13 @@ import {
   setProductSetting,
   getProductSettingsMap,
 } from './settings-service.js';
-import { REQUIRED_CREDENTIALS, type Config } from './config.js';
+import {
+  REQUIRED_CREDENTIALS,
+  discordWebhookUrlSchema,
+  veilleDigestModeSchema,
+  type Config,
+} from './config.js';
+import { listDigestDeliveries } from './modules/veille/consolidated-service.js';
 import {
   countUnpublishedTweets,
   countTweetsForDate,
@@ -192,6 +199,9 @@ import {
   GithubImportError,
 } from './github-import.js';
 
+/** Settings that only make sense globally (veille delivery spans all products). */
+const GLOBAL_ONLY_KEYS = new Set(['VEILLE_DIGEST_MODE', 'VEILLE_DISCORD_WEBHOOK_URL']);
+
 interface MissingCredential {
   key: string;
   label: string;
@@ -203,10 +213,16 @@ function buildCredentialInfo(config: Config) {
   const authToken = getSetting('X_SESSION_AUTH_TOKEN') ?? config.X_SESSION_AUTH_TOKEN ?? '';
   const csrfToken = getSetting('X_SESSION_CSRF_TOKEN') ?? config.X_SESSION_CSRF_TOKEN ?? '';
   const discordWebhook = getSetting('DISCORD_WEBHOOK_URL') ?? config.DISCORD_WEBHOOK_URL ?? '';
+  const veilleWebhook =
+    getSetting('VEILLE_DISCORD_WEBHOOK_URL') ?? config.VEILLE_DISCORD_WEBHOOK_URL ?? '';
+  const veilleDelivery = getVeilleDelivery();
   return {
     authTokenMasked: authToken ? maskCredential(authToken) : '',
     csrfTokenMasked: csrfToken ? maskCredential(csrfToken) : '',
     discordWebhookMasked: discordWebhook ? maskCredential(discordWebhook) : '',
+    veilleDiscordWebhookMasked: veilleWebhook ? maskCredential(veilleWebhook) : '',
+    // Which webhook the consolidated digest would use (never the URL itself).
+    veilleWebhookSource: veilleDelivery.webhookSource,
     hasAuth: !!process.env.ADMIN_PASSWORD,
   };
 }
@@ -224,6 +240,7 @@ function buildEnvDefaults(config: Config, cronSchedule: string) {
     X_GQL_USER_BY_SCREEN_NAME_ID:
       config.X_GQL_USER_BY_SCREEN_NAME_ID || DEFAULT_GQL_IDS.UserByScreenName,
     X_GQL_HOME_TIMELINE_ID: config.X_GQL_HOME_TIMELINE_ID || DEFAULT_GQL_IDS.HomeLatestTimeline,
+    VEILLE_DIGEST_MODE: getVeilleDelivery().mode,
   };
 }
 
@@ -849,6 +866,12 @@ export function startServer(
     }
     if (!isEditableKey(key) && !isCredentialKey(key)) {
       return c.json({ success: false, message: 'Cle non autorisee.' }, 400);
+    }
+    if (GLOBAL_ONLY_KEYS.has(key)) {
+      return c.json(
+        { success: false, message: 'Ce parametre est global et ne peut pas etre defini par produit.' },
+        400,
+      );
     }
     if (typeof value === 'string' && value.length > 4096) {
       return c.json({ success: false, message: 'Valeur trop longue (max 4096 caracteres).' }, 400);
@@ -1940,6 +1963,19 @@ export function startServer(
       const body = await c.req.json();
       let updated = 0;
 
+      if (
+        body.VEILLE_DIGEST_MODE !== undefined &&
+        !veilleDigestModeSchema.safeParse(body.VEILLE_DIGEST_MODE).success
+      ) {
+        return c.json(
+          {
+            success: false,
+            message: 'Mode de digest invalide (valeurs possibles : consolidated, per-product).',
+          },
+          400,
+        );
+      }
+
       for (const [key, value] of Object.entries(body)) {
         if (isEditableKey(key) && typeof value === 'string') {
           setSetting(key, value);
@@ -2261,6 +2297,42 @@ export function startServer(
     app.delete('/api/discord-webhook', (c) => {
       deleteSetting('DISCORD_WEBHOOK_URL');
       return c.json({ success: true, message: 'Webhook Discord supprimé.' });
+    });
+
+    // Dedicated webhook for the consolidated veille digest (global).
+    app.post('/api/veille-discord-webhook', async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const url =
+        typeof body.VEILLE_DISCORD_WEBHOOK_URL === 'string'
+          ? body.VEILLE_DISCORD_WEBHOOK_URL.trim()
+          : '';
+
+      if (!url) {
+        return c.json({ success: false, message: "L'URL du webhook est requise." }, 400);
+      }
+      if (!discordWebhookUrlSchema.safeParse(url).success) {
+        return c.json(
+          {
+            success: false,
+            message: "L'URL doit commencer par https://discord.com/api/webhooks/",
+          },
+          400,
+        );
+      }
+
+      setSetting('VEILLE_DISCORD_WEBHOOK_URL', url);
+      return c.json({ success: true, message: 'Webhook de veille sauvegardé.' });
+    });
+
+    app.delete('/api/veille-discord-webhook', (c) => {
+      deleteSetting('VEILLE_DISCORD_WEBHOOK_URL');
+      return c.json({ success: true, message: 'Webhook de veille supprimé.' });
+    });
+
+    // Consolidated digest delivery log (no webhook URLs stored or returned).
+    app.get('/api/veille/digest-deliveries', (c) => {
+      const limit = Math.min(Math.max(Number(c.req.query('limit') || '20') || 20, 1), 100);
+      return c.json(listDigestDeliveries(limit));
     });
 
     app.get('/api/runs/:id/tweets', (c) => {
