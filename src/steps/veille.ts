@@ -9,7 +9,7 @@
  * already merged for the activity by the scheduler (as cron-manager does today).
  */
 import { triggerCollect, triggerRun } from '../run-service.js';
-import { sendPendingAlerts } from '../alert-service.js';
+import { sendPendingAlerts, type AlertResult } from '../alert-service.js';
 import {
   runConsolidatedDigest,
   type ConsolidatedDigestResult,
@@ -42,9 +42,7 @@ export const veillePublishRunStep: Step<VeillePublishOutput> = {
   },
 };
 
-export interface VeilleAlertOutput {
-  alerted: number;
-}
+export type VeilleAlertOutput = AlertResult;
 
 /**
  * Safety-net sweep for high-urgency alerts. The primary path is inline in
