@@ -195,5 +195,5 @@ Le CLI s'authentifie en HTTP Basic (`admin:<ADMIN_PASSWORD>`) et propose des rac
 | [Reference API](docs/api-reference.md) | Endpoints REST du serveur backend |
 | [API & CLI pour agents](docs/api.md) | API HTTP pilotee par le CLI `solopilot` (endpoints, schemas, exemples) |
 | [Integration Discord](docs/discord-integration.md) | Configuration et utilisation des notifications Discord |
-| [CLAUDE.md](CLAUDE.md) | Instructions pour Claude Code (conventions, structure, commandes) |
-| [AGENT.md](AGENT.md) | Reference rapide pour les agents autonomes |
+| [AGENTS.md](AGENTS.md) | Instructions pour les agents de code (conventions, structure, commandes) |
+| [CLAUDE.md](CLAUDE.md) | Point d'entree Claude Code (importe AGENTS.md) |
