@@ -4,3 +4,7 @@ data/
 .env
 *.tgz
 *.log
+
+# Verification harness (.claude/skills/verify) scratch state and default evidence dir
+.verify-run/
+.verify-evidence/
