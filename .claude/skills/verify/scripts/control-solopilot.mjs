@@ -378,7 +378,7 @@ COMMANDS.snapshot = {
     const { browser, page, state } = await connect();
     const yml = await page.locator(flags.selector || 'body').ariaSnapshot({ timeout: 10000 }).catch(async (e) => {
       await browser.close();
-      fail(`No element matches "${flags.selector || 'body'}" on ${page.url()}.`, 'Retry without --selector (pages outside the layout, like /setup, have no <main>).', { error: e.message.split('\n')[0] });
+      fail(`No element matches "${flags.selector || 'body'}" on ${page.url()}.`, 'Retry without --selector (pages outside the layout, like /setup, have no <main>).', { cause: e.message.split('\n')[0] });
     });
     const file = shotPath(state, flags.name || 'snapshot').replace(/\.png$/, '.aria.yml');
     fs.writeFileSync(file, yml);
