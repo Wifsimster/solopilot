@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { basicAuth } from 'hono/basic-auth';
+import { HTTPException } from 'hono/http-exception';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { readFile } from 'node:fs/promises';
@@ -2441,6 +2442,10 @@ export function startServer(
   });
 
   app.onError((err, c) => {
+    // Middleware errors that already carry a response (basicAuth's 401 with
+    // its WWW-Authenticate challenge) must reach the client as-is: turning
+    // them into a 500 stops browsers from ever showing the login prompt.
+    if (err instanceof HTTPException) return err.getResponse();
     logger.error('HTTP error', { error: err.message, path: c.req.path });
     return c.text('Internal Server Error', 500);
   });
