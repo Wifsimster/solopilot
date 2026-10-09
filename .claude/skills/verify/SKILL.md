@@ -15,7 +15,7 @@ $C --help                 # command list
 $C <command> --help       # flags, side effects, what it proves
 ```
 
-Prerequisites: `npm ci` at the repo root and the Chromium build that matches the repo's `playwright-core` (`npx playwright-core install chromium`). `doctor` reports a missing browser. No Docker.
+Prerequisites: `npm ci` at the repo root and the Chromium build that matches the repo's `playwright-core` (`npx playwright-core install chromium`). `launch` refuses to start, and `doctor` fails, when that browser is missing. No Docker.
 
 ## Launch
 

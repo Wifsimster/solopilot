@@ -184,7 +184,7 @@ Starts one isolated verification instance:
   - a headless Chromium daemon (CDP :${PORTS.cdp}) logged in with that Basic auth, recording
     console + HTTP to JSONL; third-party requests are aborted and logged as "blocked".
 GITHUB_TOKEN, AI_API_KEY, DISCORD_WEBHOOK_URL, STRIPE_*, AGENDA_ICS_URL and X_* are forced empty.
-Refuses to start if a port is taken: one instance at a time.
+Refuses to start if a port is taken (one instance at a time) or if the Chromium build is missing.
 
 --dry-run   print the plan and touch nothing.`,
   async run(flags) {
@@ -199,6 +199,9 @@ Refuses to start if a port is taken: one instance at a time.
     const busy = [];
     for (const [k, p] of Object.entries(PORTS)) if (await portInUse(p)) busy.push(`${k}:${p}`);
     if (busy.length) fail(`Ports already in use: ${busy.join(', ')}.`, 'Another app (or a leaked run) owns them. Do not kill it blindly: check `ss -ltnp`, stop your own leftover with `control-solopilot teardown`, or ask the lead.', { busy });
+    // Fail before building anything: otherwise the browser daemon dies and launch only times out after 60 s.
+    const chromiumPath = loadPlaywright().chromium.executablePath();
+    if (!fs.existsSync(chromiumPath)) fail('The Chromium build for this playwright-core is not installed.', 'Run `npx playwright-core install chromium` at the repo root, then launch again.', { missing: chromiumPath });
 
     const runId = new Date().toISOString().replace(/[:.]/g, '-');
     const adminPassword = crypto.randomBytes(18).toString('base64url');
