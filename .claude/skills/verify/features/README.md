@@ -30,7 +30,7 @@ Each feature file has an H1 and one paragraph, then exactly four H2s in this ord
 
 ## Features
 
-- [CRM](./crm.md) covers contacts and the deal pipeline. Contact creation was **driven end to end in the pilot run**; deals are a recipe only.
+- [CRM](./crm.md) covers contacts and the deal pipeline. Contact creation, deal creation and a keyboard move between columns were **driven end to end** (gardener run 2026-10-09). Follow-up drafts for dormant deals are API/CLI only.
 - [Facturation](./facturation.md) covers invoice creation, the totals, overdue reminders and "Marquer payée". **Driven end to end in the pilot run.** There is no invoice PDF; Stripe is not drivable.
 - [Veille / Mentions](./veille-mentions.md) covers the triaged mention inbox and its "Traité" / "Ignorer" actions. **Driven end to end in the pilot run.** Collection and the AI triage are not drivable offline.
 - [Back-office access](./backoffice-auth.md) covers HTTP Basic auth (`ADMIN_PASSWORD`). Checked by `doctor`, curl (401, CSRF 403) and the `/setup` page in the pilot run.

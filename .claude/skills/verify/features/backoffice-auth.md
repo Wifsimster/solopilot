@@ -6,7 +6,7 @@ When `ADMIN_PASSWORD` is set, every route (API, SPA and `/healthz`) requires HTT
 
 - `basic-auth` is the 401 challenge and the login prompt.
 - `csrf-origin` rejects a POST whose Origin or Referer host differs from the request host (403).
-- `setup-mode` is `/setup` and `/healthz` = `unconfigured` when required credentials are missing.
+- `setup-mode` is `/setup`, and `/healthz` answering HTTP 503 with `status` "unconfigured" and the `missing` list when required credentials are missing.
 
 ## How to get to it (user POV)
 
@@ -28,4 +28,5 @@ Preconditions:
 
 - Before PR #131, `app.onError` turned the 401 into a plain 500, so browsers got "Internal Server Error" and no prompt. `doctor` flags it.
 - `/healthz` sits behind the same auth. The image's own `HEALTHCHECK` (`wget --spider`) fails on a 401; the homelab compose overrides it with a check that accepts any HTTP status.
+- In setup mode `/healthz` answers 503, not 200. A check on the status code alone reads it as down; read the body.
 - `info` never prints the throwaway password.
