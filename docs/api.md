@@ -13,19 +13,22 @@ la skill [`.claude/skills/solopilot/`](../.claude/skills/solopilot/SKILL.md).
 - **Basic Auth.** Quand le serveur a `ADMIN_PASSWORD` defini, toutes les routes
   sont protegees par HTTP Basic, utilisateur `admin`, mot de passe =
   `ADMIN_PASSWORD`. Si la variable n'est pas definie, l'auth n'est pas appliquee.
-- **Jetons d'API a portee (ADR-0029).** Un agent peut s'authentifier avec un
+- **Jetons d'API (ADR-0029).** Un agent peut s'authentifier avec un
   jeton `sp_…` cree dans Parametres > Jetons d'API (ou `POST /api/tokens`), via
   `Authorization: Bearer sp_…` ou `X-Api-Token: sp_…` (utile quand un proxy
   d'authentification occupe deja `Authorization`). Une requete portant un jeton
-  est authentifiee par ce seul jeton (la Basic Auth est ignoree) et ne peut
-  atteindre que les routes de ses portees, eventuellement limitees a certains
-  produits ; toute autre route renvoie 403 (refus par defaut). Jeton inconnu,
+  est authentifiee par ce seul jeton (la Basic Auth est ignoree). Un jeton en
+  **acces complet** (portee `*`) atteint toutes les routes et methodes, pour
+  tous les produits, exactement comme l'admin (gestion des jetons comprise). Un
+  jeton limite n'atteint que les routes de ses portees, eventuellement limitees
+  a certains produits ; toute autre route renvoie 403 (refus par defaut). Jeton inconnu,
   revoque ou malforme : 401. Apres 10 echecs en 10 min, le client est bloque
   15 min (429). Chaque requete par jeton est journalisee (methode, chemin,
   produit, statut ; jamais le corps), consultable via `GET /api/tokens/audit`.
 
   | Portee | Routes |
   |--------|--------|
+  | `*` (Acces complet) | Toutes les routes et methodes, tous les produits, comme l'admin. Ne se combine ni avec d'autres portees ni avec une restriction produit (400) |
   | `comptabilite:read` | `GET /api/comptabilite`, `GET /api/comptabilite/ledger` |
   | `comptabilite:write` | `POST /api/comptabilite/ledger` |
   | `products:read` | `GET /api/products` (projection `id`, `name`, `archived`, filtree par la restriction produit) |
@@ -136,12 +139,16 @@ identifiants), elles renvoient une reponse vide ou minimale.
 | GET | `/api/comptabilite/ledger` | `productId`, `since` (`YYYY-MM-DD`, opt) | — | Liste les ecritures (plus recentes d'abord) |
 | POST | `/api/comptabilite/ledger` | `productId` | `ledgerCreateSchema` | Ajoute une ecriture. `productId` = slug du produit (`products.id`, ex. `toko`) ; produit inconnu : 404. Si `(productId, external_ref)` existe deja : **409** `{ error, entry }` avec l'ecriture existante, rien n'est ecrit |
 
-### Jetons d'API (admin uniquement)
+### Jetons d'API (admin ou jeton en acces complet)
+
+Seule l'empreinte SHA-256 d'un jeton est stockee et elle n'est jamais renvoyee :
+personne, pas meme un jeton en acces complet, ne peut relire le secret d'un
+jeton apres sa creation.
 
 | Methode | Path | Query | Body | Description |
 |---------|------|-------|------|-------------|
 | GET | `/api/tokens` | — | — | Liste les jetons (jamais le secret ni son empreinte) + portees disponibles |
-| POST | `/api/tokens` | — | `{ name, scopes[], productIds?: string[] \| null }` | Cree un jeton ; renvoie `{ token, secret }`, le secret n'est affiche qu'une fois |
+| POST | `/api/tokens` | — | `{ name, scopes[], productIds?: string[] \| null }` | Cree un jeton (`scopes: ["*"]` = acces complet) ; renvoie `{ token, secret }`, le secret n'est affiche qu'une fois |
 | DELETE | `/api/tokens/:id` | — | — | Revoque le jeton (la ligne reste pour l'audit) |
 | GET | `/api/tokens/audit` | `tokenId`, `limit` (def 50, max 500) | — | Journal d'utilisation des jetons (90 jours) |
 

@@ -91,6 +91,7 @@ import {
   apiTokenAuth,
   apiTokenCreateSchema,
   createApiToken,
+  isFullAccess,
   listApiTokens,
   listAudit,
   revokeApiToken,
@@ -333,9 +334,10 @@ export function createApp(
   // Idempotent and inert (workflows ship disabled; nothing is scheduled here).
   registerSolopilot();
 
-  // Scoped API tokens (ADR-0029) run first: a request carrying a token is
-  // authenticated and authorized by its token only (default deny), and skips
-  // Basic auth. Requests without a token are untouched.
+  // API tokens (ADR-0029) run first: a request carrying a token is
+  // authenticated and authorized by its token only, and skips Basic auth. A
+  // full-access token (`*`) reaches everything like the admin; a scoped token
+  // only its routes (default deny). Requests without a token are untouched.
   app.use('*', apiTokenAuth());
 
   if (process.env.ADMIN_PASSWORD) {
@@ -570,7 +572,9 @@ export function createApp(
     }
   });
 
-  // --- API tokens (ADR-0029) — admin only: no token scope maps to these routes ---
+  // --- API tokens (ADR-0029) — admin or full-access token; no scoped token
+  // reaches these routes. Only hashes are stored and never returned: no caller
+  // can read a token's secret after creation. ---
 
   app.get('/api/tokens', (c) =>
     c.json({
@@ -751,9 +755,9 @@ export function createApp(
   app.get('/api/products', (c) => {
     const includeArchived = c.req.query('includeArchived') === 'true';
     const token = c.get('apiToken');
-    if (token) {
-      // Token callers (scope products:read) get a minimal projection, limited
-      // to the products the token may act on.
+    if (token && !isFullAccess(token)) {
+      // Scoped token callers (products:read) get a minimal projection, limited
+      // to the products the token may act on. Full access sees the admin view.
       return c.json(
         listProducts(includeArchived)
           .filter((p) => tokenAllowsProduct(token, p.id))

@@ -81,10 +81,10 @@ const ENDPOINT_CATALOG: { group: string; lines: string[] }[] = [
       'POST   /api/comptabilite/config — set activityType/declarationPeriod (?productId)',
       'GET    /api/comptabilite/ledger — list ledger (?productId,?since=YYYY-MM-DD)',
       'POST   /api/comptabilite/ledger — add ledger entry (?productId; external_ref → 409 if already recorded)',
-      'GET    /api/tokens — list API tokens (admin only)',
-      'POST   /api/tokens — create API token, secret shown once (admin only)',
-      'DELETE /api/tokens/:id — revoke API token (admin only)',
-      'GET    /api/tokens/audit — token audit log (?tokenId,?limit; admin only)',
+      'GET    /api/tokens — list API tokens (admin or full-access token)',
+      'POST   /api/tokens — create API token, secret shown once (admin or full-access token)',
+      'DELETE /api/tokens/:id — revoke API token (admin or full-access token)',
+      'GET    /api/tokens/audit — token audit log (?tokenId,?limit; admin or full-access token)',
     ],
   },
   {
@@ -212,7 +212,9 @@ Convenience commands:
 Flags (may appear anywhere):
   --url <u>        base URL (env SOLOPILOT_API_URL, default ${DEFAULT_URL})
   --password <p>   admin password (env SOLOPILOT_ADMIN_PASSWORD or ADMIN_PASSWORD)
-                   (env SOLOPILOT_TOKEN=sp_… uses a scoped API token instead)
+                   (env SOLOPILOT_TOKEN=sp_… uses an API token instead)
+  env SOLOPILOT_PROXY_BASIC=user:pass  forward-auth proxy credentials: sent as
+                   Authorization: Basic, the API token then travels in X-Api-Token
   --product <id>   product scope, sent as ?productId (env SOLOPILOT_PRODUCT_ID)
   --query k=v, -q  extra query param (repeatable)
   --raw            print the response body as-is (no JSON pretty-print)
@@ -335,9 +337,14 @@ async function request(
   const headers: Record<string, string> = {};
   const password =
     args.password ?? process.env.SOLOPILOT_ADMIN_PASSWORD ?? process.env.ADMIN_PASSWORD;
-  // Scoped API token (ADR-0029) takes precedence over the admin password.
+  // API token (ADR-0029) takes precedence over the admin password. Behind a
+  // forward-auth proxy that owns `Authorization`, the token goes in X-Api-Token.
   const token = process.env.SOLOPILOT_TOKEN;
-  if (token) {
+  const proxyBasic = process.env.SOLOPILOT_PROXY_BASIC;
+  if (token && proxyBasic) {
+    headers.Authorization = `Basic ${Buffer.from(proxyBasic).toString('base64')}`;
+    headers['X-Api-Token'] = token;
+  } else if (token) {
     headers.Authorization = `Bearer ${token}`;
   } else if (password) {
     headers.Authorization = `Basic ${Buffer.from(`admin:${password}`).toString('base64')}`;

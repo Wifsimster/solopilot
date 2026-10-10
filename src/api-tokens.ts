@@ -6,10 +6,13 @@
  * - secret = `sp_` + 32 random bytes (base64url), shown once at creation;
  *   only its SHA-256 is stored (the secret is high-entropy, so a fast hash is
  *   enough and lookup by hash avoids timing comparisons);
- * - scopes map to an explicit allow-list of (method, path) rules; anything
- *   else is 403 for token auth (default deny), including token management;
- * - optional product restriction, checked on the same `productId` the route
- *   handlers read;
+ * - the full-access scope `*` reaches every route, method and product, like
+ *   the admin password (decision of 2026-10-10: OpenClaw gets full access);
+ * - other scopes map to an explicit allow-list of (method, path) rules;
+ *   anything else is 403 for those tokens (default deny), including token
+ *   management;
+ * - optional product restriction (scoped tokens only), checked on the same
+ *   `productId` the route handlers read;
  * - failed token attempts are rate-limited per client and every
  *   token-authenticated request is audited (no bodies).
  */
@@ -22,7 +25,12 @@ import { logger } from './logger.js';
 
 // --- Scopes & route rules ---
 
+/** Full-access scope: every route and method, every product, like the admin. */
+export const FULL_ACCESS_SCOPE = '*';
+
 export const API_TOKEN_SCOPES = {
+  [FULL_ACCESS_SCOPE]:
+    "Accès complet : toutes les routes et méthodes, tous les produits, comme l'administrateur",
   'comptabilite:read': 'Lire la comptabilité (statut, journal des écritures)',
   'comptabilite:write': 'Ajouter des écritures au journal comptable',
   'products:read': 'Lister les produits (identifiant et nom uniquement)',
@@ -42,7 +50,8 @@ interface RouteRule {
   productScoped: boolean;
 }
 
-// The only routes a token can reach. Add a scope = add rules here + a label above.
+// The only routes a scoped token can reach (a full-access token skips these
+// rules). Add a scope = add rules here + a label above.
 const ROUTE_RULES: readonly RouteRule[] = [
   { method: 'GET', path: /^\/api\/comptabilite$/, scope: 'comptabilite:read', productScoped: true },
   {
@@ -93,12 +102,30 @@ export interface AuthenticatedToken {
 
 export type ApiAuthVariables = { apiToken?: AuthenticatedToken };
 
-export const apiTokenCreateSchema = z.object({
-  name: z.string().trim().min(1).max(80),
-  scopes: z.array(z.enum(API_TOKEN_SCOPE_IDS)).min(1),
-  // null / omitted = every product.
-  productIds: z.array(z.string().min(1)).min(1).nullable().optional(),
-});
+export const apiTokenCreateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    scopes: z.array(z.enum(API_TOKEN_SCOPE_IDS)).min(1),
+    // null / omitted = every product.
+    productIds: z.array(z.string().min(1)).min(1).nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.scopes.includes(FULL_ACCESS_SCOPE)) return;
+    if (data.scopes.some((s) => s !== FULL_ACCESS_SCOPE)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['scopes'],
+        message: "L'accès complet ne se combine pas avec d'autres portées",
+      });
+    }
+    if (data.productIds) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['productIds'],
+        message: "L'accès complet couvre tous les produits",
+      });
+    }
+  });
 export type ApiTokenCreateInput = z.infer<typeof apiTokenCreateSchema>;
 
 const TOKEN_RE = /^sp_[A-Za-z0-9_-]{43}$/;
@@ -208,7 +235,12 @@ export function verifyApiToken(secret: string): VerifyResult {
   };
 }
 
+export function isFullAccess(token: Pick<AuthenticatedToken, 'scopes'>): boolean {
+  return token.scopes.includes(FULL_ACCESS_SCOPE);
+}
+
 export function tokenAllowsProduct(token: AuthenticatedToken, productId: string): boolean {
+  if (isFullAccess(token)) return true;
   return token.productIds === null || token.productIds.includes(productId);
 }
 
@@ -323,7 +355,8 @@ export function extractTokenSecret(c: Context): string | undefined {
  * Token authentication + authorization. Runs before Basic auth:
  * - no token header → `next()` untouched (Basic auth / open mode as before);
  * - token header → the request is token-authenticated only: invalid → 401,
- *   locked-out client → 429, route outside the token's scopes or product → 403.
+ *   locked-out client → 429; a full-access token then reaches every route like
+ *   the admin; a scoped token gets 403 outside its scopes or products.
  */
 export function apiTokenAuth(): MiddlewareHandler<{ Variables: ApiAuthVariables }> {
   return async (c, next) => {
@@ -357,6 +390,21 @@ export function apiTokenAuth(): MiddlewareHandler<{ Variables: ApiAuthVariables 
 
     const token = verified.token;
     getDb().prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?').run(now, token.id);
+
+    if (isFullAccess(token)) {
+      c.set('apiToken', token);
+      await next();
+      recordAudit({
+        token_id: token.id,
+        method,
+        path,
+        product_id: c.req.query('productId') || c.req.query('activity') || null,
+        status: c.res.status,
+        outcome: 'allowed',
+        client,
+      });
+      return;
+    }
 
     const rule = findRouteRule(method, path);
     const productId = rule?.productScoped ? requestProductId(c) : null;
