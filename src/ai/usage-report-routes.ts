@@ -7,7 +7,7 @@
  *
  * Responses carry aggregates only: no prompt, answer or key.
  */
-import type { Hono } from 'hono';
+import type { Env, Hono } from 'hono';
 import { setSetting } from '../settings-service.js';
 import { resolveAlertWebhook } from './usage.js';
 import {
@@ -30,8 +30,8 @@ function invalid(issues: { path: (string | number)[]; message: string }[]) {
   };
 }
 
-export function registerAiUsageReportRoutes(
-  app: Hono,
+export function registerAiUsageReportRoutes<E extends Env>(
+  app: Hono<E>,
   getConfig: () => UsageReportConfig,
   options: UsageReportRouteOptions = {},
 ): void {

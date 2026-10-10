@@ -76,28 +76,102 @@ export const ledgerCreateSchema = z.object({
   amount_cents: z.coerce.number().int().positive(),
   label: z.string().min(1),
   occurred_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // ADR-0029: idempotency key (bank / store payout reference). Unique per
+  // product: a second write with the same reference is refused with the
+  // existing entry instead of creating a duplicate.
+  external_ref: z.string().trim().min(1).max(128).optional(),
+  // ADR-0029: who wrote the entry, e.g. `agent:budget`. Informational; the
+  // authenticated token id is stored separately and cannot be spoofed.
+  source: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9:._-]{0,63}$/, 'source: [a-z0-9:._-], 64 caractères max')
+    .optional(),
 });
 export type LedgerCreateInput = z.infer<typeof ledgerCreateSchema>;
+
+export interface LedgerWriteMeta {
+  /** Id of the API token that authenticated the write (ADR-0029). */
+  apiTokenId?: string | null;
+}
+
+/** Thrown when (product, external_ref) already exists; carries that entry. */
+export class LedgerDuplicateError extends Error {
+  constructor(public readonly existing: LedgerRecord) {
+    super(`Écriture déjà enregistrée (external_ref ${existing.external_ref ?? ''})`);
+    this.name = 'LedgerDuplicateError';
+  }
+}
+
+export function findLedgerByExternalRef(
+  productId: string,
+  externalRef: string,
+): LedgerRecord | undefined {
+  return getDb()
+    .prepare('SELECT * FROM ledger WHERE product_id = ? AND external_ref = ?')
+    .get(productId, externalRef) as LedgerRecord | undefined;
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE'
+  );
+}
 
 export function addLedgerEntry(
   productId: string = DEFAULT_PRODUCT_ID,
   input: LedgerCreateInput,
+  meta: LedgerWriteMeta = {},
 ): LedgerRecord {
   const data = ledgerCreateSchema.parse(input);
   const id = randomUUID();
   const occurred = data.occurred_on ?? getTodayDateParis();
-  getDb()
-    .prepare(
-      `INSERT INTO ledger (id, product_id, kind, amount_cents, label, occurred_on, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(id, productId, data.kind, data.amount_cents, data.label, occurred, Date.now());
+  const externalRef = data.external_ref ?? null;
+  try {
+    getDb()
+      .prepare(
+        `INSERT INTO ledger (id, product_id, kind, amount_cents, label, occurred_on, created_at,
+           external_ref, source, api_token_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        productId,
+        data.kind,
+        data.amount_cents,
+        data.label,
+        occurred,
+        Date.now(),
+        externalRef,
+        data.source ?? null,
+        meta.apiTokenId ?? null,
+      );
+  } catch (err) {
+    // The partial UNIQUE index is the source of truth (no check-then-insert race).
+    if (externalRef && isUniqueViolation(err)) {
+      const existing = findLedgerByExternalRef(productId, externalRef);
+      if (existing) throw new LedgerDuplicateError(existing);
+    }
+    throw err;
+  }
   return getDb().prepare('SELECT * FROM ledger WHERE id = ?').get(id) as LedgerRecord;
 }
 
-export function listLedger(productId: string = DEFAULT_PRODUCT_ID): LedgerRecord[] {
+export function listLedger(
+  productId: string = DEFAULT_PRODUCT_ID,
+  opts: { since?: string } = {},
+): LedgerRecord[] {
+  if (opts.since) {
+    return getDb()
+      .prepare(
+        `SELECT * FROM ledger WHERE product_id = ? AND occurred_on >= ?
+         ORDER BY occurred_on DESC, created_at DESC`,
+      )
+      .all(productId, opts.since) as LedgerRecord[];
+  }
   return getDb()
-    .prepare('SELECT * FROM ledger WHERE product_id = ? ORDER BY occurred_on DESC')
+    .prepare('SELECT * FROM ledger WHERE product_id = ? ORDER BY occurred_on DESC, created_at DESC')
     .all(productId) as LedgerRecord[];
 }
 

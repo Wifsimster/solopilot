@@ -86,6 +86,18 @@ import {
   type ProductView,
 } from './product-service.js';
 import { DEFAULT_PRODUCT_ID } from './db.js';
+import {
+  API_TOKEN_SCOPES,
+  apiTokenAuth,
+  apiTokenCreateSchema,
+  createApiToken,
+  listApiTokens,
+  listAudit,
+  revokeApiToken,
+  tokenAllowsProduct,
+  requestProductId,
+  type ApiAuthVariables,
+} from './api-tokens.js';
 import { listWorkflows, getWorkflow } from './workflow/registry.js';
 import { listWorkflowRuns, getWorkflowRun } from './workflow/run-store.js';
 import { registerSolopilot } from './workflow/bootstrap.js';
@@ -107,6 +119,7 @@ import {
   listLedger,
   addLedgerEntry,
   ledgerCreateSchema,
+  LedgerDuplicateError,
   setComptaConfig,
   comptaConfigSchema,
   getActivityType,
@@ -307,27 +320,30 @@ function buildProductConfig(baseConfig: Config, productId: string): Config {
   return buildMergedConfig(baseConfig, overrides);
 }
 
-export function startServer(
+/** Build the Hono app (routes + middleware) without listening. Used by tests. */
+export function createApp(
   config: Config | null,
   missingCredentials: MissingCredential[] | null,
   cronSchedule: string,
-  port = 3000,
 ) {
-  const app = new Hono();
+  const app = new Hono<{ Variables: ApiAuthVariables }>();
   const isConfigured = config !== null;
 
   // Populate the workflow registry so the read-only workflow API can serve it.
   // Idempotent and inert (workflows ship disabled; nothing is scheduled here).
   registerSolopilot();
 
+  // Scoped API tokens (ADR-0029) run first: a request carrying a token is
+  // authenticated and authorized by its token only (default deny), and skips
+  // Basic auth. Requests without a token are untouched.
+  app.use('*', apiTokenAuth());
+
   if (process.env.ADMIN_PASSWORD) {
-    app.use(
-      '*',
-      basicAuth({
-        username: 'admin',
-        password: process.env.ADMIN_PASSWORD,
-      }),
-    );
+    const adminAuth = basicAuth({
+      username: 'admin',
+      password: process.env.ADMIN_PASSWORD,
+    });
+    app.use('*', async (c, next) => (c.get('apiToken') ? next() : adminAuth(c, next)));
   }
 
   app.use('*', async (c, next) => {
@@ -521,17 +537,76 @@ export function startServer(
   });
 
   app.get('/api/comptabilite/ledger', (c) => {
-    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
-    return c.json(listLedger(activityId));
+    const activityId = requestProductId(c);
+    const since = c.req.query('since');
+    if (since !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(since)) {
+      return c.json({ error: 'since doit être au format YYYY-MM-DD' }, 400);
+    }
+    return c.json(listLedger(activityId, { since }));
   });
 
+  // ADR-0029: `productId` is the product slug (products.id). An unknown product
+  // is a 404 (it used to surface as a foreign-key 500). With `external_ref`, a
+  // second POST for the same (product, external_ref) is a 409 carrying the
+  // existing entry in `entry`; nothing is written.
   app.post('/api/comptabilite/ledger', async (c) => {
-    const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
+    const activityId = requestProductId(c);
     const parsed = ledgerCreateSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) {
       return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
     }
-    return c.json(addLedgerEntry(activityId, parsed.data), 201);
+    if (!getProduct(activityId)) {
+      return c.json({ error: `Produit introuvable : ${activityId}` }, 404);
+    }
+    const token = c.get('apiToken');
+    try {
+      const entry = addLedgerEntry(activityId, parsed.data, { apiTokenId: token?.id ?? null });
+      return c.json(entry, 201);
+    } catch (err) {
+      if (err instanceof LedgerDuplicateError) {
+        return c.json({ error: 'Écriture déjà enregistrée', entry: err.existing }, 409);
+      }
+      throw err;
+    }
+  });
+
+  // --- API tokens (ADR-0029) — admin only: no token scope maps to these routes ---
+
+  app.get('/api/tokens', (c) =>
+    c.json({
+      tokens: listApiTokens(),
+      scopes: Object.entries(API_TOKEN_SCOPES).map(([id, label]) => ({ id, label })),
+    }),
+  );
+
+  app.post('/api/tokens', async (c) => {
+    const parsed = apiTokenCreateSchema.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) {
+      return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
+    }
+    const unknown = (parsed.data.productIds ?? []).filter((id) => !getProduct(id));
+    if (unknown.length > 0) {
+      return c.json({ error: `Produit(s) introuvable(s) : ${unknown.join(', ')}` }, 400);
+    }
+    // `secret` is returned once, here, and never again.
+    return c.json(createApiToken(parsed.data), 201);
+  });
+
+  app.delete('/api/tokens/:id', (c) => {
+    if (!revokeApiToken(c.req.param('id'))) {
+      return c.json({ error: 'Jeton introuvable ou déjà révoqué' }, 404);
+    }
+    return c.json({ success: true });
+  });
+
+  app.get('/api/tokens/audit', (c) => {
+    const limit = Number(c.req.query('limit') ?? 50);
+    return c.json(
+      listAudit({
+        tokenId: c.req.query('tokenId') || undefined,
+        limit: Number.isFinite(limit) ? limit : 50,
+      }),
+    );
   });
 
   // --- CRM API — contacts, deals (pipeline) and interactions ---
@@ -675,6 +750,16 @@ export function startServer(
 
   app.get('/api/products', (c) => {
     const includeArchived = c.req.query('includeArchived') === 'true';
+    const token = c.get('apiToken');
+    if (token) {
+      // Token callers (scope products:read) get a minimal projection, limited
+      // to the products the token may act on.
+      return c.json(
+        listProducts(includeArchived)
+          .filter((p) => tokenAllowsProduct(token, p.id))
+          .map((p) => ({ id: p.id, name: p.name, archived: p.archived_at !== null })),
+      );
+    }
     const products = listProducts(includeArchived).map(maskProduct);
     return c.json(products);
   });
@@ -2554,11 +2639,22 @@ export function startServer(
     return c.text('Internal Server Error', 500);
   });
 
+  return app;
+}
+
+export function startServer(
+  config: Config | null,
+  missingCredentials: MissingCredential[] | null,
+  cronSchedule: string,
+  port = 3000,
+) {
+  const app = createApp(config, missingCredentials, cronSchedule);
+
   serve({ fetch: app.fetch, port }, () => {
     logger.info('Back-office server started', {
       port,
       auth: !!process.env.ADMIN_PASSWORD,
-      mode: isConfigured ? 'operational' : 'setup',
+      mode: config !== null ? 'operational' : 'setup',
     });
   });
 

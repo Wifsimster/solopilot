@@ -123,7 +123,14 @@ solopilot post comptabilite/config '{"activityType":"services_bnc","declarationP
 # Add a ledger entry (kind is recette|depense, amount in cents)
 solopilot post comptabilite/ledger '{"kind":"recette","amount_cents":50000,"label":"Mission X"}'
 solopilot get comptabilite/ledger
+
+# Idempotent write: external_ref is unique per product; a repeat returns 409 + the existing entry
+solopilot --product toko post comptabilite/ledger '{"kind":"recette","amount_cents":356,"label":"Google Play","occurred_on":"2026-09-15","external_ref":"GG104IQZ35","source":"agent:budget"}'
+solopilot --product toko get comptabilite/ledger -q since=2026-09-01
 ```
+
+A scoped API token (`SOLOPILOT_TOKEN=sp_…`) replaces the admin password and only
+reaches the routes of its scopes (ADR-0029, `docs/api.md`).
 
 ### CRM — contacts, deals, interactions
 

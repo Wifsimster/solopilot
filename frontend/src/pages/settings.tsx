@@ -8,6 +8,7 @@ import { RadarProduitCard } from '@/components/settings/radar-produit-card';
 import { AiUsageCard } from '@/components/settings/ai-usage-card';
 import { AiModelsCard } from '@/components/settings/ai-models-card';
 import { ProductSettingsCard } from '@/components/settings/product-settings-card';
+import { ApiTokensCard } from '@/components/settings/api-tokens-card';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { ShieldAlert } from 'lucide-react';
@@ -94,6 +95,7 @@ export function SettingsPage() {
           onSaved={refetch}
         />
         <RadarProduitCard />
+        <ApiTokensCard />
         <GraphqlCard envDefaults={config.envDefaults} onSaved={refetch} />
       </section>
     </div>
