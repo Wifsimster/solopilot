@@ -23,7 +23,7 @@ import { StatCard } from '@/components/stat-card';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
 
 const repereConfig = { value: { label: 'Montant' } } satisfies ChartConfig;
-const REPERE_COLORS = ['var(--chart-1)', 'var(--chart-4)', 'var(--chart-2)'];
+const REPERE_COLORS = ['var(--chart-1)', 'var(--series-2)', 'var(--series-1)'];
 
 interface ComptaStatus {
   year: number;

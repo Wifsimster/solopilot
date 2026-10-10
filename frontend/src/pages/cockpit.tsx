@@ -81,7 +81,7 @@ function ModuleCardIcon({ icon: Icon }: { icon: React.ComponentType<{ className?
 
 function MetricValue({ value }: { value: React.ReactNode }) {
   return (
-    <div className="text-3xl font-bold tabular-nums tracking-tight leading-none">{value}</div>
+    <div className="font-display text-3xl font-semibold tabular-nums tracking-tight leading-none">{value}</div>
   );
 }
 

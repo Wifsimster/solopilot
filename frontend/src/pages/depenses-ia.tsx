@@ -46,14 +46,14 @@ const PERIODS: { value: AiSpendPeriod; label: string }[] = [
 
 const LEVEL_META: Record<AiBudgetLevel, { label: string; icon: LucideIcon; text: string; bar: string }> = {
   ok: { label: 'Dans le budget', icon: CircleCheck, text: 'text-success', bar: 'bg-primary' },
-  warning: { label: 'Seuil de 80 % atteint', icon: TriangleAlert, text: 'text-warning-foreground dark:text-warning', bar: 'bg-warning' },
+  warning: { label: 'Seuil de 80 % atteint', icon: TriangleAlert, text: 'text-warning', bar: 'bg-warning' },
   exceeded: { label: 'Budget dépassé', icon: OctagonAlert, text: 'text-destructive', bar: 'bg-destructive' },
 };
 
 const TONE_META = {
   neutral: { icon: Info, label: 'Info', className: 'text-muted-foreground' },
   good: { icon: CircleCheck, label: 'Bon signe', className: 'text-success' },
-  warning: { icon: TriangleAlert, label: 'Attention', className: 'text-warning-foreground dark:text-warning' },
+  warning: { icon: TriangleAlert, label: 'Attention', className: 'text-warning' },
   critical: { icon: OctagonAlert, label: 'Alerte', className: 'text-destructive' },
 } as const;
 
@@ -102,7 +102,7 @@ function Kpi({
   return (
     <div className="flex min-w-0 flex-col gap-1 rounded-xl border bg-card p-4 text-card-foreground shadow-xs">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="truncate text-xl font-semibold tracking-tight sm:text-2xl">{value}</p>
+      <p className="truncate font-display text-xl font-semibold tracking-tight tabular-nums sm:text-2xl">{value}</p>
       {children}
       {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
     </div>
@@ -352,7 +352,7 @@ function RecapCard({ report, onSaved }: { report: AiSpendReport; onSaved: () => 
             {report.recap.schedule} : semaine écoulée, mois en cours, projection et l'observation principale.
             Sans appel IA.{' '}
             {!report.recap.webhookConfigured && (
-              <span className="text-warning-foreground dark:text-warning">
+              <span className="text-warning">
                 Aucun webhook Discord configuré : rien ne sera envoyé.
               </span>
             )}

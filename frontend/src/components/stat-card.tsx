@@ -42,7 +42,7 @@ export function StatCard({ title, icon: Icon, tone = 'default', hint, children }
           </div>
         )}
       </div>
-      <div className="mt-2 truncate text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
+      <div className="mt-2 truncate font-display text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
         {children}
       </div>
       {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
