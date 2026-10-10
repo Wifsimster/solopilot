@@ -19,6 +19,12 @@ const EDITABLE_KEYS = [
   'PUBLISH_METRICS_CRON',
   // Veille delivery mode: 'per-product' (default) or 'consolidated'.
   'VEILLE_DIGEST_MODE',
+  // Radar produit (ADR-0026): toggle, dry-run, threshold, daily caps.
+  'RADAR_ENABLED',
+  'RADAR_DRY_RUN',
+  'RADAR_SCORE_THRESHOLD',
+  'RADAR_MAX_PER_PRODUCT_PER_DAY',
+  'RADAR_MAX_PER_DAY',
 ] as const;
 const CREDENTIAL_KEYS = [
   'X_SESSION_AUTH_TOKEN',

@@ -77,12 +77,13 @@ assert(all.length === 4, `all four runs listed (got ${all.length})`);
 console.log('bootstrap (real steps + veille workflows):');
 resetRegistry();
 registerSolopilot();
-for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate', 'facturation.relance', 'facturation.sync', 'compta.seuils', 'compta.echeance', 'crm.followup', 'agenda.sync', 'agenda.rappels', 'veille.collect-run', 'veille.publish-run', 'veille.consolidated-digest-run']) {
+for (const use of ['fetch.sources', 'persist', 'ai.summarize', 'notify.discord', 'cockpit.aggregate', 'facturation.relance', 'facturation.sync', 'compta.seuils', 'compta.echeance', 'crm.followup', 'agenda.sync', 'agenda.rappels', 'veille.collect-run', 'veille.publish-run', 'veille.consolidated-digest-run', 'veille.radar-produit-run']) {
   assert(getStep(use) !== undefined, `step registered: ${use}`);
 }
 const registered = listWorkflows();
 const veille = registered.filter((w) => w.module === 'veille');
-assert(veille.length === 4, `four veille workflows registered (got ${veille.length})`);
+assert(veille.length === 5, `five veille workflows registered (got ${veille.length})`);
+assert(registered.some((w) => w.id === 'veille.radar-produit'), 'veille.radar-produit registered');
 assert(registered.some((w) => w.id === 'veille.digest-consolidated'), 'veille.digest-consolidated registered');
 assert(registered.some((w) => w.id === 'cockpit.daily-briefing'), 'cockpit.daily-briefing registered');
 assert(registered.filter((w) => w.module === 'facturation').length === 2, 'two facturation workflows registered');
@@ -180,6 +181,14 @@ const consolidatedRun = await runWorkflowById('veille.digest-consolidated', { co
 assert(
   consolidatedRun.status === 'success' && consolidatedRun.trace[0].step === 'veille.consolidated-digest-run',
   'veille.digest-consolidated runs (no-op in default per-product mode)',
+);
+
+console.log('radar produit (off by default → no-op, no network):');
+delete process.env.RADAR_ENABLED;
+const radarRun = await runWorkflowById('veille.radar-produit', { config: cfg, trigger: 'manual', guard: false });
+assert(
+  radarRun.status === 'success' && radarRun.trace[0].step === 'veille.radar-produit-run',
+  'veille.radar-produit runs and is a no-op while RADAR_ENABLED is off',
 );
 
 resetRegistry();

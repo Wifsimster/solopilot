@@ -9,6 +9,8 @@ services:
       - "3000:3000"
     volumes:
       - bot-data:/app/data
+    # Every variable from .env is passed through, incl. the optional
+    # GITHUB_ISSUES_TOKEN (Radar produit, ADR-0026). Secrets live in .env only.
     env_file:
       - .env
     environment:

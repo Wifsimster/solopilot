@@ -475,6 +475,55 @@ function runVeilleDigestMigrations(database: Database.Database) {
   )`);
 }
 
+// Radar produit (ADR-0026). `tweets.radar_scanned_at` marks an item scored
+// against the products; `radar_proposals` is the issue ledger. The UNIQUE pair
+// is the dedup guarantee: a row is claimed (status 'creating') BEFORE any
+// GitHub call, so the same item x product can never yield two issues.
+function runRadarMigrations(database: Database.Database) {
+  addColumnIfMissing(database, 'tweets', 'radar_scanned_at', 'INTEGER');
+  database.exec(`CREATE TABLE IF NOT EXISTS radar_proposals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    score REAL NOT NULL,
+    reason TEXT,
+    day TEXT NOT NULL,
+    status TEXT NOT NULL,
+    title TEXT,
+    body TEXT,
+    issue_url TEXT,
+    issue_number INTEGER,
+    error TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(item_id, product_id)
+  )`);
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_radar_proposals_day ON radar_proposals(day, product_id, status)`,
+  );
+}
+
+export type RadarProposalStatus = 'creating' | 'dry_run' | 'created' | 'failed' | 'capped';
+
+export interface RadarProposalRecord {
+  id: number;
+  item_id: string;
+  product_id: string;
+  repo: string;
+  score: number;
+  reason: string | null;
+  day: string;
+  status: RadarProposalStatus;
+  title: string | null;
+  body: string | null;
+  issue_url: string | null;
+  issue_number: number | null;
+  error: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface VeilleDigestDeliveryRecord {
   id: number;
   digest_date: string;
@@ -802,6 +851,7 @@ export function getDb(): Database.Database {
     runPublishMigrations(db);
     runWorkflowMigrations(db);
     runVeilleDigestMigrations(db);
+    runRadarMigrations(db);
     runFacturationMigrations(db);
     runComptaMigrations(db);
     runCrmMigrations(db);

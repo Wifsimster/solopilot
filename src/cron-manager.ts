@@ -8,6 +8,8 @@ import { runWorkflowById } from './workflow/runner.js';
 import { runConnectionCanary, publishDueScheduledJobs } from './publish-service.js';
 import { refreshPublishedMetrics } from './content-metrics.js';
 import { sendDiscordNotification } from './adapters/discord-notifier.js';
+import { getRadarSettings, isRadarRunning } from './modules/veille/radar-service.js';
+import { veilleRadarProduit } from './modules/veille/workflows.js';
 import type { Config } from './config.js';
 
 /**
@@ -245,6 +247,30 @@ export function scheduleMetricsCron(schedule: string): boolean {
       await refreshPublishedMetrics();
     } catch (err) {
       logger.error('Metrics refresh cron failed', {
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+}
+
+/**
+ * Radar produit (ADR-0026): one global hourly task (after collect + triage),
+ * always dispatched through the workflow engine. The toggle is read at each
+ * tick, so a disabled radar costs nothing and leaves no workflow_runs rows.
+ * `guard: false` + the service's own running flag (same as ADR-0025).
+ */
+export function scheduleRadarCron(
+  baseConfig: Config,
+  buildMergedConfig: (base: Config, overrides: Record<string, string>) => Config,
+): boolean {
+  const expr = veilleRadarProduit.trigger.kind === 'cron' ? veilleRadarProduit.trigger.expr : '45 * * * *';
+  return scheduleNamedCron('radar-produit', expr, async () => {
+    if (!getRadarSettings().enabled || isRadarRunning()) return;
+    try {
+      const config = buildMergedConfig(baseConfig, getSettingsMap());
+      await runWorkflowById(veilleRadarProduit.id, { config, trigger: 'cron', guard: false });
+    } catch (err) {
+      logger.error('Radar produit failed', {
         message: err instanceof Error ? err.message : String(err),
       });
     }

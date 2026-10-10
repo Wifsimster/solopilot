@@ -194,6 +194,19 @@ import {
 import { PublishError, type PublishTarget } from './ports.js';
 import { getAnglePerformance, refreshPublishedMetrics } from './content-metrics.js';
 import {
+  RADAR_SETTING_KEYS,
+  RADAR_SETTING_VALIDATORS,
+  isRadarSettingKey,
+} from './modules/veille/radar.js';
+import {
+  getRadarSettings,
+  isRadarRunning,
+  listRepoProducts,
+  createIssueForProposal,
+} from './modules/veille/radar-service.js';
+import { listProposals as listRadarProposals } from './modules/veille/radar-store.js';
+import { resolveIssuesToken } from './connectors/github-issues.js';
+import {
   fetchGithubRepos,
   bulkImportProducts,
   bulkImportRequestSchema,
@@ -201,7 +214,11 @@ import {
 } from './github-import.js';
 
 /** Settings that only make sense globally (veille delivery spans all products). */
-const GLOBAL_ONLY_KEYS = new Set(['VEILLE_DIGEST_MODE', 'VEILLE_DISCORD_WEBHOOK_URL']);
+const GLOBAL_ONLY_KEYS = new Set([
+  'VEILLE_DIGEST_MODE',
+  'VEILLE_DISCORD_WEBHOOK_URL',
+  ...RADAR_SETTING_KEYS,
+]);
 
 interface MissingCredential {
   key: string;
@@ -1978,6 +1995,21 @@ export function startServer(
       }
 
       for (const [key, value] of Object.entries(body)) {
+        if (
+          isRadarSettingKey(key) &&
+          (typeof value !== 'string' || !RADAR_SETTING_VALIDATORS[key].safeParse(value).success)
+        ) {
+          return c.json(
+            {
+              success: false,
+              message: `Valeur invalide pour ${key} (booleen true/false, seuil entre 0 et 1, plafond entier entre 0 et 50).`,
+            },
+            400,
+          );
+        }
+      }
+
+      for (const [key, value] of Object.entries(body)) {
         if (isEditableKey(key) && typeof value === 'string') {
           setSetting(key, value);
           updated++;
@@ -2328,6 +2360,44 @@ export function startServer(
     app.delete('/api/veille-discord-webhook', (c) => {
       deleteSetting('VEILLE_DISCORD_WEBHOOK_URL');
       return c.json({ success: true, message: 'Webhook de veille supprimé.' });
+    });
+
+    // --- Radar produit (ADR-0026) ---
+
+    // Effective settings + recent proposals. The token itself is never returned.
+    app.get('/api/veille/radar', (c) => {
+      const settings = getRadarSettings();
+      const limit = Math.min(Math.max(Number(c.req.query('limit') || '30') || 30, 1), 100);
+      return c.json({
+        settings: {
+          enabled: settings.enabled,
+          dryRun: settings.dryRun,
+          scoreThreshold: settings.scoreThreshold,
+          maxPerProductPerDay: settings.maxPerProductPerDay,
+          maxPerDay: settings.maxPerDay,
+        },
+        tokenConfigured: resolveIssuesToken(config) !== undefined,
+        running: isRadarRunning(),
+        repoProducts: listRepoProducts().map((p) => ({
+          id: p.id,
+          name: p.name,
+          repo: `${p.owner}/${p.repo}`,
+        })),
+        proposals: listRadarProposals(limit),
+      });
+    });
+
+    // Explicit human action: create the issue for a dry_run/failed proposal.
+    app.post('/api/veille/radar/proposals/:id/create', async (c) => {
+      const id = Number(c.req.param('id'));
+      if (!Number.isInteger(id) || id < 1) {
+        return c.json({ success: false, message: 'Identifiant invalide.' }, 400);
+      }
+      const result = await createIssueForProposal(config, id);
+      if (!result.ok) {
+        return c.json({ success: false, message: result.message }, result.status);
+      }
+      return c.json({ success: true, message: 'Issue créée.', url: result.url });
     });
 
     // Consolidated digest delivery log (no webhook URLs stored or returned).

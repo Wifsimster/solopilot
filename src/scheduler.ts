@@ -9,6 +9,7 @@ import {
   scheduleCanaryCron,
   schedulePublishQueueCron,
   scheduleMetricsCron,
+  scheduleRadarCron,
   stopAll as stopAllCrons,
 } from './cron-manager.js';
 import { recoverStaleRuns, isAnyRunning, isAnyCollecting } from './run-service.js';
@@ -94,6 +95,9 @@ if (configResult.success) {
 
   // Refresh published-post engagement metrics every 6h (feedback loop).
   scheduleMetricsCron(dbOverrides['PUBLISH_METRICS_CRON'] || '0 */6 * * *');
+
+  // Radar produit (ADR-0026): hourly, no-op until RADAR_ENABLED is on.
+  scheduleRadarCron(config, buildMergedConfig);
 } else {
   logger.warn('X AI Daily Bot started in setup mode — missing credentials', {
     missing: configResult.missing.map((m) => m.key),

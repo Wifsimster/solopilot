@@ -64,9 +64,26 @@ export const veilleAlert: Workflow = {
   steps: [{ use: 'veille.alert-run' }],
 };
 
+/**
+ * Radar produit (ADR-0026): hourly, after collect + triage. Very relevant news
+ * become GitHub issue proposals in the product's repo. Gated at each tick by
+ * the RADAR_ENABLED setting (off by default) and dry-run by default, so
+ * registering it changes nothing until the owner opts in.
+ */
+export const veilleRadarProduit: Workflow = {
+  id: 'veille.radar-produit',
+  module: 'veille',
+  label: 'Radar produit : actualités → issues GitHub',
+  trigger: { kind: 'cron', expr: '45 * * * *' },
+  version: 1,
+  enabled: true,
+  steps: [{ use: 'veille.radar-produit-run' }],
+};
+
 export const veilleWorkflows: Workflow[] = [
   veilleCollect,
   veilleDigest,
   veilleDigestConsolidated,
   veilleAlert,
+  veilleRadarProduit,
 ];

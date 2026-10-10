@@ -20,6 +20,7 @@ venir, leads chauds, dernier digest de veille — condensé en un message.
 |---|---|---|---|
 | `veille.collect` | cron `0 * * * *` | `veille.collect-run` (→ `triggerCollect`) | ✅ `enabled` (flip ADR-0020) |
 | `veille.digest` | cron `30 7 * * *` | `veille.publish-run` (→ `triggerRun` : IA + Discord) | ✅ `enabled` (flip ADR-0020) |
+| `veille.radar-produit` | cron `45 * * * *` | `veille.radar-produit-run` (score IA actualité × produits → rapport → issue GitHub ou simulation → Discord) | 🆕 `enabled`, gardé par `RADAR_ENABLED` (OFF) + simulation par défaut (ADR-0026) |
 
 > Le flip route la prod via le moteur quand `WORKFLOW_SCHEDULER=true` (OFF par
 > défaut). Les workflows **délèguent** aux services éprouvés → comportement

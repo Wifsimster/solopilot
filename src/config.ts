@@ -74,6 +74,13 @@ const configSchema = z.object({
   // Optional: YouTube Data API v3 key for the veille YouTube source. When
   // absent, the YouTube reader is silently skipped (setup-mode friendly).
   YOUTUBE_API_KEY: z.string().min(1).optional(),
+
+  // Optional: fine-grained GitHub token with Issues: read & write on the
+  // product repos, used ONLY by the Radar produit to open issues (ADR-0026).
+  // Distinct from GITHUB_TOKEN (GitHub Models inference). Env only, never
+  // stored in the DB. Absent or empty = the radar stays in dry-run (an empty
+  // value must not fail the whole config, hence no min(1)).
+  GITHUB_ISSUES_TOKEN: z.string().optional(),
   })
   .refine((c) => Boolean(c.AI_API_KEY ?? c.GITHUB_TOKEN), {
     message:
