@@ -41,16 +41,16 @@ export const SOURCE_META: Record<TargetSource, SourceMeta> = {
   reddit: {
     label: 'Reddit',
     Icon: MessageCircle,
-    dotClass: 'bg-orange-500',
-    textClass: 'text-orange-600 dark:text-orange-400',
-    borderClass: 'border-l-orange-500',
+    dotClass: 'bg-platform-reddit',
+    textClass: 'text-platform-reddit-icon',
+    borderClass: 'border-l-platform-reddit',
   },
   generic: {
     label: 'Générique',
     Icon: Globe,
-    dotClass: 'bg-blue-500',
-    textClass: 'text-blue-600 dark:text-blue-400',
-    borderClass: 'border-l-blue-500',
+    dotClass: 'bg-platform-generic',
+    textClass: 'text-platform-generic-icon',
+    borderClass: 'border-l-platform-generic',
   },
   instagram: {
     label: 'Instagram',
