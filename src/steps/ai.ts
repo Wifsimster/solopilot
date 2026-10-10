@@ -1,7 +1,7 @@
 /**
  * `ai.summarize` step.
  *
- * Delegates to the existing GitHub Models summarizer (`createAIFilter`). It
+ * Delegates to the existing summarizer (`createAIFilter`, via the AI port). It
  * summarizes the items passed in the input (`items`), or — when none are given —
  * reads the activity's unpublished items from the store, mirroring today's
  * publish path. Returns the French digest, or a null summary when the model

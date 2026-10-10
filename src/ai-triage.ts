@@ -2,7 +2,8 @@ import { z } from 'zod';
 import type { Config } from './config.js';
 import { getDb } from './db.js';
 import { getProduct, toProductView, type ProductView } from './product-service.js';
-import { createAiClient, resolveAiApiKey, jsonModeParams, parseJsonResponse } from './ai-client.js';
+import { createAi, isAiConfigured } from './ai/index.js';
+import { arr, bool, int, obj, str } from './ai/schema.js';
 import { logger } from './logger.js';
 
 // Default triage taxonomy (stolen from Stalkr's mention categories). A product
@@ -34,6 +35,19 @@ const triagedItemSchema = z.object({
 
 const triageResponseSchema = z.object({
   items: z.array(triagedItemSchema),
+});
+
+/** Structured-output contract (mirrors triageResponseSchema). */
+const triageJsonSchema = obj({
+  items: arr(
+    obj({
+      id: str({ minLength: 1 }),
+      category: str({ minLength: 1, maxLength: 60 }),
+      urgency: int(0, 100),
+      relevance: int(0, 100),
+      high_intent: bool(),
+    }),
+  ),
 });
 
 export interface TriageResult {
@@ -144,7 +158,7 @@ export async function triageNewItems(
   const product = toProductView(productRecord);
   if (!product.triage_enabled) return { triaged: 0, failed: 0 };
 
-  if (!resolveAiApiKey(config)) {
+  if (!isAiConfigured(config)) {
     logger.info('Item triage skipped: no AI key configured', { productId });
     return { triaged: 0, failed: 0 };
   }
@@ -161,7 +175,7 @@ export async function triageNewItems(
 
   const categories = triageCategoriesForProduct(product);
   const systemPrompt = buildSystemPrompt(product, categories);
-  const client = createAiClient(config, { timeout: TRIAGE_AI_TIMEOUT_MS });
+  const ai = createAi(config);
 
   const persist = db.prepare(
     `UPDATE tweets SET triage_category = ?, triage_urgency = ?, triage_relevance = ?,
@@ -172,47 +186,27 @@ export async function triageNewItems(
   let failed = 0;
 
   for (const batch of chunk(rows, TRIAGE_BATCH_SIZE)) {
-    let raw: string;
-    try {
-      const response = await client.chat.completions.create({
-        model: config.AI_MODEL,
-        max_tokens: 4000,
-        ...jsonModeParams(config),
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: buildUserPayload(batch) },
-        ],
-      });
-      logger.info('Item triage API usage', {
-        productId,
-        items: batch.length,
-        inputTokens: response.usage?.prompt_tokens,
-        outputTokens: response.usage?.completion_tokens,
-        model: response.model,
-      });
-      raw = response.choices[0]?.message?.content ?? '';
-    } catch (err) {
-      const message = `Echec de l'appel AI : ${err instanceof Error ? err.message : String(err)}`;
-      persistBatchError(
-        batch.map((b) => b.id),
-        message,
-      );
-      failed += batch.length;
-      logger.warn('Item triage batch failed', { productId, items: batch.length, error: message });
-      continue;
-    }
-
     let validated: z.infer<typeof triageResponseSchema>;
     try {
-      const parsed = triageResponseSchema.safeParse(parseJsonResponse(raw));
+      // Same system prompt for every batch of the run: cacheable prefix.
+      const raw = await ai.json({
+        task: 'veille.triage',
+        maxTokens: 4000,
+        timeoutMs: TRIAGE_AI_TIMEOUT_MS,
+        system: systemPrompt,
+        user: buildUserPayload(batch),
+        schema: triageJsonSchema,
+        cacheSystem: true,
+      });
+      const parsed = triageResponseSchema.safeParse(raw);
       if (!parsed.success) {
         throw new Error(
-          parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+          `Reponse AI invalide : ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
         );
       }
       validated = parsed.data;
     } catch (err) {
-      const message = `Reponse AI invalide : ${err instanceof Error ? err.message : String(err)}`;
+      const message = `Echec de l'appel AI : ${err instanceof Error ? err.message : String(err)}`;
       persistBatchError(
         batch.map((b) => b.id),
         message,

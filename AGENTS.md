@@ -19,7 +19,7 @@ Solopilot (anciennement « X AI Weekly Bot ») — the autonomous back-office fo
 - **Runtime:** Node.js >= 24 (ES2024, ESM)
 - **Backend:** Hono v4 (HTTP framework), TypeScript strict mode
 - **Database:** SQLite via better-sqlite3 (WAL mode)
-- **AI:** OpenAI SDK v6 targeting GitHub Models endpoint
+- **AI:** one AI port (`src/ai/`, ADR-0027) with two adapters: Anthropic (`@anthropic-ai/sdk`, default when `ANTHROPIC_API_KEY` is set) and GitHub Models / OpenAI-compatible (OpenAI SDK v6)
 - **Scheduling:** node-cron
 - **Frontend:** React 19, React Router 7, Vite
 - **Styling:** Tailwind CSS 4, Radix UI primitives, Lucide icons
@@ -39,7 +39,8 @@ src/                        # Backend TypeScript (Hono server, scraper, AI filte
 ├── collect-service.ts      # Hourly tweet collection (scrape + store, no AI)
 ├── tweet-store.ts          # Tweet persistence, dedup, retrieval
 ├── date-utils.ts           # Paris timezone date utility
-├── ai-filter.ts            # GitHub Models AI integration
+├── ai/                     # AI port + adapters (Anthropic, GitHub Models), usage ledger, budget guard
+├── ai-filter.ts            # Digest + monthly summary prompts (via the AI port)
 ├── x-client.ts             # X client factory
 ├── cron-manager.ts         # Multi-cron manager (collect + publish)
 ├── settings-service.ts     # DB-backed settings persistence
@@ -128,5 +129,6 @@ workflows). See `docs/api.md`.
 - Workflow engine lives in `src/workflow/` (Trigger/Step/Workflow/Run); business modules in `src/modules/<module>/` are folders of workflows. Run one with `npm run workflow -- <id>`.
 - **Veille flip (ADR-0020):** set `WORKFLOW_SCHEDULER=true` to dispatch the veille crons through the engine (behaviour-identical, adds `workflow_runs`). Default off keeps the legacy path.
 - **Veille digest mode:** `VEILLE_DIGEST_MODE=per-product` (default, one Discord message per product) or `consolidated` (workflow `veille.digest-consolidated`, `src/modules/veille/consolidated-*.ts`: publishes global-schedule products in sequence, then ONE digest with a section per product, split per Discord limits). Consolidated posts to `VEILLE_DISCORD_WEBHOOK_URL` only (unset → skip + warn, no fallback); per-product runs stay `notification_status='pending'` until the consolidated post writes `sent`/`failed`/`skipped` on every participating run of the day (`runs.digest_delivery_id` links the send logged in `veille_digest_deliveries`). Oversize sections drop lowest-ranked items and end with `+{n} autres`. Mode is read at each tick (no restart). Urgent mention alerts (`src/alert-service.ts`) follow the same mode on every call: consolidated → `VEILLE_DISCORD_WEBHOOK_URL` only with the product name in each embed (unset → skip + warn, `alerted_at` untouched, `skipped: 'no_webhook'`), per-product → unchanged product webhook resolution.
+- **AI port (ADR-0027):** never import an AI SDK outside `src/ai/`. Call `createAi(config).text()/.json()` with a task id from `AI_TASKS` (profile, model tier, essential flag); pass a JSON Schema built with `src/ai/schema.ts` for structured output and still validate with Zod. `AI_PROVIDER=anthropic|github-models` (auto: anthropic iff `ANTHROPIC_API_KEY`), `AI_MODEL` / `AI_MODEL_FAST`, `AI_MONTHLY_BUDGET_USD` (default 200). Every call lands in `ai_usage` with its estimated cost; at 80 % one warning (logs + Discord + Settings), at 100 % non-essential tasks throw `AiError('budget_exceeded')` (digest + triage keep running). `ANTHROPIC_API_KEY` is env only: never in the DB, never in an API response.
 - **Radar produit (ADR-0026):** workflow `veille.radar-produit` (`src/modules/veille/radar*.ts`, hourly at :45 via `cron-manager`, always through the engine). Scores triaged topic items against every product whose `product_url` is a GitHub repo; pairs ≥ `RADAR_SCORE_THRESHOLD` get a French marketing report as an issue (`src/connectors/github-issues.ts`, label `veille`). Off by default (`RADAR_ENABLED`), dry-run by default (`RADAR_DRY_RUN`), forced dry-run without `GITHUB_ISSUES_TOKEN` (env only, never `GITHUB_TOKEN`). Dedup = `radar_proposals UNIQUE(item_id, product_id)` claimed before the GitHub call; daily caps per product / global. Model text is untrusted: always render through `sanitizeUntrusted` (no @mentions, #refs, closing keywords, links, HTML).
 - All dates use Europe/Paris timezone for consistency

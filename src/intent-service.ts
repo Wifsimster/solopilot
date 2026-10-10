@@ -3,7 +3,8 @@ import { getDb, type IntentSignalRecord, type IntentSignalReplyRecord } from './
 import { getProduct, toProductView, type ProductView } from './product-service.js';
 import { logger } from './logger.js';
 import { loadConfig } from './config.js';
-import { createAiClient, resolveAiApiKey, jsonModeParams, parseJsonResponse } from './ai-client.js';
+import { createAi, isAiConfigured, aiNotConfiguredMessage } from './ai/index.js';
+import { arr, enumOf, int, obj, str } from './ai/schema.js';
 
 export const INTENT_STATUSES = ['new', 'snoozed', 'dismissed', 'replied'] as const;
 export type IntentStatus = (typeof INTENT_STATUSES)[number];
@@ -470,6 +471,25 @@ const repliesOnlyResponseSchema = z.object({
   replies: z.array(replyVariantSchema).min(1).max(MAX_REPLY_COUNT),
 });
 
+/** Structured-output contracts (mirror the Zod schemas above). */
+const replyVariantJsonSchema = obj({
+  angle: str({ minLength: 2, maxLength: 60 }),
+  text: str({ minLength: 10, maxLength: 600 }),
+});
+
+const analyzeJsonSchema = obj({
+  score: int(0, 100),
+  explanation: str({ minLength: 1, maxLength: 500 }),
+  icp_score: int(0, 100),
+  icp_reason: str({ minLength: 1, maxLength: 500 }),
+  intent_category: enumOf(INTENT_CATEGORIES),
+  replies: arr(replyVariantJsonSchema, { maxItems: MAX_REPLY_COUNT }),
+});
+
+const repliesOnlyJsonSchema = obj({
+  replies: arr(replyVariantJsonSchema, { minItems: 1, maxItems: MAX_REPLY_COUNT }),
+});
+
 function clampReplyCount(value: number | undefined): number {
   const v = value ?? DEFAULT_REPLY_COUNT;
   if (!Number.isFinite(v)) return DEFAULT_REPLY_COUNT;
@@ -673,47 +693,28 @@ export async function analyzeIntentSignal(
     );
   }
 
-  if (!resolveAiApiKey(config)) {
-    return persistError('Client AI indisponible : clé AI (AI_API_KEY ou GITHUB_TOKEN) manquante.');
+  if (!isAiConfigured(config)) {
+    return persistError(aiNotConfiguredMessage(config));
   }
-
-  const client = createAiClient(config, { timeout: ANALYZE_AI_TIMEOUT_MS });
 
   const charLimit = characterLimitForSource(signal.source);
   const systemPrompt = buildAnalyzeSystemPrompt(count, charLimit, signal.source);
   const userPayload = buildUserPayload(signal, product, count);
 
-  let raw: string;
+  let parsed: unknown;
   try {
-    const response = await client.chat.completions.create({
-      model: config.AI_MODEL,
-      max_tokens: 2048,
-      ...jsonModeParams(config),
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPayload },
-      ],
+    parsed = await createAi(config).json({
+      task: 'intent.analyze',
+      maxTokens: 2048,
+      timeoutMs: ANALYZE_AI_TIMEOUT_MS,
+      system: systemPrompt,
+      user: userPayload,
+      schema: analyzeJsonSchema,
+      cacheSystem: true,
     });
-    logger.info('Intent analysis API usage', {
-      signalId,
-      inputTokens: response.usage?.prompt_tokens,
-      outputTokens: response.usage?.completion_tokens,
-      model: response.model,
-      count,
-    });
-    raw = response.choices[0]?.message?.content ?? '';
   } catch (err) {
     return persistError(
       `Echec de l'appel AI : ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = parseJsonResponse(raw);
-  } catch (err) {
-    return persistError(
-      `Reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 
@@ -776,48 +777,29 @@ export async function generateRepliesOnly(
     throw new IntentReplyGenerationError(message);
   }
 
-  if (!resolveAiApiKey(config)) {
-    const message = 'Client AI indisponible : clé AI (AI_API_KEY ou GITHUB_TOKEN) manquante.';
+  if (!isAiConfigured(config)) {
+    const message = aiNotConfiguredMessage(config);
     logger.warn('Intent reply generation failed', { signalId: signal.id, error: message.trim() });
     throw new IntentReplyGenerationError(message);
   }
-
-  const client = createAiClient(config, { timeout: ANALYZE_AI_TIMEOUT_MS });
 
   const charLimit = characterLimitForSource(signal.source);
   const systemPrompt = buildRepliesOnlySystemPrompt(count, charLimit, signal.source);
   const userPayload = buildUserPayload(signal, product, count);
 
-  let raw: string;
-  try {
-    const response = await client.chat.completions.create({
-      model: config.AI_MODEL,
-      max_tokens: 1500,
-      ...jsonModeParams(config),
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPayload },
-      ],
-    });
-    logger.info('Intent reply variants API usage', {
-      signalId: signal.id,
-      inputTokens: response.usage?.prompt_tokens,
-      outputTokens: response.usage?.completion_tokens,
-      model: response.model,
-      count,
-    });
-    raw = response.choices[0]?.message?.content ?? '';
-  } catch (err) {
-    const message = `Echec de l'appel AI : ${err instanceof Error ? err.message : String(err)}`;
-    logger.warn('Intent reply generation failed', { signalId: signal.id, error: message.trim() });
-    throw new IntentReplyGenerationError(message);
-  }
-
   let parsed: unknown;
   try {
-    parsed = parseJsonResponse(raw);
+    parsed = await createAi(config).json({
+      task: 'intent.replies',
+      maxTokens: 1500,
+      timeoutMs: ANALYZE_AI_TIMEOUT_MS,
+      system: systemPrompt,
+      user: userPayload,
+      schema: repliesOnlyJsonSchema,
+      cacheSystem: true,
+    });
   } catch (err) {
-    const message = `Reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`;
+    const message = `Echec de l'appel AI : ${err instanceof Error ? err.message : String(err)}`;
     logger.warn('Intent reply generation failed', { signalId: signal.id, error: message.trim() });
     throw new IntentReplyGenerationError(message);
   }

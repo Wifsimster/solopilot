@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import OpenAI from 'openai';
 import { getDb, type ContentDraftRecord } from './db.js';
 import type { ProductView } from './product-service.js';
 import { logger } from './logger.js';
 import { loadConfig } from './config.js';
-import { createAiClient, resolveAiApiKey, jsonModeParams, parseJsonResponse } from './ai-client.js';
+import { createAi, isAiConfigured, aiNotConfiguredMessage, type AiPort, type JsonObjectSchema } from './ai/index.js';
+import { arr, obj, str } from './ai/schema.js';
 import { fetchGithubRepoContext } from './github-import.js';
 import { verifySubredditsExist } from './adapters/reddit-reader.js';
 
@@ -328,6 +328,12 @@ const generateResponseSchema = z.object({
     .min(1),
 });
 
+const generateJsonSchema = obj({
+  drafts: arr(obj({ angle: str({ minLength: 1, maxLength: 120 }), text: str({ minLength: 1, maxLength: 4000 }) }), {
+    minItems: 1,
+  }),
+});
+
 const GENERATE_SYSTEM_PROMPT = `Tu es un marketeur produit expérimenté et un copywriter spécialisé en posts promotionnels courts pour les réseaux sociaux.
 
 On va te demander d'écrire plusieurs posts promotionnels au sujet d'un produit précis. Chaque post DOIT prendre un ANGLE différent. Exemples d'angles à varier :
@@ -402,6 +408,8 @@ const suggestAudienceResponseSchema = z.object({
   target_audience: z.string().min(1).max(TARGET_AUDIENCE_MAX_LENGTH),
 });
 
+const suggestAudienceJsonSchema = obj({ target_audience: str({ minLength: 1, maxLength: TARGET_AUDIENCE_MAX_LENGTH }) });
+
 const SUGGEST_AUDIENCE_SYSTEM_PROMPT = `Tu es un stratege marketing produit. On te donne les informations d'un produit (nom, URL, description, propositions de valeur) et tu dois proposer une description CONCISE de son audience cible ideale.
 
 Regles :
@@ -420,11 +428,11 @@ Reponds STRICTEMENT en JSON avec la structure suivante :
 const SUGGEST_AI_MAX_TOKENS = 1024;
 
 /**
- * Load the AI config and build an OpenAI client for a content-studio
- * suggestion, throwing a French `ContentStudioError` when the config or token
- * is missing. Shared by every suggestion helper.
+ * Load the AI config and build the AI port for a content-studio suggestion,
+ * throwing a French `ContentStudioError` when the config or key is missing.
+ * Shared by every suggestion helper.
  */
-function createSuggestionClient(): { client: OpenAI; config: ReturnType<typeof loadConfig> } {
+function createSuggestionAi(): { ai: AiPort; config: ReturnType<typeof loadConfig> } {
   let config;
   try {
     config = loadConfig();
@@ -434,15 +442,11 @@ function createSuggestionClient(): { client: OpenAI; config: ReturnType<typeof l
     );
   }
 
-  if (!resolveAiApiKey(config)) {
-    throw new ContentStudioError(
-      'Echec de la suggestion : client AI indisponible (clé AI_API_KEY ou GITHUB_TOKEN manquante).',
-    );
+  if (!isAiConfigured(config)) {
+    throw new ContentStudioError(`Echec de la suggestion : ${aiNotConfiguredMessage(config)}`);
   }
 
-  const client = createAiClient(config, { timeout: GENERATE_AI_TIMEOUT_MS });
-
-  return { client, config };
+  return { ai: createAi(config), config };
 }
 
 /** Numbered list of value props, or a placeholder when none were provided. */
@@ -483,41 +487,26 @@ async function runSuggestion<T>(opts: {
   systemPrompt: string;
   userPayload: string;
   responseSchema: z.ZodType<T>;
+  jsonSchema: JsonObjectSchema;
   logLabel: string;
 }): Promise<T> {
-  const { client, config } = createSuggestionClient();
+  const { ai, config } = createSuggestionAi();
   const repoBlock = await buildRepoContextBlock(opts.productUrl, config.GITHUB_TOKEN);
-
-  let raw: string;
-  try {
-    const response = await client.chat.completions.create({
-      model: config.AI_MODEL,
-      max_tokens: SUGGEST_AI_MAX_TOKENS,
-      ...jsonModeParams(config),
-      messages: [
-        { role: 'system', content: opts.systemPrompt },
-        { role: 'user', content: opts.userPayload + repoBlock },
-      ],
-    });
-    logger.info(`${opts.logLabel} API usage`, {
-      inputTokens: response.usage?.prompt_tokens,
-      outputTokens: response.usage?.completion_tokens,
-      model: response.model,
-      grounded: repoBlock.length > 0,
-    });
-    raw = response.choices[0]?.message?.content ?? '';
-  } catch (err) {
-    throw new ContentStudioError(
-      `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
 
   let parsed: unknown;
   try {
-    parsed = parseJsonResponse(raw);
+    parsed = await ai.json({
+      task: 'content.suggest',
+      maxTokens: SUGGEST_AI_MAX_TOKENS,
+      timeoutMs: GENERATE_AI_TIMEOUT_MS,
+      system: opts.systemPrompt,
+      user: opts.userPayload + repoBlock,
+      schema: opts.jsonSchema,
+    });
+    logger.info(`${opts.logLabel} generated`, { grounded: repoBlock.length > 0 });
   } catch (err) {
     throw new ContentStudioError(
-      `Echec de la suggestion : reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`,
+      `Echec de la suggestion : ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 
@@ -556,6 +545,7 @@ Propose une description concise de l'audience cible ideale pour ce produit.`;
     systemPrompt: SUGGEST_AUDIENCE_SYSTEM_PROMPT,
     userPayload,
     responseSchema: suggestAudienceResponseSchema,
+    jsonSchema: suggestAudienceJsonSchema,
     logLabel: 'Audience suggestion',
   });
 
@@ -604,6 +594,8 @@ const suggestCtasResponseSchema = z.object({
   call_to_actions: z.array(z.string().min(1)).min(1),
 });
 
+const suggestCtasJsonSchema = obj({ call_to_actions: arr(str({ minLength: 1 }), { minItems: 1 }) });
+
 const SUGGEST_CTAS_SYSTEM_PROMPT = `Tu es un copywriter spécialisé en conversion. On te donne les informations d'un produit (nom, URL, description, audience cible, propositions de valeur) et tu dois proposer des appels à l'action (CTA) courts et percutants.
 
 Regles :
@@ -645,6 +637,7 @@ Propose entre 3 et ${CTAS_MAX_COUNT} appels a l'action courts et varies pour ce 
     systemPrompt: SUGGEST_CTAS_SYSTEM_PROMPT,
     userPayload,
     responseSchema: suggestCtasResponseSchema,
+    jsonSchema: suggestCtasJsonSchema,
     logLabel: 'CTA suggestion',
   });
 
@@ -716,6 +709,10 @@ const suggestDescriptionResponseSchema = z.object({
   product_description: z.string().min(1).max(PRODUCT_DESCRIPTION_MAX_LENGTH),
 });
 
+const suggestDescriptionJsonSchema = obj({
+  product_description: str({ minLength: 1, maxLength: PRODUCT_DESCRIPTION_MAX_LENGTH }),
+});
+
 const SUGGEST_DESCRIPTION_SYSTEM_PROMPT = `Tu es un redacteur produit. On te donne les informations d'un produit (nom, URL, audience, propositions de valeur) et, si disponible, le contenu de son depot GitHub (description + README). Tu dois rediger une DESCRIPTION factuelle et concise du produit, destinee a une IA qui analysera des leads et redigera des reponses.
 
 Regles :
@@ -757,6 +754,7 @@ Redige une description factuelle et concise de ce produit.`;
     systemPrompt: SUGGEST_DESCRIPTION_SYSTEM_PROMPT,
     userPayload,
     responseSchema: suggestDescriptionResponseSchema,
+    jsonSchema: suggestDescriptionJsonSchema,
     logLabel: 'Description suggestion',
   });
 
@@ -800,6 +798,8 @@ const suggestValuePropsResponseSchema = z.object({
   value_props: z.array(z.string().min(1)).min(1),
 });
 
+const suggestValuePropsJsonSchema = obj({ value_props: arr(str({ minLength: 1 }), { minItems: 1 }) });
+
 const SUGGEST_VALUE_PROPS_SYSTEM_PROMPT = `Tu es un stratege marketing produit. On te donne les informations d'un produit (nom, URL, description, audience) et, si disponible, le contenu de son depot GitHub (description + README). Tu dois proposer des PROPOSITIONS DE VALEUR courtes : les benefices concrets pour l'utilisateur.
 
 Regles :
@@ -838,6 +838,7 @@ Propose entre 3 et 6 propositions de valeur courtes pour ce produit.`;
     systemPrompt: SUGGEST_VALUE_PROPS_SYSTEM_PROMPT,
     userPayload,
     responseSchema: suggestValuePropsResponseSchema,
+    jsonSchema: suggestValuePropsJsonSchema,
     logLabel: 'Value props suggestion',
   });
 
@@ -891,6 +892,8 @@ const suggestSubredditsResponseSchema = z.object({
   subreddits: z.array(z.string().min(1)).min(1),
 });
 
+const suggestSubredditsJsonSchema = obj({ subreddits: arr(str({ minLength: 1 }), { minItems: 1 }) });
+
 const SUGGEST_SUBREDDITS_SYSTEM_PROMPT = `Tu es un expert de Reddit. On te donne les informations d'un produit (nom, URL, description, audience) et, si disponible, le contenu de son depot GitHub. Tu dois proposer des subreddits REELS et ACTIFS ou l'audience cible discute et ou le produit serait pertinent.
 
 Regles :
@@ -940,6 +943,7 @@ Propose entre 3 et ${SUBREDDITS_MAX_COUNT} subreddits reels et pertinents pour c
     systemPrompt: SUGGEST_SUBREDDITS_SYSTEM_PROMPT,
     userPayload,
     responseSchema: suggestSubredditsResponseSchema,
+    jsonSchema: suggestSubredditsJsonSchema,
     logLabel: 'Subreddits suggestion',
   });
 
@@ -1008,6 +1012,8 @@ const suggestHnKeywordsResponseSchema = z.object({
   keywords: z.array(z.string().min(1)).min(1),
 });
 
+const suggestHnKeywordsJsonSchema = obj({ keywords: arr(str({ minLength: 1 }), { minItems: 1 }) });
+
 const SUGGEST_HN_KEYWORDS_SYSTEM_PROMPT = `Tu es un expert de Hacker News. On te donne les informations d'un produit (nom, URL, description, audience) et, si disponible, le contenu de son depot GitHub. Tu dois proposer des MOTS-CLES de recherche pour trouver, via l'API Algolia de Hacker News, des discussions pertinentes pour ce produit.
 
 Regles :
@@ -1047,6 +1053,7 @@ Propose entre 4 et ${HN_KEYWORDS_MAX_COUNT} mots-cles de recherche Hacker News p
     systemPrompt: SUGGEST_HN_KEYWORDS_SYSTEM_PROMPT,
     userPayload,
     responseSchema: suggestHnKeywordsResponseSchema,
+    jsonSchema: suggestHnKeywordsJsonSchema,
     logLabel: 'HN keywords suggestion',
   });
 
@@ -1099,6 +1106,8 @@ const suggestIntentKeywordsResponseSchema = z.object({
   intent_keywords: z.array(z.string().min(1)).min(1),
 });
 
+const suggestIntentKeywordsJsonSchema = obj({ intent_keywords: arr(str({ minLength: 1 }), { minItems: 1 }) });
+
 const SUGGEST_INTENT_KEYWORDS_SYSTEM_PROMPT = `Tu es un expert en detection d'intention d'achat sur les reseaux sociaux et forums. On te donne les informations d'un produit (nom, URL, description, audience) et, si disponible, le contenu de son depot GitHub. Tu dois proposer des EXPRESSIONS D'INTENTION : des bouts de phrase que quelqu'un ecrirait en exprimant un besoin que ce produit resout.
 
 Regles :
@@ -1137,6 +1146,7 @@ Propose entre 5 et ${INTENT_KEYWORDS_MAX_COUNT} expressions d'intention pour ce 
     systemPrompt: SUGGEST_INTENT_KEYWORDS_SYSTEM_PROMPT,
     userPayload,
     responseSchema: suggestIntentKeywordsResponseSchema,
+    jsonSchema: suggestIntentKeywordsJsonSchema,
     logLabel: 'Intent keywords suggestion',
   });
 
@@ -1183,13 +1193,9 @@ export async function generatePosts(
     );
   }
 
-  if (!resolveAiApiKey(config)) {
-    throw new ContentStudioError(
-      'Echec de la generation : client AI indisponible (clé AI_API_KEY ou GITHUB_TOKEN manquante).',
-    );
+  if (!isAiConfigured(config)) {
+    throw new ContentStudioError(`Echec de la generation : ${aiNotConfiguredMessage(config)}`);
   }
-
-  const client = createAiClient(config, { timeout: GENERATE_AI_TIMEOUT_MS });
 
   const language = product.content_language ?? 'fr';
   const voice = product.content_voice ?? product.reply_voice ?? 'professionnelle';
@@ -1225,38 +1231,20 @@ Langue: ${language}
 
 Genere exactement ${count} drafts, chacun avec un angle DIFFERENT.`;
 
-  let raw: string;
+  let parsed: unknown;
   try {
-    const response = await client.chat.completions.create({
-      model: config.AI_MODEL,
-      max_tokens: 2048,
-      ...jsonModeParams(config),
-      messages: [
-        { role: 'system', content: GENERATE_SYSTEM_PROMPT },
-        { role: 'user', content: userPayload },
-      ],
+    parsed = await createAi(config).json({
+      task: 'content.generate',
+      maxTokens: 2048,
+      timeoutMs: GENERATE_AI_TIMEOUT_MS,
+      system: GENERATE_SYSTEM_PROMPT,
+      user: userPayload,
+      schema: generateJsonSchema,
+      cacheSystem: true,
     });
-    logger.info('Content studio API usage', {
-      productId: product.id,
-      inputTokens: response.usage?.prompt_tokens,
-      outputTokens: response.usage?.completion_tokens,
-      model: response.model,
-      count,
-      targetSource,
-    });
-    raw = response.choices[0]?.message?.content ?? '';
   } catch (err) {
     throw new ContentStudioError(
       `Echec de la generation : ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = parseJsonResponse(raw);
-  } catch (err) {
-    throw new ContentStudioError(
-      `Echec de la generation : reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 
@@ -1331,6 +1319,16 @@ const generateThreadResponseSchema = z.object({
     .min(1),
 });
 
+const generateThreadJsonSchema = obj({
+  threads: arr(
+    obj({
+      angle: str({ minLength: 1, maxLength: 120 }),
+      tweets: arr(str({ minLength: 1, maxLength: 280 }), { minItems: 2, maxItems: 12 }),
+    }),
+    { minItems: 1 },
+  ),
+});
+
 const GENERATE_THREAD_SYSTEM_PROMPT = `Tu es un copywriter expert des threads X (Twitter) pour la promotion de produits.
 
 On va te demander d'écrire un ou plusieurs THREADS X au sujet d'un produit. Un thread est une suite de tweets liés qui raconte une histoire ou développe une idée.
@@ -1367,13 +1365,9 @@ export async function generateThread(
       `Echec de la generation : configuration AI indisponible : ${err instanceof Error ? err.message : String(err)}`,
     );
   }
-  if (!resolveAiApiKey(config)) {
-    throw new ContentStudioError(
-      'Echec de la generation : client AI indisponible (clé AI_API_KEY ou GITHUB_TOKEN manquante).',
-    );
+  if (!isAiConfigured(config)) {
+    throw new ContentStudioError(`Echec de la generation : ${aiNotConfiguredMessage(config)}`);
   }
-
-  const client = createAiClient(config, { timeout: GENERATE_AI_TIMEOUT_MS });
 
   const language = product.content_language ?? 'fr';
   const voice = product.content_voice ?? product.reply_voice ?? 'professionnelle';
@@ -1406,37 +1400,20 @@ Langue: ${language}
 
 Genere exactement ${count} thread(s), chacun avec un angle DIFFERENT.`;
 
-  let raw: string;
+  let parsed: unknown;
   try {
-    const response = await client.chat.completions.create({
-      model: config.AI_MODEL,
-      max_tokens: 2048,
-      ...jsonModeParams(config),
-      messages: [
-        { role: 'system', content: GENERATE_THREAD_SYSTEM_PROMPT },
-        { role: 'user', content: userPayload },
-      ],
+    parsed = await createAi(config).json({
+      task: 'content.thread',
+      maxTokens: 2048,
+      timeoutMs: GENERATE_AI_TIMEOUT_MS,
+      system: GENERATE_THREAD_SYSTEM_PROMPT,
+      user: userPayload,
+      schema: generateThreadJsonSchema,
+      cacheSystem: true,
     });
-    logger.info('Content studio thread API usage', {
-      productId: product.id,
-      inputTokens: response.usage?.prompt_tokens,
-      outputTokens: response.usage?.completion_tokens,
-      model: response.model,
-      count,
-    });
-    raw = response.choices[0]?.message?.content ?? '';
   } catch (err) {
     throw new ContentStudioError(
       `Echec de la generation : ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = parseJsonResponse(raw);
-  } catch (err) {
-    throw new ContentStudioError(
-      `Echec de la generation : reponse AI non-JSON : ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 

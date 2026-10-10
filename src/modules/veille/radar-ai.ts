@@ -7,9 +7,9 @@
  */
 import { z } from 'zod';
 import type { Config } from '../../config.js';
-import { createAiClient, jsonModeParams, parseJsonResponse } from '../../ai-client.js';
+import { createAi, type AiTask, type JsonObjectSchema } from '../../ai/index.js';
+import { arr, enumOf, num, obj, str } from '../../ai/schema.js';
 import type { ProductView } from '../../product-service.js';
-import { logger } from '../../logger.js';
 import { radarReportSchema, SOURCE_LABELS, type RadarMatch, type RadarReport } from './radar.js';
 
 const AI_TIMEOUT_MS = 90_000;
@@ -92,23 +92,49 @@ const scoreResponseSchema = z.object({
   ),
 });
 
-async function complete(config: Config, system: string, user: string, maxTokens: number) {
-  const client = createAiClient(config, { timeout: AI_TIMEOUT_MS });
-  const response = await client.chat.completions.create({
-    model: config.AI_MODEL,
-    max_tokens: maxTokens,
-    ...jsonModeParams(config),
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
-  });
-  logger.info('Radar produit API usage', {
-    inputTokens: response.usage?.prompt_tokens,
-    outputTokens: response.usage?.completion_tokens,
-    model: response.model,
-  });
-  return parseJsonResponse(response.choices[0]?.message?.content ?? '');
+/** Structured-output contracts (mirror the Zod schemas, which stay authoritative). */
+const scoreJsonSchema = obj({
+  items: arr(
+    obj({
+      id: str({ minLength: 1 }),
+      matches: arr(
+        obj({
+          product_id: str({ minLength: 1 }),
+          score: num(0, 1),
+          reason: str({ maxLength: 500 }),
+        }),
+      ),
+    }),
+  ),
+});
+
+const reportJsonSchema = obj({
+  titre: str({ minLength: 1, maxLength: 200 }),
+  resume: str({ minLength: 1, maxLength: 2000 }),
+  pertinence: str({ minLength: 1, maxLength: 2000 }),
+  idees: arr(
+    obj({
+      titre: str({ minLength: 1, maxLength: 200 }),
+      description: str({ minLength: 1, maxLength: 1500 }),
+      pour: arr(str({ minLength: 1, maxLength: 400 }), { minItems: 1 }),
+      contre: arr(str({ minLength: 1, maxLength: 400 }), { minItems: 1 }),
+      effort: enumOf(['S', 'M', 'L']),
+      impact: str({ minLength: 1, maxLength: 400 }),
+    }),
+    { minItems: 1 },
+  ),
+  recommandation: str({ minLength: 1, maxLength: 1500 }),
+});
+
+async function complete(
+  config: Config,
+  task: AiTask,
+  system: string,
+  user: string,
+  maxTokens: number,
+  schema: JsonObjectSchema,
+) {
+  return createAi(config).json({ task, system, user, maxTokens, timeoutMs: AI_TIMEOUT_MS, schema });
 }
 
 function formatIssues(error: z.ZodError): string {
@@ -139,7 +165,7 @@ Reponds STRICTEMENT en JSON :
 N'inclus dans "matches" que les produits avec un score >= 0.5. Aucun texte hors du JSON.`;
       const user = `ACTUALITES (${items.length})\n\n${items.map(describeItem).join('\n\n---\n\n')}`;
 
-      const raw = await complete(config, system, user, 4000);
+      const raw = await complete(config, 'radar.score', system, user, 4000, scoreJsonSchema);
       const parsed = scoreResponseSchema.safeParse(raw);
       if (!parsed.success) {
         throw new Error(`Reponse AI invalide (scoring) : ${formatIssues(parsed.error)}`);
@@ -182,7 +208,7 @@ Reponds STRICTEMENT en JSON :
 1 a 3 idees. Effort : S = moins d'une journee, M = quelques jours, L = plus d'une semaine.`;
       const user = `ACTUALITE\n\n${describeItem(item)}`;
 
-      const raw = await complete(config, system, user, 3000);
+      const raw = await complete(config, 'radar.report', system, user, 3000, reportJsonSchema);
       const parsed = radarReportSchema.safeParse(raw);
       if (!parsed.success) {
         throw new Error(`Reponse AI invalide (rapport) : ${formatIssues(parsed.error)}`);

@@ -504,7 +504,36 @@ function runRadarMigrations(database: Database.Database) {
   );
 }
 
-export type RadarProposalStatus = 'creating' | 'dry_run' | 'created' | 'failed' | 'capped';
+// AI usage ledger (ADR-0027). One row per model call: tokens, model and the
+// estimated USD cost (0 for GitHub Models). `month` is the Europe/Paris
+// YYYY-MM bucket the monthly budget is computed on. `ai_budget_alerts` makes
+// the 80 % / 100 % notifications fire once per month. Idempotent.
+function runAiUsageMigrations(database: Database.Database) {
+  database.exec(`CREATE TABLE IF NOT EXISTS ai_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    month TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    task TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+    stop_reason TEXT,
+    cost_usd REAL NOT NULL DEFAULT 0
+  )`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_ai_usage_month ON ai_usage(month, task)`);
+  database.exec(`CREATE TABLE IF NOT EXISTS ai_budget_alerts (
+    month TEXT NOT NULL,
+    level TEXT NOT NULL,
+    spent_usd REAL NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (month, level)
+  )`);
+}
+
+export type RadarProposalStatus ='creating' | 'dry_run' | 'created' | 'failed' | 'capped';
 
 export interface RadarProposalRecord {
   id: number;
@@ -852,6 +881,7 @@ export function getDb(): Database.Database {
     runWorkflowMigrations(db);
     runVeilleDigestMigrations(db);
     runRadarMigrations(db);
+    runAiUsageMigrations(db);
     runFacturationMigrations(db);
     runComptaMigrations(db);
     runCrmMigrations(db);

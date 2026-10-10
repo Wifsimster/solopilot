@@ -217,6 +217,7 @@ identifiants), elles renvoient une reponse vide ou minimale.
 | POST | `/api/veille-discord-webhook` | — | `{VEILLE_DISCORD_WEBHOOK_URL}` | Enregistre le webhook du digest consolide (URL Discord validee) **[configuré uniquement]** |
 | DELETE | `/api/veille-discord-webhook` | — | — | Supprime le webhook du digest consolide **[configuré uniquement]** |
 | GET | `/api/veille/digest-deliveries` | `limit` (1-100, def 20) | — | Journal des envois du digest consolide **[configuré uniquement]** |
+| GET | `/api/ai/usage` | — | — | Fournisseur et modeles IA actifs, depense estimee du mois (Europe/Paris) vs `AI_MONTHLY_BUDGET_USD`, niveau `ok`/`warning`/`exceeded`, detail par tache (ADR-0027). Aucune cle renvoyee **[configuré uniquement]** |
 | GET | `/api/veille/radar` | `limit` (1-100, def 30) | — | Radar produit : reglages effectifs, presence du token (booleen), produits cibles, propositions recentes (ADR-0026) **[configuré uniquement]** |
 | POST | `/api/veille/radar/proposals/:id/create` | — | — | Cree l'issue GitHub d'une proposition `dry_run`/`failed` (action explicite : ignore simulation et plafonds, exige `GITHUB_ISSUES_TOKEN`) **[configuré uniquement]** |
 | POST | `/api/runs/:id/send-discord` | — | — | Envoie le resume d'un run sur Discord **[configuré uniquement]** |

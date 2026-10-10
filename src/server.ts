@@ -205,6 +205,8 @@ import {
   createIssueForProposal,
 } from './modules/veille/radar-service.js';
 import { listProposals as listRadarProposals } from './modules/veille/radar-store.js';
+import { resolveAiModel, resolveAiProvider } from './ai/models.js';
+import { getAiBudgetStatus } from './ai/usage.js';
 import { resolveIssuesToken } from './connectors/github-issues.js';
 import {
   fetchGithubRepos,
@@ -250,7 +252,7 @@ function buildEnvDefaults(config: Config, cronSchedule: string) {
   const activeCollectCron =
     getCollectSchedule() || getSetting('COLLECT_CRON_SCHEDULE') || config.COLLECT_CRON_SCHEDULE;
   return {
-    AI_MODEL: config.AI_MODEL,
+    AI_MODEL: resolveAiModel(config, resolveAiProvider(config)),
     TWEETS_LOOKBACK_DAYS: String(config.TWEETS_LOOKBACK_DAYS),
     DRY_RUN: String(config.DRY_RUN),
     CRON_SCHEDULE: activeCron,
@@ -375,7 +377,13 @@ export function startServer(
   app.get('/api/setup', (c) => {
     const credentials = REQUIRED_CREDENTIALS.map((cred) => ({
       ...cred,
-      configured: !!process.env[cred.key] || !!getSetting(cred.key),
+      configured:
+        cred.key === 'GITHUB_TOKEN'
+          ? // The AI credential: any provider key counts (ADR-0027).
+            ['ANTHROPIC_API_KEY', 'AI_API_KEY', 'GITHUB_TOKEN'].some(
+              (key) => !!process.env[key]?.trim() || !!getSetting(key),
+            )
+          : !!process.env[cred.key] || !!getSetting(cred.key),
     }));
     return c.json({ configured: isConfigured, credentials });
   });
@@ -2361,6 +2369,9 @@ export function startServer(
       deleteSetting('VEILLE_DISCORD_WEBHOOK_URL');
       return c.json({ success: true, message: 'Webhook de veille supprimé.' });
     });
+
+    // --- AI usage & budget (ADR-0027) --- never returns any key.
+    app.get('/api/ai/usage', (c) => c.json(getAiBudgetStatus(config)));
 
     // --- Radar produit (ADR-0026) ---
 

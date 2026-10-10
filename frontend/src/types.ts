@@ -304,3 +304,23 @@ export interface RadarResponse {
   repoProducts: { id: string; name: string; repo: string }[];
   proposals: RadarProposal[];
 }
+
+/** GET /api/ai/usage — month-to-date AI spend (ADR-0027). Never carries a key. */
+export interface AiUsageResponse {
+  provider: 'anthropic' | 'github-models';
+  model: string;
+  fastModel: string;
+  month: string;
+  budgetUsd: number;
+  spentUsd: number;
+  level: 'ok' | 'warning' | 'exceeded';
+  enforced: boolean;
+  byTask: {
+    task: string;
+    calls: number;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens: number;
+    cost_usd: number;
+  }[];
+}
