@@ -58,7 +58,7 @@ Principe : ajouter une capacite metier = ajouter un workflow, pas reecrire la pl
 
 - **Collecte horaire multi-sources** — Scrape X (et Reddit/HN) toutes les heures, stockage avec deduplication automatique
 - **Resume quotidien a 07:30** — Un seul appel IA par jour sur tout le corpus accumule
-- **Filtrage et resume thematique** — Regroupe l'actualite par theme, resume en francais via GitHub Models (max 2000 caracteres)
+- **Filtrage et resume thematique** — Regroupe l'actualite par theme, resume en francais via l'API Anthropic (Claude) ou GitHub Models (max 2000 caracteres)
 - **Notification Discord** — Envoi automatique ou manuel du resume
 - **Synthese mensuelle** — Agregation des resumes quotidiens
 - **Radar produit** — Une actualite tres en rapport avec un produit devient une proposition d'issue GitHub (rapport marketing en francais : idees, pour/contre, effort, impact) dans le depot du produit. Desactive par defaut, simulation par defaut, plafonds journaliers ([ADR-0026](docs/adr/0026-veille-radar-produit-github-issues.md))
@@ -109,13 +109,17 @@ Cette architecture offre 24 fois plus de couverture qu'une execution unique, pou
 | `X_USERNAME` | Nom d'utilisateur X (sans @) | Votre profil X |
 | `X_SESSION_AUTH_TOKEN` | Cookie de session X | DevTools > Cookies > `auth_token` |
 | `X_SESSION_CSRF_TOKEN` | Token CSRF X | DevTools > Cookies > `ct0` |
-| `GITHUB_TOKEN` | Token GitHub (scope `models:read`) | [github.com/settings/tokens](https://github.com/settings/tokens) |
+| `ANTHROPIC_API_KEY` | Cle API Anthropic (fournisseur IA recommande). Variable d'environnement uniquement : jamais stockee en base ni renvoyee par l'API | [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys) |
+| `GITHUB_TOKEN` | Alternative gratuite : token GitHub (scope `models:read`) pour GitHub Models. Un seul fournisseur IA suffit | [github.com/settings/tokens](https://github.com/settings/tokens) |
 
 ### Variables optionnelles
 
 | Variable | Defaut | Description |
 |----------|--------|-------------|
-| `AI_MODEL` | `openai/gpt-4.1` | Modele IA ([catalogue](https://github.com/marketplace/models)) |
+| `AI_PROVIDER` | auto | `anthropic` ou `github-models`. Non defini : `anthropic` si `ANTHROPIC_API_KEY` est defini, sinon `github-models`. Retour arriere : `AI_PROVIDER=github-models` (ADR-0027) |
+| `AI_MODEL` | `claude-opus-5` / `openai/gpt-4.1` | Modele IA (defaut selon le fournisseur). Un identifiant de l'autre fournisseur est ignore avec un avertissement |
+| `AI_MODEL_FAST` | `AI_MODEL` | Modele du tri horaire et du scoring radar (gros volume). Options moins cheres : `claude-sonnet-5`, `claude-haiku-4-5` |
+| `AI_MONTHLY_BUDGET_USD` | `200` | Budget IA mensuel (Anthropic). Alerte a 80 % (logs, Discord, Parametres), arret des workflows non essentiels a 100 % (le digest et le tri continuent) |
 | `TWEETS_LOOKBACK_DAYS` | `1` | Nombre de jours a scanner |
 | `DRY_RUN` | `false` | Mode test (ne publie pas) |
 | `CRON_SCHEDULE` | `30 7 * * *` | Cron de publication (07:30 par defaut) |
@@ -167,7 +171,7 @@ docker compose up -d
 
 - **Backend :** Node.js 24, Hono v4, TypeScript (mode strict)
 - **Base de donnees :** SQLite (better-sqlite3, mode WAL)
-- **IA :** GitHub Models (SDK OpenAI v6)
+- **IA :** API Anthropic (SDK officiel `@anthropic-ai/sdk`) ou GitHub Models (SDK OpenAI v6), derriere un port unique (`src/ai/`, ADR-0027)
 - **Frontend :** React 19, React Router 7, Tailwind CSS 4, Radix UI
 - **Infrastructure :** Docker, GitHub Actions, GitHub Container Registry
 

@@ -1,4 +1,8 @@
 import { z, type ZodIssue } from 'zod';
+import { logger } from './logger.js';
+
+export const AI_PROVIDER_VALUES = ['anthropic', 'github-models'] as const;
+export type AiProviderSetting = (typeof AI_PROVIDER_VALUES)[number];
 
 /** Discord webhook URL — shared by every webhook setting (global, veille). */
 export const discordWebhookUrlSchema = z
@@ -24,15 +28,41 @@ const configSchema = z.object({
   X_GQL_USER_BY_SCREEN_NAME_ID: z.string().optional(),
   X_GQL_HOME_TIMELINE_ID: z.string().optional(),
 
-  // AI provider credentials. Solopilot talks to any OpenAI-compatible endpoint.
-  // The default provider is GitHub Models (free; needs a fine-grained PAT with
-  // the `models:read` scope). To use OpenRouter instead, set AI_BASE_URL +
-  // AI_API_KEY below. GITHUB_TOKEN stays optional and, when present, also powers
-  // GitHub repo-context enrichment during content generation.
+  // AI provider (ADR-0027). Two adapters behind one port (src/ai/):
+  // - anthropic: official SDK, ANTHROPIC_API_KEY (env only, never stored in DB).
+  // - github-models: any OpenAI-compatible endpoint. Default GitHub Models
+  //   (fine-grained PAT with `models:read` in GITHUB_TOKEN); OpenRouter via
+  //   AI_BASE_URL + AI_API_KEY. GITHUB_TOKEN also powers GitHub repo-context
+  //   enrichment during content generation.
+  // AI_PROVIDER unset = anthropic when ANTHROPIC_API_KEY is set, else
+  // github-models. An unknown value is ignored (warned) rather than failing
+  // the whole config.
+  AI_PROVIDER: z
+    .string()
+    .optional()
+    .transform((v): AiProviderSetting | undefined => {
+      const value = v?.trim();
+      if (!value) return undefined;
+      if ((AI_PROVIDER_VALUES as readonly string[]).includes(value)) return value as AiProviderSetting;
+      logger.warn('AI_PROVIDER ignored: unknown value', { value });
+      return undefined;
+    }),
+  // Empty value (e.g. `ANTHROPIC_API_KEY=` in .env) = unset.
+  ANTHROPIC_API_KEY: z
+    .string()
+    .optional()
+    .transform((v) => v?.trim() || undefined),
   GITHUB_TOKEN: z.string().min(1).optional(),
   AI_BASE_URL: z.string().url().default('https://models.github.ai/inference'),
   AI_API_KEY: z.string().min(1).optional(),
-  AI_MODEL: z.string().default('openai/gpt-4.1'),
+  // Model ids. Unset = provider default (claude-opus-5 / openai/gpt-4.1).
+  // AI_MODEL_FAST is used by high-volume classification (triage, radar
+  // scoring) and falls back to AI_MODEL.
+  AI_MODEL: z.string().optional(),
+  AI_MODEL_FAST: z.string().optional(),
+  // Monthly AI budget in USD (Anthropic only): warning at 80 %, non-essential
+  // workflows stopped at 100 %. Invalid/empty = 200.
+  AI_MONTHLY_BUDGET_USD: z.coerce.number().positive().catch(200),
   TWEETS_LOOKBACK_DAYS: z.coerce.number().int().positive().default(1),
   // Hard cap on the number of accumulated items fed to the AI in a single digest.
   // Bounds the prompt size so a backlog can never inflate the request past the
@@ -82,9 +112,9 @@ const configSchema = z.object({
   // value must not fail the whole config, hence no min(1)).
   GITHUB_ISSUES_TOKEN: z.string().optional(),
   })
-  .refine((c) => Boolean(c.AI_API_KEY ?? c.GITHUB_TOKEN), {
+  .refine((c) => Boolean(c.ANTHROPIC_API_KEY ?? c.AI_API_KEY ?? c.GITHUB_TOKEN), {
     message:
-      'Configurez un fournisseur AI : AI_API_KEY (OpenRouter / compatible OpenAI) ou GITHUB_TOKEN (GitHub Models).',
+      'Configurez un fournisseur AI : ANTHROPIC_API_KEY (Anthropic), AI_API_KEY (OpenRouter / compatible OpenAI) ou GITHUB_TOKEN (GitHub Models).',
     path: ['GITHUB_TOKEN'],
   });
 
@@ -124,10 +154,10 @@ export const REQUIRED_CREDENTIALS = [
   },
   {
     key: 'GITHUB_TOKEN',
-    label: 'Fournisseur AI — GitHub Models (par défaut) ou OpenRouter',
+    label: 'Fournisseur AI — Anthropic (recommandé), GitHub Models ou OpenRouter',
     docUrl: 'https://github.com/settings/tokens?type=beta',
     howToFind:
-      'Deux options. <strong>GitHub Models (gratuit)</strong> : créez un token sur <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">github.com/settings/tokens</a> (Fine-grained), scope <code>models:read</code>, renseignez <code>GITHUB_TOKEN</code> (commence par <code>github_pat_...</code>). <strong>OpenRouter</strong> : renseignez plutôt <code>AI_BASE_URL=https://openrouter.ai/api/v1</code> + <code>AI_API_KEY=sk-or-...</code> et un <code>AI_MODEL</code> supporté. Un seul des deux suffit.',
+      'Trois options. <strong>Anthropic</strong> : créez une clé sur <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a> et renseignez <code>ANTHROPIC_API_KEY</code> dans le fichier <code>.env</code> (variable d\'environnement uniquement, jamais en base). <strong>GitHub Models (gratuit)</strong> : token Fine-grained sur <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">github.com/settings/tokens</a>, scope <code>models:read</code>, dans <code>GITHUB_TOKEN</code>. <strong>OpenRouter</strong> : <code>AI_BASE_URL=https://openrouter.ai/api/v1</code> + <code>AI_API_KEY=sk-or-...</code>. Une seule option suffit ; <code>AI_PROVIDER</code> force le choix.',
   },
 ] as const;
 

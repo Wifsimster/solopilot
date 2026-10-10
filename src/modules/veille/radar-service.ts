@@ -9,7 +9,9 @@
  * bound what it can do.
  */
 import type { Config } from '../../config.js';
-import { resolveAiApiKey } from '../../ai-client.js';
+import { isAiConfigured, AiError } from '../../ai/index.js';
+import { assertWithinBudget } from '../../ai/usage.js';
+import { resolveAiProvider } from '../../ai/models.js';
 import { getTodayDateParis } from '../../date-utils.js';
 import { listProducts, toProductView } from '../../product-service.js';
 import { parseGithubRepoUrl } from '../../github-import.js';
@@ -47,6 +49,7 @@ export type RadarSkipReason =
   | 'disabled'
   | 'busy'
   | 'no_ai_key'
+  | 'budget_exceeded'
   | 'no_repo_products'
   | 'no_candidates';
 
@@ -142,9 +145,21 @@ export async function runProductRadar(config: Config, deps: RadarDeps = {}): Pro
 
   if (!settings.enabled) return { ...base, skipped: 'disabled' };
   if (running) return { ...base, skipped: 'busy' };
-  if (!deps.ai && !resolveAiApiKey(config)) {
+  if (!deps.ai && !isAiConfigured(config)) {
     logger.info('Radar produit skipped: no AI key configured');
     return { ...base, skipped: 'no_ai_key' };
+  }
+  if (!deps.ai) {
+    // Non-essential (ADR-0027): skip cleanly once the monthly budget is spent.
+    try {
+      assertWithinBudget(config, resolveAiProvider(config), 'radar.score');
+    } catch (err) {
+      if (err instanceof AiError && err.code === 'budget_exceeded') {
+        logger.warn('Radar produit skipped: monthly AI budget exhausted');
+        return { ...base, skipped: 'budget_exceeded' };
+      }
+      throw err;
+    }
   }
 
   running = true;

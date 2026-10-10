@@ -1,7 +1,7 @@
 import type { Config } from './config.js';
 import type { Item } from './ports.js';
 import type { ProductView } from './product-service.js';
-import { createAiClient } from './ai-client.js';
+import { createAi } from './ai/index.js';
 import { logger } from './logger.js';
 
 const SYSTEM_PROMPT = `You are a tech news curator. You receive a list of items aggregated from multiple sources (X / Twitter, Reddit, Hacker News and YouTube).
@@ -81,7 +81,7 @@ Use a professional but engaging tone.`;
 const AI_TIMEOUT_MS = 60_000;
 
 export function createAIFilter(config: Config) {
-  const client = createAiClient(config, { timeout: AI_TIMEOUT_MS });
+  const ai = createAi(config);
 
   return { filterAndSummarize, synthesizeMonthlySummary };
 
@@ -130,32 +130,20 @@ export function createAIFilter(config: Config) {
       .filter((s) => s.length > 0)
       .join('\n\n');
 
-    const response = await client.chat.completions.create({
-      model: config.AI_MODEL,
-      max_tokens: 1024,
-      messages: [
-        { role: 'system', content: buildSystemPrompt(product) },
-        {
-          role: 'user',
-          content: `Date: ${(date ?? new Date()).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}\n\nVoici les éléments collectés sur les ${config.TWEETS_LOOKBACK_DAYS} derniers jours, groupés par source :\n\n${sections}`,
-        },
-      ],
+    const text = await ai.text({
+      task: 'veille.digest',
+      maxTokens: 1024,
+      timeoutMs: AI_TIMEOUT_MS,
+      system: buildSystemPrompt(product),
+      user: `Date: ${(date ?? new Date()).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}\n\nVoici les éléments collectés sur les ${config.TWEETS_LOOKBACK_DAYS} derniers jours, groupés par source :\n\n${sections}`,
     });
 
-    const text = response.choices[0]?.message?.content ?? '';
-
-    logger.info('GitHub Models API usage', {
-      inputTokens: response.usage?.prompt_tokens,
-      outputTokens: response.usage?.completion_tokens,
-      model: response.model,
-    });
-
-    if (text.trim() === 'NO_TECH_NEWS_FOUND') {
+    if (text === 'NO_TECH_NEWS_FOUND') {
       logger.info('No AI/tech-related news found in tweets');
       return null;
     }
 
-    return text.trim();
+    return text;
   }
 
   async function synthesizeMonthlySummary(
@@ -182,26 +170,14 @@ export function createAIFilter(config: Config) {
       .map((s, i) => `[Jour ${i + 1}]\n${s}`)
       .join('\n\n---\n\n');
 
-    const response = await client.chat.completions.create({
-      model: config.AI_MODEL,
-      max_tokens: 2048,
-      messages: [
-        { role: 'system', content: MONTHLY_SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: `Voici les résumés quotidiens IA & tech du mois de ${monthNames[month - 1]} ${year} (${weeklySummaries.length} jours) :\n\n${summaryTexts}`,
-        },
-      ],
+    const text = await ai.text({
+      task: 'veille.monthly',
+      maxTokens: 2048,
+      timeoutMs: AI_TIMEOUT_MS,
+      system: MONTHLY_SYSTEM_PROMPT,
+      user: `Voici les résumés quotidiens IA & tech du mois de ${monthNames[month - 1]} ${year} (${weeklySummaries.length} jours) :\n\n${summaryTexts}`,
     });
 
-    const text = response.choices[0]?.message?.content ?? '';
-
-    logger.info('Monthly summary API usage', {
-      inputTokens: response.usage?.prompt_tokens,
-      outputTokens: response.usage?.completion_tokens,
-      model: response.model,
-    });
-
-    return text.trim() || null;
+    return text || null;
   }
 }
