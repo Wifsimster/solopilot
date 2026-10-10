@@ -42,6 +42,8 @@ interface ProductLite {
   name: string;
 }
 
+const FULL_ACCESS = '*';
+
 function formatDate(ms: number | null): string {
   if (!ms) return 'jamais';
   return new Date(ms).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
@@ -61,6 +63,8 @@ export function ApiTokensCard() {
   const [flash, setFlash] = useState<Flash>(null);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
+  // Full access is the default (decision of 2026-10-10); scoped access stays available.
+  const [fullAccess, setFullAccess] = useState(true);
   const [scopes, setScopes] = useState<string[]>([]);
   const [allProducts, setAllProducts] = useState(true);
   const [productIds, setProductIds] = useState<string[]>([]);
@@ -78,7 +82,11 @@ export function ApiTokensCard() {
       const res = await fetch('/api/tokens', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, scopes, productIds: allProducts ? null : productIds }),
+        body: JSON.stringify(
+          fullAccess
+            ? { name, scopes: [FULL_ACCESS], productIds: null }
+            : { name, scopes, productIds: allProducts ? null : productIds },
+        ),
       });
       const body = (await res.json()) as unknown;
       if (!res.ok) {
@@ -87,6 +95,7 @@ export function ApiTokensCard() {
       }
       setSecret((body as { secret: string }).secret);
       setName('');
+      setFullAccess(true);
       setScopes([]);
       setProductIds([]);
       setAllProducts(true);
@@ -114,17 +123,20 @@ export function ApiTokensCard() {
     }
   };
 
+  const scopedOptions = (data?.scopes ?? []).filter((s) => s.id !== FULL_ACCESS);
   const canCreate =
-    name.trim().length > 0 && scopes.length > 0 && (allProducts || productIds.length > 0);
+    name.trim().length > 0 &&
+    (fullAccess || (scopes.length > 0 && (allProducts || productIds.length > 0)));
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Jetons d'API</CardTitle>
         <CardDescription>
-          Accès limité pour un agent ou un script, sans le mot de passe administrateur. Chaque jeton
-          n'atteint que les routes de ses portées (tout le reste est refusé), éventuellement pour
-          certains produits seulement. Envoi : <code className="font-mono text-xs">Authorization: Bearer sp_…</code>{' '}
+          Accès pour un agent ou un script, sans le mot de passe administrateur. Un jeton en accès
+          complet atteint toute l'API, comme l'administrateur ; un jeton limité n'atteint que les
+          routes de ses portées (tout le reste est refusé), éventuellement pour certains produits
+          seulement. Chaque jeton se révoque à tout moment. Envoi : <code className="font-mono text-xs">Authorization: Bearer sp_…</code>{' '}
           ou <code className="font-mono text-xs">X-Api-Token: sp_…</code>.
         </CardDescription>
       </CardHeader>
@@ -167,49 +179,85 @@ export function ApiTokensCard() {
             />
           </div>
           <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Portées</legend>
-            {data?.scopes.map((s) => (
-              <label key={s.id} className="flex items-start gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 size-4 rounded border-input accent-primary"
-                  checked={scopes.includes(s.id)}
-                  onChange={() => setScopes(toggle(scopes, s.id))}
-                />
-                <span>
-                  <code className="font-mono text-xs">{s.id}</code>{' '}
-                  <span className="text-muted-foreground">— {s.label}</span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Produits</legend>
-            <label className="flex items-center gap-2 text-sm">
+            <legend className="text-sm font-medium">Accès</legend>
+            <label className="flex items-start gap-2 text-sm">
               <input
-                type="checkbox"
-                className="size-4 rounded border-input accent-primary"
-                checked={allProducts}
-                onChange={() => setAllProducts(!allProducts)}
+                type="radio"
+                name="token-access"
+                className="mt-0.5 size-4 border-input accent-primary"
+                checked={fullAccess}
+                onChange={() => setFullAccess(true)}
               />
-              Tous les produits
+              <span>
+                <span className="font-medium">Accès complet</span>{' '}
+                <span className="text-muted-foreground">
+                  — toutes les routes et méthodes, tous les produits, comme l'administrateur
+                </span>
+              </span>
             </label>
-            {!allProducts && (
-              <div className="grid gap-1 sm:grid-cols-2">
-                {(products ?? []).map((p) => (
-                  <label key={p.id} className="flex items-center gap-2 text-sm">
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="token-access"
+                className="mt-0.5 size-4 border-input accent-primary"
+                checked={!fullAccess}
+                onChange={() => setFullAccess(false)}
+              />
+              <span>
+                <span className="font-medium">Accès limité</span>{' '}
+                <span className="text-muted-foreground">— seulement les portées choisies</span>
+              </span>
+            </label>
+          </fieldset>
+          {!fullAccess && (
+            <>
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">Portées</legend>
+                {scopedOptions.map((s) => (
+                  <label key={s.id} className="flex items-start gap-2 text-sm">
                     <input
                       type="checkbox"
-                      className="size-4 rounded border-input accent-primary"
-                      checked={productIds.includes(p.id)}
-                      onChange={() => setProductIds(toggle(productIds, p.id))}
+                      className="mt-0.5 size-4 rounded border-input accent-primary"
+                      checked={scopes.includes(s.id)}
+                      onChange={() => setScopes(toggle(scopes, s.id))}
                     />
-                    {p.name} <code className="font-mono text-xs text-muted-foreground">{p.id}</code>
+                    <span>
+                      <code className="font-mono text-xs">{s.id}</code>{' '}
+                      <span className="text-muted-foreground">— {s.label}</span>
+                    </span>
                   </label>
                 ))}
-              </div>
-            )}
-          </fieldset>
+              </fieldset>
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">Produits</legend>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-4 rounded border-input accent-primary"
+                    checked={allProducts}
+                    onChange={() => setAllProducts(!allProducts)}
+                  />
+                  Tous les produits
+                </label>
+                {!allProducts && (
+                  <div className="grid gap-1 sm:grid-cols-2">
+                    {(products ?? []).map((p) => (
+                      <label key={p.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="size-4 rounded border-input accent-primary"
+                          checked={productIds.includes(p.id)}
+                          onChange={() => setProductIds(toggle(productIds, p.id))}
+                        />
+                        {p.name}{' '}
+                        <code className="font-mono text-xs text-muted-foreground">{p.id}</code>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </fieldset>
+            </>
+          )}
           <Button type="submit" disabled={saving || !canCreate}>
             <KeyRound className="size-4" />
             Créer le jeton
@@ -238,14 +286,20 @@ export function ApiTokensCard() {
                     )}
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    {t.scopes.map((s) => (
-                      <Badge key={s} variant="outline" className="font-mono">
-                        {s}
-                      </Badge>
-                    ))}
-                    <Badge variant="brand">
-                      {t.productIds ? t.productIds.join(', ') : 'tous les produits'}
-                    </Badge>
+                    {t.scopes.includes(FULL_ACCESS) ? (
+                      <Badge variant="warning">Accès complet</Badge>
+                    ) : (
+                      <>
+                        {t.scopes.map((s) => (
+                          <Badge key={s} variant="outline" className="font-mono">
+                            {s}
+                          </Badge>
+                        ))}
+                        <Badge variant="brand">
+                          {t.productIds ? t.productIds.join(', ') : 'tous les produits'}
+                        </Badge>
+                      </>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Créé le {formatDate(t.createdAt)} · dernière utilisation : {formatDate(t.lastUsedAt)}

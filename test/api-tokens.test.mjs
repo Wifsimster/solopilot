@@ -283,3 +283,105 @@ test('ledger: unknown product is 404, bad source/since are 400, since filters', 
   assert.ok(rows.length > 0);
   assert.ok(rows.every((r) => r.occurred_on >= '2026-09-01'));
 });
+
+// --- Full-access scope `*` (decision of 2026-10-10) ---
+
+test('full-access scope: alone, every product; combinations are 400', async () => {
+  let res = await app.request('/api/tokens', json(ADMIN, { name: 'x', scopes: ['*', 'comptabilite:read'] }));
+  assert.equal(res.status, 400);
+  res = await app.request('/api/tokens', json(ADMIN, { name: 'x', scopes: ['*'], productIds: ['toko'] }));
+  assert.equal(res.status, 400);
+  const list = await (await app.request('/api/tokens', { headers: ADMIN })).json();
+  assert.equal(list.scopes[0].id, '*');
+  assert.match(list.scopes[0].label, /Accès complet/);
+});
+
+test('full-access token reaches every route, method and product like the admin', async () => {
+  const { token, secret } = await createToken({ name: 'openclaw', scopes: ['*'] });
+  assert.deepEqual(token.scopes, ['*']);
+  assert.equal(token.productIds, null);
+  const h = bearer(secret);
+
+  const cases = [
+    ['GET', '/api/settings'],
+    ['GET', '/api/config'],
+    ['GET', '/api/status'],
+    ['GET', '/api/cockpit?productId=autre'],
+    ['GET', '/api/facturation/invoices?productId=autre'],
+    ['GET', '/api/crm/contacts?productId=toko'],
+    ['GET', '/api/agenda?productId=autre'],
+    ['GET', '/api/workflows'],
+    ['GET', '/api/products/toko'],
+    ['GET', '/api/comptabilite?productId=autre'],
+    ['GET', '/api/comptabilite/ledger'],
+    ['GET', '/api/comptabilite/ledger?activity=autre'],
+    ['POST', '/api/comptabilite/config?productId=autre', { activityType: 'bnc', declarationPeriod: 'trimestrielle' }],
+    ['POST', '/api/crm/contacts?productId=autre', { name: 'Ada' }],
+    ['GET', '/api/tokens/audit'],
+    ['GET', '/'],
+    ['GET', '/healthz'],
+  ];
+  for (const [method, url, body] of cases) {
+    const init = (headers) =>
+      body ? json(headers, body) : { method, headers };
+    const asToken = await app.request(url, init(h));
+    const asAdmin = await app.request(url, init(ADMIN));
+    assert.ok(![401, 403].includes(asToken.status), `${method} ${url} must be allowed, got ${asToken.status}`);
+    assert.equal(asToken.status, asAdmin.status, `${method} ${url}: token ${asToken.status} vs admin ${asAdmin.status}`);
+  }
+  assert.equal((await app.request('/api/settings', { headers: h })).status, 200);
+  assert.equal((await app.request('/api/config', { headers: h })).status, 200);
+
+  // Ledger write on any product, stamped with the token id.
+  const res = await app.request(
+    '/api/comptabilite/ledger?productId=autre',
+    json(h, { ...GG1, external_ref: 'FULL-1', source: 'agent:openclaw' }),
+  );
+  assert.equal(res.status, 201);
+  assert.equal((await res.json()).api_token_id, token.id);
+
+  // Products: the admin view (all products, full objects), not the projection.
+  const products = await (await app.request('/api/products', { headers: h })).json();
+  const adminProducts = await (await app.request('/api/products', { headers: ADMIN })).json();
+  assert.deepEqual(products, adminProducts);
+
+  // X-Api-Token works too; audit still records every call.
+  assert.equal((await app.request('/api/settings', { headers: { 'X-Api-Token': secret } })).status, 200);
+  const audit = await (await app.request(`/api/tokens/audit?tokenId=${token.id}&limit=500`, { headers: ADMIN })).json();
+  assert.ok(audit.length >= cases.length);
+  assert.ok(audit.every((a) => a.outcome === 'allowed'));
+  assert.ok(audit.some((a) => a.path === '/api/comptabilite/ledger' && a.product_id === 'autre' && a.status === 201));
+});
+
+test('full-access token manages tokens but never reads a secret or hash', async () => {
+  const { token: full, secret } = await createToken({ name: 'full-mgmt', scopes: ['*'] });
+  const h = bearer(secret);
+
+  const created = await app.request('/api/tokens', json(h, { name: 'child', scopes: ['comptabilite:read'] }));
+  assert.equal(created.status, 201);
+  const { token: child, secret: childSecret } = await created.json();
+
+  const listRes = await app.request('/api/tokens', { headers: h });
+  assert.equal(listRes.status, 200);
+  const text = await listRes.text();
+  for (const s of [secret, childSecret]) {
+    assert.ok(!text.includes(s.slice(3)), 'secrets are never listed');
+    assert.ok(!text.includes(tokens.hashToken(s)), 'hashes are never listed');
+  }
+  const rows = db.prepare('SELECT * FROM api_tokens WHERE id IN (?, ?)').all(full.id, child.id);
+  assert.ok(rows.every((r) => !JSON.stringify(r).includes(secret.slice(3)) && !JSON.stringify(r).includes(childSecret.slice(3))));
+
+  // The child stays scoped: no settings.
+  assert.equal((await app.request('/api/settings', { headers: bearer(childSecret) })).status, 403);
+  assert.equal((await app.request(`/api/tokens/${child.id}`, { method: 'DELETE', headers: h })).status, 200);
+  assert.equal((await app.request('/api/comptabilite?productId=toko', { headers: bearer(childSecret) })).status, 401);
+});
+
+test('revoked full-access token is 401 everywhere', async () => {
+  const { token, secret } = await createToken({ name: 'full-rev', scopes: ['*'] });
+  assert.equal((await app.request('/api/settings', { headers: bearer(secret) })).status, 200);
+  assert.equal((await app.request(`/api/tokens/${token.id}`, { method: 'DELETE', headers: ADMIN })).status, 200);
+  for (const url of ['/api/settings', '/api/products', '/api/tokens', '/api/comptabilite/ledger?productId=toko']) {
+    assert.equal((await app.request(url, { headers: bearer(secret) })).status, 401, url);
+  }
+});

@@ -4,7 +4,7 @@ Date: 2026-10-10
 
 ## Status
 
-Proposed
+Accepted. Amended 2026-10-10: full-access scope `*` (see below).
 
 ## Context
 
@@ -28,12 +28,12 @@ the same payout must not be written twice.
    - The token middleware runs before Basic auth. A request that carries a
      token is authenticated by that token only. Requests without a token
      behave as before.
-   - **Default deny.** A scope maps to an explicit list of (method, exact path)
+   - **Default deny** for scoped tokens (see the amendment for `*`). A scope maps to an explicit list of (method, exact path)
      rules (`ROUTE_RULES`). Any other route, including `/api/tokens`, non-API
      paths and `HEAD`, returns 403 for a token. Initial scopes:
      `comptabilite:read`, `comptabilite:write` (not implying read),
      `products:read` (projection `id`, `name`, `archived`). A new scope is a
-     label plus rules; no wildcards.
+     label plus rules; no wildcards other than `*`.
    - Optional product restriction, checked on the same `productId` / `activity`
      query parameter the handlers read (default product included).
    - Unknown, malformed or revoked tokens return a generic 401. Ten failures in
@@ -42,8 +42,9 @@ the same payout must not be written twice.
      process.
    - Audit: one row per token request (token id, method, path, product, status,
      outcome, client), never bodies, kept 90 days. `last_used_at` is updated.
-   - Management (create, list, revoke, audit) is admin only, in Settings >
-     « Jetons d'API ». Revocation is soft so the audit keeps its token.
+   - Management (create, list, revoke, audit) is in Settings > « Jetons
+     d'API », for the admin and, since the amendment, full-access tokens.
+     Revocation is soft so the audit keeps its token.
 2. **Idempotent ledger writes.** New nullable columns `external_ref`, `source`,
    `api_token_id` (added by the idempotent `runComptaMigrations`, as in the
    rest of `db.ts`) and a partial unique index on `(product_id, external_ref)
@@ -63,10 +64,38 @@ the same payout must not be written twice.
 4. `server.ts` exposes `createApp()` (routes without listening) so tests drive
    the real app through `app.request()`.
 
+## Amendment (2026-10-10): full-access scope
+
+Damien decided that OpenClaw gets full access to Solopilot: « je veux
+qu'OpenClaw ait un full access, donc ne limite pas les accès ». Least privilege
+stays available but is no longer the default.
+
+- New scope `*`, labelled « Accès complet ». A token with it reaches every
+  route and method (API and non-API, `HEAD` included) and every product,
+  exactly like the admin password. `GET /api/products` returns the admin view,
+  not the scoped projection.
+- `*` must be the only scope and cannot carry a product restriction (400).
+- It also reaches `/api/tokens*`: a full-access token can create, list and
+  revoke tokens and read the audit. We allowed this because the decision is
+  "no limits". It cannot read any token's secret: only the SHA-256 is stored
+  and the API never returns it, to anyone.
+- Everything else is unchanged and applies to full-access tokens too: hash-only
+  storage, secret shown once, revocation (401 right away), audit of every
+  request, failure rate limit. Ledger entries still record `api_token_id`.
+- Settings preselects « Accès complet »; « Accès limité » keeps the scope and
+  product choices. Scoped tokens behave exactly as before.
+- The CLI accepts `SOLOPILOT_PROXY_BASIC=user:pass` for a forward-auth proxy:
+  it sends `Authorization: Basic …` and moves the token to `X-Api-Token`.
+
+Consequence: a leaked full-access token is as powerful as `ADMIN_PASSWORD`
+until it is revoked. Mitigations: per-token revocation without rotating the
+admin password, the audit log, and `last_used_at`.
+
 ## Consequences
 
-- Agents get least-privilege access with an audit trail and can be cut off by
-  revoking one token, without rotating `ADMIN_PASSWORD`.
+- Agents get either full access (`*`) or least-privilege access, always with an
+  audit trail, and can be cut off by revoking one token, without rotating
+  `ADMIN_PASSWORD`.
 - With `ADMIN_PASSWORD` unset the API is still open to anyone; tokens are then
   restrictions on their holders only. Production must keep `ADMIN_PASSWORD`.
 - The rate limiter is in memory: it resets on restart and is per instance.

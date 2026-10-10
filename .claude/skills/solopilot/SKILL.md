@@ -23,6 +23,8 @@ Configure via env or flags:
 | Base URL | `SOLOPILOT_API_URL` | `--url <u>` | `http://localhost:3000` |
 | Password | `SOLOPILOT_ADMIN_PASSWORD` (or `ADMIN_PASSWORD`) | `--password <p>` | — |
 | Product scope | `SOLOPILOT_PRODUCT_ID` | `--product <id>` | — |
+| API token | `SOLOPILOT_TOKEN` (`sp_…`, wins over the password) | — | — |
+| Forward-auth proxy | `SOLOPILOT_PROXY_BASIC` (`user:pass`; token then sent in `X-Api-Token`) | — | — |
 
 Auth is HTTP Basic `admin:<password>`, only enforced when the server has
 `ADMIN_PASSWORD` set. The CLI sends no Origin/Referer header, so the server's
@@ -129,8 +131,9 @@ solopilot --product toko post comptabilite/ledger '{"kind":"recette","amount_cen
 solopilot --product toko get comptabilite/ledger -q since=2026-09-01
 ```
 
-A scoped API token (`SOLOPILOT_TOKEN=sp_…`) replaces the admin password and only
-reaches the routes of its scopes (ADR-0029, `docs/api.md`).
+An API token (`SOLOPILOT_TOKEN=sp_…`) replaces the admin password. A full-access
+token (scope `*`) reaches every route like the admin; a scoped token only the
+routes of its scopes (ADR-0029, `docs/api.md`).
 
 ### CRM — contacts, deals, interactions
 
