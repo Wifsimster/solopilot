@@ -117,8 +117,9 @@ Cette architecture offre 24 fois plus de couverture qu'une execution unique, pou
 | Variable | Defaut | Description |
 |----------|--------|-------------|
 | `AI_PROVIDER` | auto | `anthropic` ou `github-models`. Non defini : `anthropic` si `ANTHROPIC_API_KEY` est defini, sinon `github-models`. Retour arriere : `AI_PROVIDER=github-models` (ADR-0027) |
-| `AI_MODEL` | `claude-opus-5` / `openai/gpt-4.1` | Modele IA (defaut selon le fournisseur). Un identifiant de l'autre fournisseur est ignore avec un avertissement |
-| `AI_MODEL_FAST` | `AI_MODEL` | Modele du tri horaire et du scoring radar (gros volume). Options moins cheres : `claude-sonnet-5`, `claude-haiku-4-5` |
+| `AI_MODEL` | `claude-haiku-5-5` / `openai/gpt-4.1` | Modele principal (digest, resume mensuel, rapports radar, signaux, studio). La page Parametres > Modeles IA prend le pas sur cette variable. Un identifiant de l'autre fournisseur est ignore avec un avertissement |
+| `AI_MODEL_FAST` | `claude-haiku-5-5` (`AI_MODEL` sur GitHub Models) | Modele rapide : tri horaire et scoring radar (gros volume). Reglable aussi dans Parametres |
+| `AI_EFFORT` / `AI_EFFORT_FAST` | par tache | Effort par classe (`low`, `medium`, `high`, `xhigh`, `max`) si le modele l'accepte. Non defini : `low` pour le tri, `medium` pour le studio, `high` pour les rapports |
 | `AI_MONTHLY_BUDGET_USD` | `200` | Budget IA mensuel (Anthropic). Alerte a 80 % (logs, Discord, Parametres), arret des workflows non essentiels a 100 % (le digest et le tri continuent) |
 | `TWEETS_LOOKBACK_DAYS` | `1` | Nombre de jours a scanner |
 | `DRY_RUN` | `false` | Mode test (ne publie pas) |

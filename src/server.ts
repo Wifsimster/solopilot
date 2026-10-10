@@ -45,6 +45,7 @@ import {
   getProductSettingsMap,
 } from './settings-service.js';
 import {
+  AI_SELECTION_SETTING_KEYS,
   REQUIRED_CREDENTIALS,
   discordWebhookUrlSchema,
   veilleDigestModeSchema,
@@ -206,6 +207,13 @@ import {
 } from './modules/veille/radar-service.js';
 import { listProposals as listRadarProposals } from './modules/veille/radar-store.js';
 import { resolveAiModel, resolveAiProvider } from './ai/models.js';
+import {
+  applyAiSettingsUpdate,
+  getAiModelsView,
+  isAiSelectionSettingKey,
+  readAiModelSettings,
+  validateAiSettingsUpdate,
+} from './ai/settings.js';
 import { getAiBudgetStatus } from './ai/usage.js';
 import { resolveIssuesToken } from './connectors/github-issues.js';
 import {
@@ -220,6 +228,8 @@ const GLOBAL_ONLY_KEYS = new Set([
   'VEILLE_DIGEST_MODE',
   'VEILLE_DISCORD_WEBHOOK_URL',
   ...RADAR_SETTING_KEYS,
+  // AI model/effort: one selection for every feature (src/ai/settings.ts).
+  ...AI_SELECTION_SETTING_KEYS,
 ]);
 
 interface MissingCredential {
@@ -252,7 +262,7 @@ function buildEnvDefaults(config: Config, cronSchedule: string) {
   const activeCollectCron =
     getCollectSchedule() || getSetting('COLLECT_CRON_SCHEDULE') || config.COLLECT_CRON_SCHEDULE;
   return {
-    AI_MODEL: resolveAiModel(config, resolveAiProvider(config)),
+    AI_MODEL: resolveAiModel(config, resolveAiProvider(config), 'default', readAiModelSettings()),
     TWEETS_LOOKBACK_DAYS: String(config.TWEETS_LOOKBACK_DAYS),
     DRY_RUN: String(config.DRY_RUN),
     CRON_SCHEDULE: activeCron,
@@ -2017,8 +2027,15 @@ export function startServer(
         }
       }
 
+      // AI model/effort (ADR-0027): validated as a whole, '' clears an override.
+      const aiValidation = validateAiSettingsUpdate(body, config, readAiModelSettings());
+      if (!aiValidation.ok) {
+        return c.json({ success: false, message: aiValidation.message }, 400);
+      }
+      updated += applyAiSettingsUpdate(aiValidation.updates);
+
       for (const [key, value] of Object.entries(body)) {
-        if (isEditableKey(key) && typeof value === 'string') {
+        if (isEditableKey(key) && !isAiSelectionSettingKey(key) && typeof value === 'string') {
           setSetting(key, value);
           updated++;
         }
@@ -2372,6 +2389,8 @@ export function startServer(
 
     // --- AI usage & budget (ADR-0027) --- never returns any key.
     app.get('/api/ai/usage', (c) => c.json(getAiBudgetStatus(config)));
+    // Model catalogue (price hints, effort levels) + effective selection per class.
+    app.get('/api/ai/models', (c) => c.json(getAiModelsView(config)));
 
     // --- Radar produit (ADR-0026) ---
 

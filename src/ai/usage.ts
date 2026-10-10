@@ -13,6 +13,7 @@ import { sendDiscordEmbeds } from '../adapters/discord-notifier.js';
 import { logger } from '../logger.js';
 import { AiError } from './errors.js';
 import { resolveAiModel, resolveAiProvider, type AiProvider } from './models.js';
+import { readAiModelSettings } from './settings.js';
 import { AI_TASKS, type AiCallUsage, type AiTask } from './port.js';
 
 export const BUDGET_WARNING_RATIO = 0.8;
@@ -201,10 +202,11 @@ export function getAiBudgetStatus(config: Config, now?: number): AiBudgetStatus 
        FROM ai_usage WHERE month = ? GROUP BY task ORDER BY cost_usd DESC, calls DESC`,
     )
     .all(month) as AiUsageTaskRow[];
+  const settings = readAiModelSettings();
   return {
     provider,
-    model: resolveAiModel(config, provider, 'default'),
-    fastModel: resolveAiModel(config, provider, 'fast'),
+    model: resolveAiModel(config, provider, 'default', settings),
+    fastModel: resolveAiModel(config, provider, 'fast', settings),
     month,
     budgetUsd: config.AI_MONTHLY_BUDGET_USD,
     spentUsd: Math.round(spentUsd * 100) / 100,

@@ -20,7 +20,14 @@ import {
   githubModelsApiKey,
   parseJsonResponse,
 } from './github-models-adapter.js';
-import { resolveAiModel, resolveAiProvider, type AiProvider } from './models.js';
+import {
+  resolveAiProvider,
+  resolveAiSelection,
+  type AiModelSettings,
+  type AiProvider,
+  type AiSelection,
+} from './models.js';
+import { readAiModelSettings } from './settings.js';
 import {
   AI_TASKS,
   type AiCallUsage,
@@ -34,8 +41,8 @@ export { AiError } from './errors.js';
 export type { AiErrorCode } from './errors.js';
 export { AI_TASKS } from './port.js';
 export type { AiPort, AiTask, AiRequest, AiJsonRequest, JsonObjectSchema } from './port.js';
-export { resolveAiProvider, resolveAiModel } from './models.js';
-export type { AiProvider } from './models.js';
+export { resolveAiProvider, resolveAiModel, resolveAiSelection } from './models.js';
+export type { AiProvider, AiSelection } from './models.js';
 
 /** Whether the active provider has its credential. */
 export function isAiConfigured(config: Config): boolean {
@@ -77,11 +84,18 @@ export interface CreateAiDeps {
   afterUsage?: (usage: AiCallUsage) => void;
   /** Budget check; defaults to the SQLite ledger. */
   assertBudget?: (provider: AiProvider, task: AiTask) => void;
+  /** Settings layer of the model/effort selection; defaults to a live DB read per call. */
+  aiSettings?: () => AiModelSettings;
 }
 
 export function createAi(config: Config, deps: CreateAiDeps = {}): AiPort {
   const provider = resolveAiProvider(config);
-  const modelFor = (task: AiTask) => resolveAiModel(config, provider, AI_TASKS[task].tier);
+  // Settings > env > default, read on every call so a Settings change applies
+  // to every feature at its next call. `config` carries the env layer only.
+  const readSettings = deps.aiSettings ?? readAiModelSettings;
+  const selectionFor = (task: AiTask): AiSelection =>
+    resolveAiSelection(config, readSettings(), provider, AI_TASKS[task].tier);
+  const modelFor = (task: AiTask) => selectionFor(task).model;
 
   const record = (usage: AiCallUsage) => {
     try {
@@ -123,18 +137,24 @@ export function createAi(config: Config, deps: CreateAiDeps = {}): AiPort {
     const call = createAnthropicCaller(deps.anthropicClient ?? createAnthropicClient(config));
     const run = async (req: Parameters<AiPort['text']>[0]) => {
       assertBudget(provider, req.task);
-      return call(modelFor(req.task), req, (r) => {
-        const usage: AiCallUsage = {
-          provider,
-          model: r.model,
-          task: req.task,
-          stopReason: r.stopReason,
-          costUsd: r.costUsd,
-          ...r.usage,
-        };
-        logUsage(usage);
-        record(usage);
-      });
+      const selection = selectionFor(req.task);
+      return call(
+        selection.model,
+        req,
+        (r) => {
+          const usage: AiCallUsage = {
+            provider,
+            model: r.model,
+            task: req.task,
+            stopReason: r.stopReason,
+            costUsd: r.costUsd,
+            ...r.usage,
+          };
+          logUsage(usage);
+          record(usage);
+        },
+        selection.effort,
+      );
     };
     return {
       provider,

@@ -57,11 +57,9 @@ export function AiUsageCard() {
           <Badge variant="secondary">{PROVIDER_LABELS[data.provider]}</Badge>
         </CardTitle>
         <CardDescription>
-          Modèle <code className="font-mono text-xs">{data.model}</code>, tri et scoring{' '}
-          <code className="font-mono text-xs">{data.fastModel}</code>. Variables d'environnement{' '}
-          <code className="font-mono text-xs">AI_PROVIDER</code>,{' '}
-          <code className="font-mono text-xs">AI_MODEL</code>,{' '}
-          <code className="font-mono text-xs">AI_MODEL_FAST</code>,{' '}
+          Modèle principal <code className="font-mono text-xs">{data.model}</code>, tri et scoring{' '}
+          <code className="font-mono text-xs">{data.fastModel}</code> (réglables ci-dessous).
+          Variables d'environnement <code className="font-mono text-xs">AI_PROVIDER</code> et{' '}
           <code className="font-mono text-xs">AI_MONTHLY_BUDGET_USD</code>.
         </CardDescription>
       </CardHeader>

@@ -306,6 +306,38 @@ export interface RadarResponse {
 }
 
 /** GET /api/ai/usage — month-to-date AI spend (ADR-0027). Never carries a key. */
+export type AiEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type AiSettingSource = 'settings' | 'env' | 'default';
+
+export interface AiModelOption {
+  id: string;
+  label: string;
+  priceShort: string;
+  priceHint: string;
+  effortLevels: AiEffort[];
+  defaultEffort: AiEffort | null;
+}
+
+export interface AiClassView {
+  setting: string;
+  effortSetting: string;
+  env: string;
+  model: string;
+  modelSource: AiSettingSource;
+  effort: AiEffort | null;
+  effortSource: AiSettingSource;
+  known: boolean;
+  effortLevels: AiEffort[];
+  priceHint: string;
+}
+
+export interface AiModelsResponse {
+  provider: 'anthropic' | 'github-models';
+  defaultModel: string;
+  catalogue: AiModelOption[];
+  classes: { default: AiClassView; fast: AiClassView };
+}
+
 export interface AiUsageResponse {
   provider: 'anthropic' | 'github-models';
   model: string;

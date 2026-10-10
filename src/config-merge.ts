@@ -3,7 +3,8 @@ import { veilleDigestModeSchema, type Config } from './config.js';
 export function buildMergedConfig(baseConfig: Config, overrides: Record<string, string>): Config {
   return {
     ...baseConfig,
-    ...(overrides.AI_MODEL && { AI_MODEL: overrides.AI_MODEL }),
+    // AI_MODEL / AI_MODEL_FAST / AI_EFFORT* are not merged here: the AI port
+    // reads them live from Settings (src/ai/settings.ts).
     ...(overrides.AI_BASE_URL && { AI_BASE_URL: overrides.AI_BASE_URL }),
     ...(overrides.AI_API_KEY && { AI_API_KEY: overrides.AI_API_KEY }),
     ...(overrides.TWEETS_LOOKBACK_DAYS && {
