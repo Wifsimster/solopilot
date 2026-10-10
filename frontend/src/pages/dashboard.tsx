@@ -333,7 +333,7 @@ export function DashboardPage() {
           <div className="pointer-events-none absolute inset-0 bg-brand-aurora" aria-hidden="true" />
           <CardContent className="relative py-16 flex flex-col items-center gap-4 text-center">
             <div
-              className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-chart-2/15 text-primary ring-1 ring-inset ring-primary/15"
+              className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-brand-accent/15 text-primary ring-1 ring-inset ring-primary/15"
               aria-hidden="true"
             >
               <Activity className="size-5" />

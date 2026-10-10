@@ -10,14 +10,14 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.png", "apple-touch-icon.png"],
+      includeAssets: ["favicon.svg", "favicon.ico", "favicon.png", "apple-touch-icon.png"],
       manifest: {
         name: "Solopilot",
         short_name: "Solopilot",
         description:
           "Le back-office autonome de l'entreprise individuelle : veille, acquisition, CRM, facturation et agenda dans un briefing quotidien.",
-        theme_color: "#6c4cf0",
-        background_color: "#18181d",
+        theme_color: "#5134d8",
+        background_color: "#0e0d17",
         display: "standalone",
         orientation: "portrait",
         scope: "/",

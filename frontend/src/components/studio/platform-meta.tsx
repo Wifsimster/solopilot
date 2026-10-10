@@ -55,9 +55,9 @@ export const SOURCE_META: Record<TargetSource, SourceMeta> = {
   instagram: {
     label: 'Instagram',
     Icon: Camera,
-    dotClass: 'bg-pink-500',
-    textClass: 'text-pink-600 dark:text-pink-400',
-    borderClass: 'border-l-pink-500',
+    dotClass: 'bg-platform-instagram',
+    textClass: 'text-platform-instagram-icon',
+    borderClass: 'border-l-platform-instagram',
   },
 };
 

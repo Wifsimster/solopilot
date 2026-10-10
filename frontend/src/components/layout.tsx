@@ -18,6 +18,7 @@ import {
   DrawerBody,
 } from '@/components/ui/drawer';
 import { MobileBottomNav } from '@/components/mobile-bottom-nav';
+import { Logo, LogoMark } from '@/components/brand/logo';
 import {
   History,
   Package,
@@ -101,18 +102,8 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-function BrandMark({ className }: { className?: string }) {
-  return (
-    <span
-      className={cn(
-        'flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-chart-2 text-primary-foreground shadow-xs',
-        className,
-      )}
-      aria-hidden="true"
-    >
-      <Workflow className="size-[18px]" strokeWidth={2.25} />
-    </span>
-  );
+function BrandMark({ className, size = 28 }: { className?: string; size?: number }) {
+  return <LogoMark size={size} className={className} />;
 }
 
 function sidebarNavLinkClass({ isActive }: { isActive: boolean }) {
@@ -223,7 +214,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
     <nav className="flex flex-col gap-5" aria-label="Navigation principale" data-tour="sidebar-nav">
       {NAV_SECTIONS.map((section) => (
         <div key={section.id} className="space-y-1">
-          <p className="px-2.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <p className="px-2.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
             {section.label}
           </p>
           <div className="space-y-0.5">
@@ -288,12 +279,14 @@ export function Layout() {
 
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-border bg-sidebar md:flex">
-        <div className="flex h-16 items-center gap-2.5 border-b border-border px-5">
-          <BrandMark />
-          <div className="leading-tight">
-            <span className="block text-sm font-semibold tracking-tight">Solopilot</span>
-            <span className="block text-2xs text-muted-foreground">Back-office autonome</span>
-          </div>
+        <div className="flex h-16 items-center border-b border-border px-5">
+          <Link
+            to="/"
+            aria-label="Solopilot, back-office autonome — accueil"
+            className="-mx-1.5 flex rounded-md px-1.5 py-1 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Logo size={26} />
+          </Link>
         </div>
         <div className="flex-1 overflow-y-auto px-3 py-5">
           <SidebarNav />
@@ -326,9 +319,12 @@ export function Layout() {
         aria-label="En-tête"
       >
         <div className="flex h-14 items-center justify-between gap-3 px-4">
-          <Link to="/" className="flex items-center gap-2 font-semibold">
-            <BrandMark className="size-7" />
-            <span className="text-base tracking-tight">Solopilot</span>
+          <Link
+            to="/"
+            aria-label="Solopilot — accueil"
+            className="-mx-1 flex items-center rounded-md px-1 py-1 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Logo size={24} />
           </Link>
           <ProductSwitcher triggerClassName="h-9 w-[140px] text-xs" />
         </div>
@@ -360,7 +356,7 @@ export function Layout() {
         <DrawerContent className="max-h-[85dvh]">
           <DrawerHeader>
             <DrawerTitle className="flex items-center gap-2">
-              <BrandMark className="size-7" />
+              <BrandMark size={24} />
               Navigation
             </DrawerTitle>
           </DrawerHeader>

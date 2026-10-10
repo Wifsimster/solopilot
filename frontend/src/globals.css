@@ -22,6 +22,11 @@
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-accent-foreground: var(--brand-accent-foreground);
+  --color-brand-accent-text: var(--brand-accent-text);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -69,55 +74,71 @@
   --text-ui-sm: 0.8125rem; /* 13px */
   --text-ui-lg: 0.9375rem; /* 15px */
   --text-title: 1.75rem; /* 28px */
-  /* Platform identity (content studio) mapped onto the chart palette.
-   * The icon variant mixes in 10% foreground so a light-mode icon on a white
-   * card reaches 3:1 (WCAG 1.4.11); in dark mode it stays above 8:1. */
-  --color-platform-reddit: var(--chart-4);
-  --color-platform-reddit-icon: color-mix(in oklab, var(--chart-4) 90%, var(--foreground));
-  --color-platform-generic: var(--chart-3);
-  --color-platform-generic-icon: color-mix(in oklab, var(--chart-3) 90%, var(--foreground));
+  /* Platform identity (content studio) mapped onto the categorical series.
+   * The icon variant mixes in some foreground so a light-mode icon reaches
+   * 3:1 (WCAG 1.4.11) on white and on the hovered --accent/--muted surfaces;
+   * in dark mode it stays above 4:1 on cards. */
+  --color-platform-reddit: var(--series-2);
+  --color-platform-reddit-icon: color-mix(in oklab, var(--series-2) 85%, var(--foreground));
+  --color-platform-generic: var(--series-1);
+  --color-platform-generic-icon: color-mix(in oklab, var(--series-1) 90%, var(--foreground));
+  --color-platform-instagram: var(--series-5);
+  --color-platform-instagram-icon: color-mix(in oklab, var(--series-5) 85%, var(--foreground));
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Titles, KPI figures and amounts (identity "Trajectoire", ADR 0028).
+   * --font-mono is left alone: it renders code identifiers. */
+  --font-display: "Space Grotesk Variable", var(--font-sans);
 }
 
 /*
- * Solopilot design system — "Modern SaaS / Linear-like"
- * Cool-tinted neutral surfaces, indigo/violet brand accent, tight radii,
- * subtle layered elevation. Light + dark are first-class.
+ * Solopilot design system — identity "Trajectoire" (ADR 0028, DESIGN.md).
+ * Indigo primary (hue ~277) for action, mint brand accent for the logo dot
+ * and brand washes only, cool indigo-tinted neutrals, soft indigo shadows.
+ * Light + dark are first-class. Contrast table: DESIGN.md > Identity.
  */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.21 0.02 277);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.02 277);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.02 277);
-  --primary: oklch(0.545 0.218 277.2);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.968 0.005 277);
-  --secondary-foreground: oklch(0.27 0.02 277);
-  --muted: oklch(0.972 0.004 277);
-  --muted-foreground: oklch(0.552 0.022 277);
-  --accent: oklch(0.96 0.018 277);
-  --accent-foreground: oklch(0.42 0.16 277.2);
-  --destructive: oklch(0.585 0.227 27.2);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.58 0.16 152);
-  --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.72 0.16 70);
-  --warning-foreground: oklch(0.27 0.05 70);
-  --border: oklch(0.922 0.005 277);
-  --input: oklch(0.922 0.005 277);
-  --ring: oklch(0.545 0.218 277.2);
-  --chart-1: oklch(0.545 0.218 277.2);
-  --chart-2: oklch(0.66 0.18 292);
-  --chart-3: oklch(0.7 0.15 230);
-  --chart-4: oklch(0.72 0.16 70);
-  --chart-5: oklch(0.62 0.18 162);
+  --background: #fafafd;
+  --foreground: #16152a;
+  --card: #ffffff;
+  --card-foreground: #16152a;
+  --popover: #ffffff;
+  --popover-foreground: #16152a;
+  --primary: #5134d8;
+  --primary-foreground: #ffffff;
+  --secondary: #f6f6f6;
+  --secondary-foreground: #16152a;
+  --muted: #f6f6f6;
+  --muted-foreground: #5d5b75;
+  /* Hover / selected-nav surface (role unchanged), not the brand accent. */
+  --accent: #f3f1fc;
+  --accent-foreground: #5134d8;
+  /* Brand accent (mint). Light mode: logo dot, washes, highlights only —
+     never a status or text on its own (2.5:1 on white). Text in the brand
+     accent uses --brand-accent-text. */
+  --brand-accent: #14b891;
+  --brand-accent-foreground: #04241c;
+  --brand-accent-text: #0b7560;
+  --destructive: #c62f2b;
+  --destructive-foreground: #ffffff;
+  --success: #1b7a3e;
+  --success-foreground: #ffffff;
+  --warning: #9e5a00;
+  --warning-foreground: #ffffff;
+  --info: #2560c6;
+  --info-foreground: #ffffff;
+  --border: #e3e2ee;
+  --input: #e3e2ee;
+  --ring: #5134d8;
+  --chart-1: var(--primary);
+  --chart-2: var(--brand-accent);
+  --chart-3: var(--series-3);
+  --chart-4: var(--series-4);
+  --chart-5: var(--series-5);
   /* Categorical series for multi-series charts (Dépenses IA). Fixed order =
      colour-blind safety: validated adjacent pairs (CVD ΔE >= 8, normal-vision
-     ΔE >= 15) on the card surface. --chart-1/2 (indigo/violet, ΔE 13.2) fail
-     the normal-vision floor, so stacks of 3+ series use these instead. */
+     ΔE >= 15) on the card surface. --chart-1/2 are brand colours, not a
+     validated sequence, so stacks of 3+ series use these instead. */
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
@@ -126,57 +147,64 @@
   --series-6: #008300;
   --series-7: #4a3aa7;
   --series-8: #e34948;
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.003 277);
-  --sidebar-foreground: oklch(0.21 0.02 277);
-  --sidebar-primary: oklch(0.545 0.218 277.2);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.96 0.018 277);
-  --sidebar-accent-foreground: oklch(0.42 0.16 277.2);
-  --sidebar-border: oklch(0.922 0.005 277);
-  --sidebar-ring: oklch(0.545 0.218 277.2);
+  --radius: 0.75rem;
+  --sidebar: #fdfdfe;
+  --sidebar-foreground: #16152a;
+  --sidebar-primary: #5134d8;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f3f1fc;
+  --sidebar-accent-foreground: #5134d8;
+  --sidebar-border: #e3e2ee;
+  --sidebar-ring: #5134d8;
 
-  --shadow-xs-value: 0 1px 2px 0 oklch(0.21 0.02 277 / 0.04);
-  --shadow-sm-value: 0 1px 2px 0 oklch(0.21 0.02 277 / 0.05),
-    0 1px 3px 0 oklch(0.21 0.02 277 / 0.04);
-  --shadow-md-value: 0 2px 4px -1px oklch(0.21 0.02 277 / 0.06),
-    0 4px 12px -2px oklch(0.21 0.02 277 / 0.08);
-  --shadow-lg-value: 0 8px 24px -4px oklch(0.21 0.02 277 / 0.12),
-    0 2px 6px -2px oklch(0.21 0.02 277 / 0.08);
+  /* Soft, diffuse shadows tinted with the primary indigo. */
+  --shadow-xs-value: 0 1px 2px 0 rgb(81 52 216 / 0.05);
+  --shadow-sm-value: 0 2px 4px -1px rgb(81 52 216 / 0.06),
+    0 4px 12px -2px rgb(81 52 216 / 0.08);
+  --shadow-md-value: 0 4px 8px -2px rgb(81 52 216 / 0.08),
+    0 8px 20px -4px rgb(81 52 216 / 0.1);
+  --shadow-lg-value: 0 12px 32px -6px rgb(81 52 216 / 0.16),
+    0 4px 10px -3px rgb(81 52 216 / 0.08);
   /* Primary button: top inner highlight + hairline drop, same in both modes. */
-  --shadow-raised-value: inset 0 1px 0 0 oklch(1 0 0 / 0.14),
-    0 1px 2px 0 oklch(0 0 0 / 0.12);
+  --shadow-raised-value: inset 0 1px 0 0 rgb(255 255 255 / 0.14),
+    0 1px 2px 0 rgb(22 21 42 / 0.16);
 }
 
 .dark {
-  --background: oklch(0.165 0.008 277);
-  --foreground: oklch(0.965 0.004 277);
-  --card: oklch(0.205 0.01 277);
-  --card-foreground: oklch(0.965 0.004 277);
-  --popover: oklch(0.215 0.011 277);
-  --popover-foreground: oklch(0.965 0.004 277);
-  --primary: oklch(0.64 0.19 277.5);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.26 0.012 277);
-  --secondary-foreground: oklch(0.965 0.004 277);
-  --muted: oklch(0.255 0.012 277);
-  --muted-foreground: oklch(0.7 0.02 277);
-  --accent: oklch(0.3 0.04 277);
-  --accent-foreground: oklch(0.92 0.04 277);
-  --destructive: oklch(0.68 0.2 25);
-  --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.7 0.16 152);
-  --success-foreground: oklch(0.145 0.01 152);
-  --warning: oklch(0.78 0.15 75);
-  --warning-foreground: oklch(0.21 0.04 75);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.64 0.19 277.5);
-  --chart-1: oklch(0.64 0.19 277.5);
-  --chart-2: oklch(0.72 0.17 292);
-  --chart-3: oklch(0.74 0.14 230);
-  --chart-4: oklch(0.78 0.15 75);
-  --chart-5: oklch(0.7 0.16 162);
+  --background: #0e0d17;
+  --foreground: #ecebf7;
+  --card: #171626;
+  --card-foreground: #ecebf7;
+  --popover: #171626;
+  --popover-foreground: #ecebf7;
+  --primary: #8c7dff;
+  --primary-foreground: #0e0d17;
+  --secondary: #262535;
+  --secondary-foreground: #ecebf7;
+  --muted: #262535;
+  --muted-foreground: #a09eb9;
+  --accent: #2a2649;
+  --accent-foreground: #ecebf7;
+  --brand-accent: #3dd9b6;
+  --brand-accent-foreground: #04241c;
+  --brand-accent-text: #3dd9b6;
+  --destructive: #f47a72;
+  --destructive-foreground: #0e0d17;
+  --success: #55c97f;
+  --success-foreground: #0e0d17;
+  --warning: #f0b44c;
+  --warning-foreground: #0e0d17;
+  --info: #6fa6f5;
+  --info-foreground: #0e0d17;
+  --border: #2a2842;
+  --input: #2a2842;
+  --ring: #8c7dff;
+  /* --chart-* follow the :root aliases (resolved on the same element). */
+  --chart-1: var(--primary);
+  --chart-2: var(--brand-accent);
+  --chart-3: var(--series-3);
+  --chart-4: var(--series-4);
+  --chart-5: var(--series-5);
   /* Same eight hues stepped for the dark card surface (all >= 3:1). */
   --series-1: #3987e5;
   --series-2: #d95926;
@@ -186,22 +214,22 @@
   --series-6: #008300;
   --series-7: #9085e9;
   --series-8: #e66767;
-  --sidebar: oklch(0.185 0.009 277);
-  --sidebar-foreground: oklch(0.965 0.004 277);
-  --sidebar-primary: oklch(0.64 0.19 277.5);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.3 0.04 277);
-  --sidebar-accent-foreground: oklch(0.92 0.04 277);
-  --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(0.64 0.19 277.5);
+  --sidebar: #13121f;
+  --sidebar-foreground: #ecebf7;
+  --sidebar-primary: #8c7dff;
+  --sidebar-primary-foreground: #0e0d17;
+  --sidebar-accent: #2a2649;
+  --sidebar-accent-foreground: #ecebf7;
+  --sidebar-border: #2a2842;
+  --sidebar-ring: #8c7dff;
 
-  --shadow-xs-value: 0 1px 2px 0 oklch(0 0 0 / 0.3);
-  --shadow-sm-value: 0 1px 2px 0 oklch(0 0 0 / 0.35),
-    0 1px 3px 0 oklch(0 0 0 / 0.3);
-  --shadow-md-value: 0 2px 6px -1px oklch(0 0 0 / 0.4),
-    0 6px 16px -4px oklch(0 0 0 / 0.45);
-  --shadow-lg-value: 0 12px 32px -6px oklch(0 0 0 / 0.55),
-    0 4px 10px -3px oklch(0 0 0 / 0.4);
+  --shadow-xs-value: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-sm-value: 0 2px 6px -1px rgb(0 0 0 / 0.4),
+    0 6px 16px -4px rgb(0 0 0 / 0.45);
+  --shadow-md-value: 0 4px 10px -2px rgb(0 0 0 / 0.45),
+    0 10px 24px -6px rgb(0 0 0 / 0.5);
+  --shadow-lg-value: 0 16px 40px -8px rgb(0 0 0 / 0.6),
+    0 4px 12px -3px rgb(0 0 0 / 0.45);
 }
 
 @layer base {
@@ -235,6 +263,17 @@
     letter-spacing: -0.02em;
   }
 
+  /* Page titles in the display face; section/card titles stay in Inter. */
+  h1 {
+    font-family: var(--font-display);
+    letter-spacing: -0.025em;
+  }
+
+  /* Any figure set in the display face lines up in columns. */
+  .font-display {
+    font-variant-numeric: tabular-nums;
+  }
+
   /* Cohesive, slim scrollbars that match the surface */
   * {
     scrollbar-width: thin;
@@ -259,7 +298,8 @@
 }
 
 @layer utilities {
-  /* Subtle indigo "aurora" wash used behind hero / header surfaces */
+  /* Brand "aurora" wash behind hero / header surfaces: indigo from the
+     top-left, a hint of mint top-right, a cool blue base. */
   .bg-brand-aurora {
     background-image: radial-gradient(
         60% 120% at 0% 0%,
@@ -268,12 +308,12 @@
       ),
       radial-gradient(
         50% 120% at 100% 0%,
-        color-mix(in oklab, var(--chart-2) 8%, transparent),
+        color-mix(in oklab, var(--brand-accent) 9%, transparent),
         transparent 55%
       ),
       radial-gradient(
         45% 90% at 60% 100%,
-        color-mix(in oklab, var(--chart-3) 5%, transparent),
+        color-mix(in oklab, var(--info) 5%, transparent),
         transparent 60%
       );
   }
@@ -286,12 +326,12 @@
       ),
       radial-gradient(
         50% 120% at 100% 0%,
-        color-mix(in oklab, var(--chart-2) 12%, transparent),
+        color-mix(in oklab, var(--brand-accent) 9%, transparent),
         transparent 55%
       ),
       radial-gradient(
         45% 90% at 60% 100%,
-        color-mix(in oklab, var(--chart-3) 7%, transparent),
+        color-mix(in oklab, var(--info) 7%, transparent),
         transparent 60%
       );
   }
@@ -322,12 +362,13 @@
       linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 5.5%, transparent) 1px, transparent 1px);
   }
 
-  /* Follows the theme: the dark twins of --primary/--chart-2 apply in dark mode. */
+  /* Indigo → mint along the trajectory. Ends on --brand-accent-text so the
+     light-mode tail stays readable (5.6:1 on white, plain mint is 2.5:1). */
   .text-gradient-brand {
     background-image: linear-gradient(
-      135deg,
-      var(--primary),
-      var(--chart-2)
+      100deg,
+      var(--primary) 20%,
+      var(--brand-accent-text)
     );
     -webkit-background-clip: text;
     background-clip: text;
