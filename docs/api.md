@@ -191,7 +191,7 @@ identifiants), elles renvoient une reponse vide ou minimale.
 | GET | `/api/runs` | `limit` (def 20), `offset`, `type`, `productId` | — | Historique des runs (vide en mode setup) |
 | GET | `/api/collect-status` | `productId` | — | Statut de la collecte de tweets **[configuré uniquement]** |
 | GET | `/api/settings` | — | — | Parametres globaux, masques (vide en mode setup) |
-| POST | `/api/settings` | — | `{key:value,...}` | Met a jour les parametres editables (dont `VEILLE_DIGEST_MODE` = `per-product`\|`consolidated`, 400 si invalide) **[configuré uniquement]** |
+| POST | `/api/settings` | — | `{key:value,...}` | Met a jour les parametres editables (dont `VEILLE_DIGEST_MODE` = `per-product`\|`consolidated`, et `AI_MODEL`/`AI_MODEL_FAST`/`AI_EFFORT`/`AI_EFFORT_FAST` : ID `^claude-[a-z0-9-]+$`, effort accepte par le modele, vide = supprime la surcharge ; 400 si invalide) **[configuré uniquement]** |
 | POST | `/api/credentials` | — | `{X_SESSION_AUTH_TOKEN,X_SESSION_CSRF_TOKEN}` | Valide + stocke les cookies X **[configuré uniquement]** |
 | GET | `/api/summaries` | `limit`, `offset`, `month` (`YYYY-MM`), `search`, `productId` | — | Liste les resumes de run **[configuré uniquement]** |
 | GET | `/api/monthly-summaries` | `productId` | — | Syntheses mensuelles (12 mois) **[configuré uniquement]** |
@@ -218,6 +218,9 @@ identifiants), elles renvoient une reponse vide ou minimale.
 | DELETE | `/api/veille-discord-webhook` | — | — | Supprime le webhook du digest consolide **[configuré uniquement]** |
 | GET | `/api/veille/digest-deliveries` | `limit` (1-100, def 20) | — | Journal des envois du digest consolide **[configuré uniquement]** |
 | GET | `/api/ai/usage` | — | — | Fournisseur et modeles IA actifs, depense estimee du mois (Europe/Paris) vs `AI_MONTHLY_BUDGET_USD`, niveau `ok`/`warning`/`exceeded`, detail par tache (ADR-0027). Aucune cle renvoyee **[configuré uniquement]** |
+| GET | `/api/ai/usage/report` | `period` = `7d` \| `30d` \| `month` (defaut) \| `prev-month` \| `12m` (zod, 400 sinon) | — | Page « Dépenses IA » : agregats SQL du ledger `ai_usage` au fuseau Europe/Paris (jours, mois de 12m). `totals` (cout, appels, tokens par type, taux de cache, cout moyen par jour et par appel), `previous` + `deltaRatio` (periode precedente de meme longueur), `month` (cumul quotidien, projection lineaire sur les jours ecoules, ratio et niveau de budget), `series` (par bucket : cout par classe de tache, tokens par type), `byClass`, `byTask`, `byModel`, `topCalls` (20 appels les plus chers : compteurs seulement, aucun contenu), `cacheSavingsUsd` (economie nette du cache), `insights` (3 a 5 phrases calculees, sans IA), `recap`. Montants en USD pleine precision **[configuré uniquement]** |
+| PUT | `/api/ai/usage/recap` | — | `{ "enabled": boolean }` (strict) | Active ou coupe le recap hebdomadaire Discord des depenses IA (lundi 9:00 Europe/Paris, setting `AI_WEEKLY_RECAP_ENABLED`, defaut actif) **[configuré uniquement]** |
+| GET | `/api/ai/models` | — | — | Catalogue des modeles Anthropic actuels (prix, niveaux d'effort) et selection effective par classe (principal, rapide) avec sa source : Parametres, environnement ou defaut (ADR-0027) **[configuré uniquement]** |
 | GET | `/api/veille/radar` | `limit` (1-100, def 30) | — | Radar produit : reglages effectifs, presence du token (booleen), produits cibles, propositions recentes (ADR-0026) **[configuré uniquement]** |
 | POST | `/api/veille/radar/proposals/:id/create` | — | — | Cree l'issue GitHub d'une proposition `dry_run`/`failed` (action explicite : ignore simulation et plafonds, exige `GITHUB_ISSUES_TOKEN`) **[configuré uniquement]** |
 | POST | `/api/runs/:id/send-discord` | — | — | Envoie le resume d'un run sur Discord **[configuré uniquement]** |

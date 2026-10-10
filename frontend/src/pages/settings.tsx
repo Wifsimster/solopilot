@@ -6,6 +6,7 @@ import { GraphqlCard } from '@/components/settings/graphql-card';
 import { VeilleDigestCard } from '@/components/settings/veille-digest-card';
 import { RadarProduitCard } from '@/components/settings/radar-produit-card';
 import { AiUsageCard } from '@/components/settings/ai-usage-card';
+import { AiModelsCard } from '@/components/settings/ai-models-card';
 import { ProductSettingsCard } from '@/components/settings/product-settings-card';
 import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
@@ -85,6 +86,7 @@ export function SettingsPage() {
           </p>
         </div>
         <AiUsageCard />
+        <AiModelsCard />
         <CookiesCard credentialInfo={credentialInfo} onSaved={refetch} />
         <VeilleDigestCard
           mode={config.envDefaults['VEILLE_DIGEST_MODE'] === 'consolidated' ? 'consolidated' : 'per-product'}

@@ -37,6 +37,7 @@ import {
   Moon,
   Compass,
   Radar,
+  Coins,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -68,6 +69,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: '/summaries', label: 'Synthèses', icon: FileText, tourId: 'nav-summaries' },
       { to: '/runs', label: 'Historique', icon: History },
       { to: '/workflows', label: 'Workflows', icon: Workflow, tourId: 'nav-workflows' },
+      { to: '/depenses-ia', label: 'Dépenses IA', icon: Coins },
     ],
   },
   {

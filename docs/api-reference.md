@@ -38,7 +38,8 @@ graph LR
 Le champ `running` indique si une publication est en cours. Le champ `collecting` indique si une collecte est en cours. Les deux operations sont independantes.
 
 **`POST /api/settings`** — Accepte un objet JSON avec les cles editables :
-- `AI_MODEL`, `TWEETS_LOOKBACK_DAYS`, `DRY_RUN`
+- `AI_MODEL`, `AI_MODEL_FAST` (ID Anthropic `^claude-[a-z0-9-]+$`), `AI_EFFORT`, `AI_EFFORT_FAST` (`low`|`medium`|`high`|`xhigh`|`max`, accepte par le modele de la classe) ; une valeur vide supprime la surcharge ; 400 si invalide
+- `TWEETS_LOOKBACK_DAYS`, `DRY_RUN`
 - `CRON_SCHEDULE`, `COLLECT_CRON_SCHEDULE`
 - `X_GQL_USER_BY_SCREEN_NAME_ID`, `X_GQL_HOME_TIMELINE_ID`
 

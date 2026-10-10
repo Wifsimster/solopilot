@@ -3,19 +3,26 @@
  * `@anthropic-ai/sdk`.
  *
  * - Structured JSON via `output_config.format` (json_schema), never prefill.
- * - Effort / adaptive thinking per task profile, gated by model capability.
- * - Claude Opus 5: server-side `fallbacks: "default"` (beta
- *   `server-side-fallback-2026-07-01`). That parameter only exists on the beta
- *   Messages surface, hence `client.beta.messages.create`. `stop_reason:
- *   "refusal"` is still checked before reading content (the fallback chain can
- *   refuse too, and other models have no server-side fallback).
+ * - Effort / adaptive thinking per task profile (or the class's effort from
+ *   Settings), gated by the model catalogue in `models.ts`.
+ * - Server-side `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`)
+ *   only on models that support it (Sonnet 5.5, Opus 5.x, Fable): never on
+ *   Claude Haiku 5.5, the default, which has no server-side fallback. The
+ *   parameter only exists on the beta Messages surface, hence
+ *   `client.beta.messages.create` (without `betas` when no fallback is sent).
+ *   `stop_reason: "refusal"` is always checked before reading content.
  * - Retries: the SDK retries 429 / 5xx / connection errors itself
  *   (`maxRetries`); what is left is mapped to a typed `AiError`.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema';
 import { AiError } from './errors.js';
-import { anthropicCapabilities, estimateCostUsd, type TokenUsage } from './models.js';
+import {
+  anthropicCapabilities,
+  estimateCostUsd,
+  type AiEffort,
+  type TokenUsage,
+} from './models.js';
 import {
   AI_TASKS,
   type AiJsonRequest,
@@ -39,7 +46,8 @@ export interface AnthropicMessagesClient {
   };
 }
 
-const EFFORT: Record<AiProfile, 'low' | 'medium' | 'high'> = {
+/** Per-task effort when the class has no effort override. */
+const EFFORT: Record<AiProfile, AiEffort> = {
   classify: 'low',
   generate: 'medium',
   report: 'high',
@@ -67,15 +75,32 @@ export interface AnthropicCallResult {
   costUsd: number;
 }
 
+/**
+ * Effort sent for a request: the class override when the model accepts it,
+ * else the per-task default; nothing when the model has no effort parameter.
+ */
+export function effortFor(
+  model: string,
+  profile: AiProfile,
+  override?: AiEffort,
+): AiEffort | undefined {
+  const { effortLevels } = anthropicCapabilities(model);
+  if (effortLevels.length === 0) return undefined;
+  if (override && effortLevels.includes(override)) return override;
+  return effortLevels.includes(EFFORT[profile]) ? EFFORT[profile] : undefined;
+}
+
 export function buildAnthropicParams(
   model: string,
   req: AiRequest,
   format?: ReturnType<typeof jsonSchemaOutputFormat>,
+  effortOverride?: AiEffort,
 ): Anthropic.Beta.Messages.MessageCreateParamsNonStreaming {
   const { profile } = AI_TASKS[req.task];
   const caps = anthropicCapabilities(model);
+  const effort = effortFor(model, profile, effortOverride);
   const outputConfig: Anthropic.Beta.Messages.BetaOutputConfig = {
-    ...(caps.effort ? { effort: EFFORT[profile] } : {}),
+    ...(effort ? { effort } : {}),
     ...(format ? { format: { type: format.type, schema: format.schema } } : {}),
   };
   return {
@@ -90,8 +115,11 @@ export function buildAnthropicParams(
       },
     ],
     messages: [{ role: 'user', content: req.user }],
-    // Reports benefit from reasoning. Other profiles leave `thinking` unset:
-    // Opus 5 then runs adaptive thinking, kept short by the low/medium effort.
+    // Reports ask for adaptive thinking explicitly. Other profiles leave
+    // `thinking` unset: Haiku 5.5 (and every 5.x model) then runs adaptive
+    // thinking anyway, kept short by low/medium effort. `disabled` is never
+    // sent: Opus 5.5, Sonnet 5.5 and Fable reject it, and Haiku 5.5 rejects it
+    // at xhigh/max effort.
     ...(profile === 'report' && caps.adaptiveThinking
       ? { thinking: { type: 'adaptive' as const } }
       : {}),
@@ -199,9 +227,10 @@ export function createAnthropicCaller(client: AnthropicMessagesClient) {
     model: string,
     req: AiRequest | AiJsonRequest,
     onUsage: (result: AnthropicCallResult) => void,
+    effortOverride?: AiEffort,
   ): Promise<AnthropicCallResult> {
     const format = 'schema' in req ? jsonSchemaOutputFormat(req.schema) : undefined;
-    const params = buildAnthropicParams(model, req, format);
+    const params = buildAnthropicParams(model, req, format, effortOverride);
     const timeout = Math.max(req.timeoutMs, MIN_TIMEOUT_MS[AI_TASKS[req.task].profile]);
 
     let message: Anthropic.Beta.Messages.BetaMessage;

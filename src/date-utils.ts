@@ -23,6 +23,11 @@ export function getTodayDateParis(): string {
   return formatParisDate(new Date());
 }
 
+/** Europe/Paris `YYYY-MM-DD` of an epoch-millisecond timestamp (DST-safe). */
+export function parisDateOf(epochMs: number): string {
+  return formatParisDate(new Date(epochMs));
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }

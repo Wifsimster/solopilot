@@ -146,6 +146,7 @@ l. 67–113, `.dark` l. 115–160). Tailwind v4. Dark is the `.dark` class
 | `--border` / `--input` | `oklch(0.922 0.005 277)` | `oklch(1 0 0 / 9%)` / `/ 12%` | |
 | `--ring` | `oklch(0.545 0.218 277.2)` | `oklch(0.64 0.19 277.5)` | Focus |
 | `--chart-1…5` | indigo 277.2, violet 292, blue 230, amber 70, green 162 (see frontmatter) | lighter twins | Charts |
+| `--series-1…8` | `#2a78d6` `#eb6834` `#1baf7a` `#eda100` `#e87ba4` `#008300` `#4a3aa7` `#e34948` | `#3987e5` `#d95926` `#199e70` `#c98500` `#d55181` `#008300` `#9085e9` `#e66767` | Multi-series charts (Dépenses IA) |
 | `--sidebar-*` | `oklch(0.985 0.003 277)` surface, primary/accent/border/ring as above | `oklch(0.185 0.009 277)` surface | Sidebar |
 
 Brand decoration (`@layer utilities`): `.bg-brand-aurora` (three radial
@@ -153,6 +154,16 @@ washes: indigo 277, violet 292, blue 230 at 5–16 %), `.bg-grid-fade` (32 px
 grid, masked), `.text-gradient-brand` (135°, indigo → violet). All three read
 `var(--primary)`, `var(--chart-2)`, `var(--chart-3)` and `var(--foreground)`
 through `color-mix()`, so they follow the theme.
+
+Categorical series (`--series-1…8`): a fixed slot order, validated with
+the dataviz palette checker against the card surfaces (light `#ffffff`, dark
+`oklch(0.205 0.01 277)` = `#16171c`): adjacent pairs keep CVD ΔE ≥ 8.4 and
+normal-vision ΔE ≥ 19.3 in both modes. `--chart-1…5` fail that check for
+stacks (indigo↔violet normal-vision ΔE 13.2, green↔amber CVD ΔE 6.2), so a
+chart with three or more touching series uses `--series-*`. In light mode,
+slots 3, 4 and 5 are below 3:1 on white: every such chart ships a legend and
+a data table. A series keeps its slot whatever is filtered (colour follows
+the entity, not its rank).
 
 Platform identity (`components/studio/platform-meta.tsx`): Reddit maps to
 `--chart-4`, Générique to `--chart-3` (`--color-platform-*` in `@theme

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { logger } from './logger.js';
+import { parisDateOf } from './date-utils.js';
 
 export const DEFAULT_PRODUCT_ID = 'default';
 
@@ -533,6 +534,33 @@ function runAiUsageMigrations(database: Database.Database) {
   )`);
 }
 
+// AI spend report (« Dépenses IA »). `day` is the Europe/Paris YYYY-MM-DD of
+// `created_at`, stored at insert time so the report buckets by Paris day in SQL
+// (SQLite has no time zone database; DST days are 23 h / 25 h). Rows written
+// before this migration are backfilled once. `ai_usage_recaps` makes the
+// weekly Discord recap fire once per ISO week. Idempotent.
+function runAiUsageReportMigrations(database: Database.Database) {
+  const columns = database.prepare('PRAGMA table_info(ai_usage)').all() as { name: string }[];
+  if (!columns.some((c) => c.name === 'day')) {
+    database.exec('ALTER TABLE ai_usage ADD COLUMN day TEXT');
+  }
+  const missing = database
+    .prepare('SELECT id, created_at FROM ai_usage WHERE day IS NULL')
+    .all() as { id: number; created_at: number }[];
+  if (missing.length > 0) {
+    const update = database.prepare('UPDATE ai_usage SET day = ? WHERE id = ?');
+    database.transaction(() => {
+      for (const row of missing) update.run(parisDateOf(row.created_at), row.id);
+    })();
+  }
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_ai_usage_day ON ai_usage(day, task)`);
+  database.exec(`CREATE TABLE IF NOT EXISTS ai_usage_recaps (
+    week TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`);
+}
+
 export type RadarProposalStatus ='creating' | 'dry_run' | 'created' | 'failed' | 'capped';
 
 export interface RadarProposalRecord {
@@ -882,6 +910,7 @@ export function getDb(): Database.Database {
     runVeilleDigestMigrations(db);
     runRadarMigrations(db);
     runAiUsageMigrations(db);
+    runAiUsageReportMigrations(db);
     runFacturationMigrations(db);
     runComptaMigrations(db);
     runCrmMigrations(db);

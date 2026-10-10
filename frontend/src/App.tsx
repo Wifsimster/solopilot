@@ -29,6 +29,9 @@ const ComptabilitePage = lazy(() =>
 const AgendaPage = lazy(() =>
   import("@/pages/agenda").then((m) => ({ default: m.AgendaPage })),
 );
+const DepensesIaPage = lazy(() =>
+  import("@/pages/depenses-ia").then((m) => ({ default: m.DepensesIaPage })),
+);
 const CrmPage = lazy(() => import("@/pages/crm").then((m) => ({ default: m.CrmPage })));
 
 function LazyPage({ children }: { children: React.ReactNode }) {
@@ -57,6 +60,7 @@ export function App() {
                 <Route path="/leads" element={<LeadsPage />} />
                 <Route path="/crm" element={<LazyPage><CrmPage /></LazyPage>} />
                 <Route path="/studio" element={<StudioPage />} />
+                <Route path="/depenses-ia" element={<LazyPage><DepensesIaPage /></LazyPage>} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>
             </Routes>

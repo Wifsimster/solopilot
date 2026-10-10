@@ -1,6 +1,15 @@
 import { z, type ZodIssue } from 'zod';
 import { logger } from './logger.js';
 
+/** Settings keys of the AI model/effort selection (Settings > env > default). */
+export const AI_SELECTION_SETTING_KEYS = [
+  'AI_MODEL',
+  'AI_MODEL_FAST',
+  'AI_EFFORT',
+  'AI_EFFORT_FAST',
+] as const;
+export type AiSelectionSettingKey = (typeof AI_SELECTION_SETTING_KEYS)[number];
+
 export const AI_PROVIDER_VALUES = ['anthropic', 'github-models'] as const;
 export type AiProviderSetting = (typeof AI_PROVIDER_VALUES)[number];
 
@@ -55,14 +64,24 @@ const configSchema = z.object({
   GITHUB_TOKEN: z.string().min(1).optional(),
   AI_BASE_URL: z.string().url().default('https://models.github.ai/inference'),
   AI_API_KEY: z.string().min(1).optional(),
-  // Model ids. Unset = provider default (claude-opus-5 / openai/gpt-4.1).
-  // AI_MODEL_FAST is used by high-volume classification (triage, radar
-  // scoring) and falls back to AI_MODEL.
+  // Model ids and effort per class (src/ai/models.ts). AI_MODEL / AI_EFFORT:
+  // reports, summaries, studio. AI_MODEL_FAST / AI_EFFORT_FAST: high-volume
+  // classification (triage, radar scoring). Unset = claude-haiku-5-5 for both
+  // classes on Anthropic (openai/gpt-4.1 on GitHub Models) and per-task effort.
+  // The Settings page overrides these env values (read live by src/ai/).
   AI_MODEL: z.string().optional(),
   AI_MODEL_FAST: z.string().optional(),
+  AI_EFFORT: z.string().optional(),
+  AI_EFFORT_FAST: z.string().optional(),
   // Monthly AI budget in USD (Anthropic only): warning at 80 %, non-essential
   // workflows stopped at 100 %. Invalid/empty = 200.
   AI_MONTHLY_BUDGET_USD: z.coerce.number().positive().catch(200),
+  // Weekly « Dépenses IA » recap on Discord (Monday 09:00 Paris, no AI call).
+  // The Settings value (AI_WEEKLY_RECAP_ENABLED) wins. Invalid/empty = on.
+  AI_WEEKLY_RECAP_ENABLED: z
+    .enum(['true', 'false', '1', '0'])
+    .catch('true')
+    .transform((v) => v === 'true' || v === '1'),
   TWEETS_LOOKBACK_DAYS: z.coerce.number().int().positive().default(1),
   // Hard cap on the number of accumulated items fed to the AI in a single digest.
   // Bounds the prompt size so a backlog can never inflate the request past the
@@ -198,7 +217,11 @@ export function tryLoadConfigWithOverrides(
 ): ConfigResult | ConfigError {
   const merged: Record<string, string | undefined> = { ...process.env };
   for (const [key, value] of Object.entries(overrides)) {
-    if (value) merged[key] = value;
+    // AI model/effort settings stay out of Config: the AI port reads them live
+    // from the DB on every call, so Config keeps the env layer only.
+    if (value && !(AI_SELECTION_SETTING_KEYS as readonly string[]).includes(key)) {
+      merged[key] = value;
+    }
   }
   return parseConfig(merged);
 }
