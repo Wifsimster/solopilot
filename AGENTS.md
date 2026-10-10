@@ -109,6 +109,7 @@ workflows). See `docs/api.md`.
 
 - Branch: `main` is the production branch; create a feature branch from `main`
 - Commits: Conventional Commits (`feat:`, `fix:`, `chore:`, `refactor:`)
+- Pull requests run `.github/workflows/ci.yml` (lint, build, unit tests); merge only when it is green
 - CI triggers on push to `main` (lint → build → Docker → deploy) — auto-detects release type (major/minor/patch) from commit messages
 - Version bumps are automated by CI (skip `chore: bump version` commits)
 
