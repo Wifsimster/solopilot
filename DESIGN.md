@@ -74,7 +74,7 @@ typography:
   features: '"cv11", "ss01"'
   body-tracking: -0.011em
   heading-tracking: -0.02em
-  extra-steps: { 2xs: 0.6875rem, 3xs: 0.625rem }
+  extra-steps: { 2xs: 0.6875rem, 3xs: 0.625rem, ui-sm: 0.8125rem, ui-lg: 0.9375rem, title: 1.75rem }
   scale: tailwind-default
 rounded:
   base: 0.625rem
@@ -150,7 +150,14 @@ l. 67–113, `.dark` l. 115–160). Tailwind v4. Dark is the `.dark` class
 
 Brand decoration (`@layer utilities`): `.bg-brand-aurora` (three radial
 washes: indigo 277, violet 292, blue 230 at 5–16 %), `.bg-grid-fade` (32 px
-grid, masked), `.text-gradient-brand` (135°, indigo → violet).
+grid, masked), `.text-gradient-brand` (135°, indigo → violet). All three read
+`var(--primary)`, `var(--chart-2)`, `var(--chart-3)` and `var(--foreground)`
+through `color-mix()`, so they follow the theme.
+
+Platform identity (`components/studio/platform-meta.tsx`): Reddit maps to
+`--chart-4`, Générique to `--chart-3` (`--color-platform-*` in `@theme
+inline`). The `-icon` variants mix in 10 % `--foreground`: light 3.09:1
+(Reddit) and 3.11:1 (Générique) on white, dark ≥ 8.6:1 on cards.
 
 ## Typography
 
@@ -160,9 +167,13 @@ grid, masked), `.text-gradient-brand` (135°, indigo → violet).
 `letter-spacing: -0.02em`.
 
 Scale: Tailwind defaults plus two micro steps, `text-2xs` 11 px (13 uses) and
-`text-3xs` 10 px (24 uses), size only. Page title: `text-2xl font-semibold
-tracking-tight` (`components/page-header.tsx`). Buttons `text-sm
-font-medium`.
+`text-3xs` 10 px (24 uses), and three off-scale steps, `text-ui-sm` 13 px
+(Button `sm`), `text-ui-lg` 15 px (Button `lg`) and `text-title` 28 px; all
+size only. Page title: `text-2xl font-semibold tracking-tight
+sm:text-title sm:leading-9` (`components/page-header.tsx`). Buttons `text-sm
+font-medium`. Custom steps are registered in `extendTailwindMerge`
+(`lib/utils.ts`); an unregistered `text-*` name is read as a color and drops
+the real color class.
 
 ## Layout
 
@@ -177,8 +188,10 @@ building blocks.
 Tailwind's shadow keys are re-pointed to theme-aware values (`@theme inline`
 `--shadow-xs|sm|md|lg` → `--shadow-*-value`), indigo-tinted in light, black
 in dark (values in the frontmatter). Card, Input, Button `outline` and
-`destructive` use `shadow-xs`. Button `default` adds an inset highlight
-`inset 0 1px 0 0 oklch(1 0 0/0.14), 0 1px 2px 0 oklch(0 0 0/0.12)`.
+`destructive` use `shadow-xs`. Button `default` uses `shadow-raised`
+(`--shadow-raised-value`: `inset 0 1px 0 0 oklch(1 0 0/0.14), 0 1px 2px 0
+oklch(0 0 0/0.12)`, same in both modes). A `shadow-*` class passed to a
+`Button` replaces it.
 
 ## Shapes
 
@@ -210,7 +223,7 @@ icons, `sonner` toasts (single `<Toaster>` at the root, ADR 0002).
 
 **Do**
 - Use semantic tokens for status (`success`, `warning`, `destructive`), never `emerald-*` / `amber-*` (ADR 0002).
-- Use `text-2xs` / `text-3xs` for dense meta instead of bracketed pixel sizes.
+- Use `text-2xs` / `text-3xs` / `text-ui-sm` / `text-ui-lg` / `text-title` instead of bracketed pixel sizes.
 - Use Radix primitives for tabs, dialogs, menus and tooltips; Sonner for transient feedback.
 - Keep surfaces on the 277-hue neutrals and the indigo accent.
 
@@ -228,7 +241,7 @@ the mobile menu, `responsive-dialog.tsx` for Dialog / Drawer.
 
 Found in the code, not fixed here.
 
-1. **Bracketed type sizes remain**: Button `sm` `text-[13px]`, `lg` `text-[15px]` (`ui/button-variants.ts`), page title `sm:text-[28px]` (`components/page-header.tsx`), while `globals.css` introduced `text-2xs`/`text-3xs` precisely to stop bracketed pixel values.
-2. **Raw palette colors**: `components/studio/platform-meta.tsx` uses `bg-orange-500`, `text-orange-600 dark:text-orange-400`, `bg-blue-500`, `text-blue-600 dark:text-blue-400` for platform dots.
-3. **Raw shadow in Button `default`**: an arbitrary `[box-shadow:…oklch(…)]` instead of a `--shadow-*` token.
-4. **Brand colors hard-coded in utilities**: `.bg-brand-aurora`, `.bg-grid-fade` and `.text-gradient-brand` repeat `oklch(0.545 0.218 277.2)`, `oklch(0.66 0.18 292)`… instead of `var(--primary)` / `var(--chart-2)`, and `.text-gradient-brand` has no dark variant.
+1. **Instagram platform color is raw**: `components/studio/platform-meta.tsx` still uses `bg-pink-500`, `text-pink-600 dark:text-pink-400`, `border-l-pink-500`. The palette has no pink token; choosing one is a palette decision.
+2. **Platform icon contrast on hover**: the light `-icon` variants reach 3:1 on white but about 2.9:1 on `--accent`/`--muted` (hovered outline buttons). The label next to the icon carries the meaning.
+
+Resolved (2026-10-10): bracketed type sizes in Button and PageHeader, raw orange/blue platform colors, the arbitrary Button `default` shadow, and the hard-coded oklch values in `.bg-brand-aurora`, `.bg-grid-fade` and `.text-gradient-brand` (which now has a dark variant).

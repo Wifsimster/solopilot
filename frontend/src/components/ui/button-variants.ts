@@ -6,7 +6,7 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground hover:bg-primary/90 [box-shadow:inset_0_1px_0_0_oklch(1_0_0/0.14),0_1px_2px_0_oklch(0_0_0/0.12)]",
+          "bg-primary text-primary-foreground hover:bg-primary/90 shadow-raised",
         destructive:
           "bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90",
         outline:
@@ -18,8 +18,8 @@ export const buttonVariants = cva(
       },
       size: {
         default: "h-10 px-4 py-2",
-        sm: "h-9 rounded-md px-3 text-[13px]",
-        lg: "h-11 rounded-lg px-6 text-[15px]",
+        sm: "h-9 rounded-md px-3 text-ui-sm",
+        lg: "h-11 rounded-lg px-6 text-ui-lg",
         icon: "h-10 w-10",
       },
     },

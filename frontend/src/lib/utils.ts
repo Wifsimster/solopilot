@@ -1,5 +1,17 @@
 import { type ClassValue, clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { extendTailwindMerge } from 'tailwind-merge';
+
+// Register the custom theme steps from globals.css so twMerge sorts them into
+// the right group (unknown `text-*` names default to text colors and would
+// knock out the real color class).
+const twMerge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      'font-size': [{ text: ['2xs', '3xs', 'ui-sm', 'ui-lg', 'title'] }],
+      shadow: [{ shadow: ['raised'] }],
+    },
+  },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
