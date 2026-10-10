@@ -13,6 +13,24 @@ la skill [`.claude/skills/solopilot/`](../.claude/skills/solopilot/SKILL.md).
 - **Basic Auth.** Quand le serveur a `ADMIN_PASSWORD` defini, toutes les routes
   sont protegees par HTTP Basic, utilisateur `admin`, mot de passe =
   `ADMIN_PASSWORD`. Si la variable n'est pas definie, l'auth n'est pas appliquee.
+- **Jetons d'API a portee (ADR-0029).** Un agent peut s'authentifier avec un
+  jeton `sp_…` cree dans Parametres > Jetons d'API (ou `POST /api/tokens`), via
+  `Authorization: Bearer sp_…` ou `X-Api-Token: sp_…` (utile quand un proxy
+  d'authentification occupe deja `Authorization`). Une requete portant un jeton
+  est authentifiee par ce seul jeton (la Basic Auth est ignoree) et ne peut
+  atteindre que les routes de ses portees, eventuellement limitees a certains
+  produits ; toute autre route renvoie 403 (refus par defaut). Jeton inconnu,
+  revoque ou malforme : 401. Apres 10 echecs en 10 min, le client est bloque
+  15 min (429). Chaque requete par jeton est journalisee (methode, chemin,
+  produit, statut ; jamais le corps), consultable via `GET /api/tokens/audit`.
+
+  | Portee | Routes |
+  |--------|--------|
+  | `comptabilite:read` | `GET /api/comptabilite`, `GET /api/comptabilite/ledger` |
+  | `comptabilite:write` | `POST /api/comptabilite/ledger` |
+  | `products:read` | `GET /api/products` (projection `id`, `name`, `archived`, filtree par la restriction produit) |
+
+  Le CLI utilise un jeton quand `SOLOPILOT_TOKEN` est defini.
 - **CSRF / Origin.** Les requetes mutantes (POST/PUT/PATCH/DELETE) sont rejetees
   si elles portent un en-tete `Origin`/`Referer` qui ne correspond pas a l'hote.
   Quand aucun de ces en-tetes n'est envoye, le controle passe — c'est le cas du
@@ -115,8 +133,17 @@ identifiants), elles renvoient une reponse vide ou minimale.
 |---------|------|-------|------|-------------|
 | GET | `/api/comptabilite` | `productId` | — | Statut CA + estimation URSSAF + config |
 | POST | `/api/comptabilite/config` | `productId` | `comptaConfigSchema` | Definit le type d'activite / la periode de declaration |
-| GET | `/api/comptabilite/ledger` | `productId` | — | Liste les ecritures |
-| POST | `/api/comptabilite/ledger` | `productId` | `ledgerCreateSchema` | Ajoute une ecriture |
+| GET | `/api/comptabilite/ledger` | `productId`, `since` (`YYYY-MM-DD`, opt) | — | Liste les ecritures (plus recentes d'abord) |
+| POST | `/api/comptabilite/ledger` | `productId` | `ledgerCreateSchema` | Ajoute une ecriture. `productId` = slug du produit (`products.id`, ex. `toko`) ; produit inconnu : 404. Si `(productId, external_ref)` existe deja : **409** `{ error, entry }` avec l'ecriture existante, rien n'est ecrit |
+
+### Jetons d'API (admin uniquement)
+
+| Methode | Path | Query | Body | Description |
+|---------|------|-------|------|-------------|
+| GET | `/api/tokens` | — | — | Liste les jetons (jamais le secret ni son empreinte) + portees disponibles |
+| POST | `/api/tokens` | — | `{ name, scopes[], productIds?: string[] \| null }` | Cree un jeton ; renvoie `{ token, secret }`, le secret n'est affiche qu'une fois |
+| DELETE | `/api/tokens/:id` | — | — | Revoque le jeton (la ligne reste pour l'audit) |
+| GET | `/api/tokens/audit` | `tokenId`, `limit` (def 50, max 500) | — | Journal d'utilisation des jetons (90 jours) |
 
 ### CRM
 
@@ -237,7 +264,11 @@ requis, `opt` = optionnel, `def` = valeur par defaut.
   `eur`), `issued_on` (`YYYY-MM-DD`, opt), `due_on` (`YYYY-MM-DD`, req),
   `status` (`draft`|`sent`|`paid`|`void`, opt def `sent`).
 - **`ledgerCreateSchema`** — `kind` (`recette`|`depense`, req), `amount_cents`
-  (int > 0, req), `label` (string, req), `occurred_on` (`YYYY-MM-DD`, opt).
+  (int > 0, req), `label` (string, req), `occurred_on` (`YYYY-MM-DD`, opt),
+  `external_ref` (string 1-128, opt ; cle d'idempotence unique par produit, ex.
+  reference bancaire), `source` (`[a-z0-9:._-]`, 64 car. max, opt ; ex.
+  `agent:budget`, affichee dans le journal). L'id du jeton qui a ecrit
+  l'ecriture est stocke a part (`api_token_id`).
 - **`comptaConfigSchema`** — `activityType` (`services_bnc`|`services_bic`|`vente`,
   opt), `declarationPeriod` (`monthly`|`quarterly`, opt).
 - **`contactCreateSchema`** — `name` (string, req), `email` (email, opt),

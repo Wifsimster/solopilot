@@ -706,6 +706,13 @@ export interface LedgerRecord {
   label: string;
   occurred_on: string;
   created_at: number;
+  // ADR-0029: idempotency key from the source system (bank / store payout
+  // reference), unique per product when set.
+  external_ref: string | null;
+  // ADR-0029: who wrote the entry (e.g. `agent:budget`); NULL = manual entry.
+  source: string | null;
+  // ADR-0029: API token that created the entry; NULL for admin (Basic) writes.
+  api_token_id: string | null;
 }
 
 // Comptabilité module migrations (ADR-0017). Idempotent. Manual revenue/expense
@@ -723,6 +730,71 @@ function runComptaMigrations(database: Database.Database) {
 
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_ledger_product_date ON ledger(product_id, occurred_on)`,
+  );
+
+  // ADR-0029: idempotent agent writes. New nullable columns, so rows written
+  // before this migration keep NULL and never collide on the partial index.
+  addColumnIfMissing(database, 'ledger', 'external_ref', 'TEXT');
+  addColumnIfMissing(database, 'ledger', 'source', 'TEXT');
+  addColumnIfMissing(database, 'ledger', 'api_token_id', 'TEXT');
+  database.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_external_ref ON ledger(product_id, external_ref) WHERE external_ref IS NOT NULL`,
+  );
+}
+
+export interface ApiTokenRecord {
+  id: string;
+  name: string;
+  token_hash: string;
+  token_prefix: string;
+  scopes: string; // JSON string array
+  product_ids: string | null; // JSON string array; NULL = every product
+  created_at: number;
+  last_used_at: number | null;
+  revoked_at: number | null;
+}
+
+export interface ApiTokenAuditRecord {
+  id: number;
+  at: number;
+  token_id: string | null;
+  method: string;
+  path: string;
+  product_id: string | null;
+  status: number;
+  outcome: string;
+  client: string | null;
+}
+
+// Scoped API tokens (ADR-0029). Only the SHA-256 of the secret is stored. The
+// audit table records who/what/when for token-authenticated requests (method,
+// path, product, status) and never request or response bodies. Idempotent.
+function runApiTokenMigrations(database: Database.Database) {
+  database.exec(`CREATE TABLE IF NOT EXISTS api_tokens (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    token_prefix TEXT NOT NULL,
+    scopes TEXT NOT NULL,
+    product_ids TEXT,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    revoked_at INTEGER
+  )`);
+  database.exec(`CREATE TABLE IF NOT EXISTS api_token_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    token_id TEXT,
+    method TEXT NOT NULL,
+    path TEXT NOT NULL,
+    product_id TEXT,
+    status INTEGER NOT NULL,
+    outcome TEXT NOT NULL,
+    client TEXT
+  )`);
+  database.exec(`CREATE INDEX IF NOT EXISTS idx_api_token_audit_at ON api_token_audit(at)`);
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_api_token_audit_token ON api_token_audit(token_id, at)`,
   );
 }
 
@@ -913,6 +985,7 @@ export function getDb(): Database.Database {
     runAiUsageReportMigrations(db);
     runFacturationMigrations(db);
     runComptaMigrations(db);
+    runApiTokenMigrations(db);
     runCrmMigrations(db);
     runAgendaMigrations(db);
 

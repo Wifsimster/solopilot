@@ -79,8 +79,12 @@ const ENDPOINT_CATALOG: { group: string; lines: string[] }[] = [
     lines: [
       'GET    /api/comptabilite — turnover + URSSAF estimate (?productId)',
       'POST   /api/comptabilite/config — set activityType/declarationPeriod (?productId)',
-      'GET    /api/comptabilite/ledger — list ledger (?productId)',
-      'POST   /api/comptabilite/ledger — add ledger entry (?productId)',
+      'GET    /api/comptabilite/ledger — list ledger (?productId,?since=YYYY-MM-DD)',
+      'POST   /api/comptabilite/ledger — add ledger entry (?productId; external_ref → 409 if already recorded)',
+      'GET    /api/tokens — list API tokens (admin only)',
+      'POST   /api/tokens — create API token, secret shown once (admin only)',
+      'DELETE /api/tokens/:id — revoke API token (admin only)',
+      'GET    /api/tokens/audit — token audit log (?tokenId,?limit; admin only)',
     ],
   },
   {
@@ -208,6 +212,7 @@ Convenience commands:
 Flags (may appear anywhere):
   --url <u>        base URL (env SOLOPILOT_API_URL, default ${DEFAULT_URL})
   --password <p>   admin password (env SOLOPILOT_ADMIN_PASSWORD or ADMIN_PASSWORD)
+                   (env SOLOPILOT_TOKEN=sp_… uses a scoped API token instead)
   --product <id>   product scope, sent as ?productId (env SOLOPILOT_PRODUCT_ID)
   --query k=v, -q  extra query param (repeatable)
   --raw            print the response body as-is (no JSON pretty-print)
@@ -330,7 +335,11 @@ async function request(
   const headers: Record<string, string> = {};
   const password =
     args.password ?? process.env.SOLOPILOT_ADMIN_PASSWORD ?? process.env.ADMIN_PASSWORD;
-  if (password) {
+  // Scoped API token (ADR-0029) takes precedence over the admin password.
+  const token = process.env.SOLOPILOT_TOKEN;
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  } else if (password) {
     headers.Authorization = `Basic ${Buffer.from(`admin:${password}`).toString('base64')}`;
   }
   if (body !== undefined) {

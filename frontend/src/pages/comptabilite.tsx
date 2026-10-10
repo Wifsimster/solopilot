@@ -21,6 +21,14 @@ import { PageHeader } from '@/components/page-header';
 import { ErrorState } from '@/components/error-state';
 import { StatCard } from '@/components/stat-card';
 import { useSelectedProduct } from '@/lib/product-context-hooks';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 const repereConfig = { value: { label: 'Montant' } } satisfies ChartConfig;
 const REPERE_COLORS = ['var(--chart-1)', 'var(--series-2)', 'var(--series-1)'];
@@ -51,6 +59,82 @@ interface ComptaResponse {
 }
 
 const euros = (cents: number) => `${(cents / 100).toFixed(2)} €`;
+
+interface LedgerEntry {
+  id: string;
+  kind: 'recette' | 'depense';
+  amount_cents: number;
+  label: string;
+  occurred_on: string;
+  external_ref: string | null;
+  source: string | null;
+  api_token_id: string | null;
+}
+
+/** Journal des écritures manuelles / agents (ADR-0017, source + référence ADR-0029). */
+function LedgerCard({ productId }: { productId: string }) {
+  const { data, loading, error } = useApi<LedgerEntry[]>('/api/comptabilite/ledger', {
+    productId,
+  });
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle>Journal des écritures</CardTitle>
+        <CardDescription>
+          Recettes et dépenses saisies hors facturation, avec leur origine (manuelle ou agent).
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {loading && !data && <Skeleton className="h-24 w-full rounded-lg" />}
+        {error && !data && (
+          <p className="text-sm text-muted-foreground">Journal indisponible : {error}</p>
+        )}
+        {data && data.length === 0 && (
+          <p className="text-sm text-muted-foreground">Aucune écriture pour ce produit.</p>
+        )}
+        {data && data.length > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Libellé</TableHead>
+                <TableHead className="text-right">Montant</TableHead>
+                <TableHead>Origine</TableHead>
+                <TableHead>Référence</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.map((e) => (
+                <TableRow key={e.id}>
+                  <TableCell className="whitespace-nowrap tabular-nums">
+                    {new Date(`${e.occurred_on}T12:00:00`).toLocaleDateString('fr-FR')}
+                  </TableCell>
+                  <TableCell className="break-words">{e.label}</TableCell>
+                  <TableCell
+                    className={`whitespace-nowrap text-right tabular-nums ${
+                      e.kind === 'recette' ? 'text-success' : 'text-destructive'
+                    }`}
+                  >
+                    {e.kind === 'recette' ? '+' : '−'}
+                    {euros(e.amount_cents)}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={e.source || e.api_token_id ? 'brand' : 'secondary'}>
+                      {e.source ?? (e.api_token_id ? 'jeton API' : 'manuelle')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs break-all text-muted-foreground">
+                    {e.external_ref ?? '—'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function GaugeTone(pct: number, exceeded?: boolean): 'destructive' | 'warning' | 'success' {
   if (exceeded || pct >= 100) return 'destructive';
@@ -284,6 +368,8 @@ export function ComptabilitePage() {
           </Card>
         </div>
       )}
+
+      <LedgerCard productId={selectedProductId} />
     </div>
   );
 }
