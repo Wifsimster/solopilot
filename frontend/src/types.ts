@@ -266,3 +266,41 @@ export interface VeilleItem {
   /** How the item was collected: topical veille vs brand-mention search. */
   origin: 'topic' | 'mention';
 }
+
+// --- Radar produit (ADR-0026) ---
+
+export type RadarProposalStatus = 'creating' | 'dry_run' | 'created' | 'failed' | 'capped';
+
+export interface RadarProposal {
+  id: number;
+  item_id: string;
+  product_id: string;
+  product_name: string | null;
+  repo: string;
+  score: number;
+  reason: string | null;
+  day: string;
+  status: RadarProposalStatus;
+  title: string | null;
+  body: string | null;
+  issue_url: string | null;
+  issue_number: number | null;
+  error: string | null;
+  source: string | null;
+  source_url: string | null;
+  created_at: number;
+}
+
+export interface RadarResponse {
+  settings: {
+    enabled: boolean;
+    dryRun: boolean;
+    scoreThreshold: number;
+    maxPerProductPerDay: number;
+    maxPerDay: number;
+  };
+  tokenConfigured: boolean;
+  running: boolean;
+  repoProducts: { id: string; name: string; repo: string }[];
+  proposals: RadarProposal[];
+}

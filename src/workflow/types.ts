@@ -93,10 +93,22 @@ export interface CalendarConnector {
   listUpcoming(): Promise<CalendarEventData[]>;
 }
 
+/** Write access to GitHub issues on the product repos (Radar produit, ADR-0026). */
+export interface GithubIssuesConnector {
+  /** False when GITHUB_ISSUES_TOKEN is unset — callers must stay in dry-run. */
+  isConfigured(): boolean;
+  createIssue(
+    owner: string,
+    repo: string,
+    issue: { title: string; body: string },
+  ): Promise<{ number: number; url: string; labeled: boolean }>;
+}
+
 export interface ConnectorRegistry {
   discord: DiscordConnector;
   stripe: StripeConnector;
   calendar: CalendarConnector;
+  githubIssues: GithubIssuesConnector;
 }
 
 export interface StepContext {

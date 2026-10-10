@@ -21,6 +21,7 @@ import {
   veillePublishRunStep,
   veilleAlertRunStep,
   veilleConsolidatedDigestStep,
+  veilleRadarProduitStep,
 } from '../steps/veille.js';
 import { veilleWorkflows } from '../modules/veille/workflows.js';
 import { cockpitWorkflows } from '../modules/cockpit/workflows.js';
@@ -51,6 +52,7 @@ export function registerSolopilot(): void {
   registerStep(veillePublishRunStep);
   registerStep(veilleAlertRunStep);
   registerStep(veilleConsolidatedDigestStep);
+  registerStep(veilleRadarProduitStep);
 
   for (const wf of [
     ...veilleWorkflows,

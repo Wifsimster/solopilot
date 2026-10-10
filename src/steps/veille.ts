@@ -14,6 +14,7 @@ import {
   runConsolidatedDigest,
   type ConsolidatedDigestResult,
 } from '../modules/veille/consolidated-service.js';
+import { runProductRadar, type RadarResult } from '../modules/veille/radar-service.js';
 import type { Step } from '../workflow/types.js';
 
 export interface VeilleCollectOutput {
@@ -66,4 +67,15 @@ export const veilleAlertRunStep: Step<VeilleAlertOutput> = {
 export const veilleConsolidatedDigestStep: Step<ConsolidatedDigestResult> = {
   use: 'veille.consolidated-digest-run',
   run: async (ctx) => runConsolidatedDigest(ctx.config, 'cron'),
+};
+
+/**
+ * Radar produit (ADR-0026): scores triaged news against every repo-backed
+ * product and turns very relevant pairs into GitHub issue proposals (dry-run by
+ * default). `ctx.config` is the base config merged with global settings. Not
+ * degradable: an AI failure marks the run as error and leaves items pending.
+ */
+export const veilleRadarProduitStep: Step<RadarResult> = {
+  use: 'veille.radar-produit-run',
+  run: async (ctx) => runProductRadar(ctx.config, { github: ctx.connectors.githubIssues }),
 };

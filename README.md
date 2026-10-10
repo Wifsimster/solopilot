@@ -61,6 +61,7 @@ Principe : ajouter une capacite metier = ajouter un workflow, pas reecrire la pl
 - **Filtrage et resume thematique** — Regroupe l'actualite par theme, resume en francais via GitHub Models (max 2000 caracteres)
 - **Notification Discord** — Envoi automatique ou manuel du resume
 - **Synthese mensuelle** — Agregation des resumes quotidiens
+- **Radar produit** — Une actualite tres en rapport avec un produit devient une proposition d'issue GitHub (rapport marketing en francais : idees, pour/contre, effort, impact) dans le depot du produit. Desactive par defaut, simulation par defaut, plafonds journaliers ([ADR-0026](docs/adr/0026-veille-radar-produit-github-issues.md))
 - **Acquisition** — Signaux d'intention, content studio, brouillons de reponses leads
 - **Tableau de bord** — Statut, historique des executions, declenchement manuel, assistant de configuration
 - **Detection automatique des IDs GraphQL** — S'adapte quand X modifie ses endpoints internes
@@ -123,6 +124,10 @@ Cette architecture offre 24 fois plus de couverture qu'une execution unique, pou
 | `ADMIN_PASSWORD` | — | Mot de passe pour le tableau de bord |
 | `WEB_PORT` | `3000` | Port du serveur web |
 | `DB_PATH` | `./data/bot.db` | Chemin de la base SQLite |
+| `GITHUB_ISSUES_TOKEN` | — | Radar produit : token GitHub *fine-grained* dedie, permission **Issues : lecture et ecriture** limitee aux depots des produits. Distinct de `GITHUB_TOKEN` (jamais utilise pour ecrire). Absent = le radar reste en simulation |
+| `RADAR_ENABLED` / `RADAR_DRY_RUN` | `false` / `true` | Radar produit : activation et mode simulation (aussi dans Parametres) |
+| `RADAR_SCORE_THRESHOLD` | `0.8` | Radar produit : pertinence minimale (0-1) |
+| `RADAR_MAX_PER_PRODUCT_PER_DAY` / `RADAR_MAX_PER_DAY` | `1` / `3` | Radar produit : plafonds journaliers |
 
 Les identifiants peuvent aussi etre renseignes depuis l'interface web (assistant de configuration).
 
