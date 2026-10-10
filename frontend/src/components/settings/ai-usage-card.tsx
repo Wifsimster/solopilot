@@ -3,14 +3,8 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Link } from 'react-router-dom';
+import { ArrowRight } from 'lucide-react';
 import type { AiUsageResponse } from '@/types';
 
 const PROVIDER_LABELS: Record<AiUsageResponse['provider'], string> = {
@@ -22,11 +16,10 @@ function usd(value: number): string {
   return value.toLocaleString('fr-FR', { style: 'currency', currency: 'USD' });
 }
 
-function tokens(value: number): string {
-  return value.toLocaleString('fr-FR');
-}
-
-/** Read-only: provider, models and month-to-date spend vs AI_MONTHLY_BUDGET_USD. */
+/**
+ * Compact summary: provider, models and month-to-date spend vs
+ * AI_MONTHLY_BUDGET_USD. The full analysis lives on the « Dépenses IA » page.
+ */
 export function AiUsageCard() {
   const { data, loading, error } = useApi<AiUsageResponse>('/api/ai/usage');
 
@@ -41,6 +34,8 @@ export function AiUsageCard() {
     );
   }
 
+  const calls = data.byTask.reduce((sum, row) => sum + row.calls, 0);
+  const topTask = data.byTask[0];
   const pct = Math.min(100, Math.round((data.spentUsd / data.budgetUsd) * 100));
   const barColor =
     data.level === 'exceeded'
@@ -108,34 +103,19 @@ export function AiUsageCard() {
           </Alert>
         )}
 
-        {data.byTask.length > 0 && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tâche</TableHead>
-                <TableHead className="text-right">Appels</TableHead>
-                <TableHead className="text-right">Tokens entrée</TableHead>
-                <TableHead className="text-right">Tokens cache lus</TableHead>
-                <TableHead className="text-right">Tokens sortie</TableHead>
-                <TableHead className="text-right">Coût estimé</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.byTask.map((row) => (
-                <TableRow key={row.task}>
-                  <TableCell className="font-mono text-xs">{row.task}</TableCell>
-                  <TableCell className="text-right">{tokens(row.calls)}</TableCell>
-                  <TableCell className="text-right">{tokens(row.input_tokens)}</TableCell>
-                  <TableCell className="text-right">
-                    {tokens(row.cache_read_input_tokens)}
-                  </TableCell>
-                  <TableCell className="text-right">{tokens(row.output_tokens)}</TableCell>
-                  <TableCell className="text-right">{usd(row.cost_usd)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="text-muted-foreground">
+            {calls.toLocaleString('fr-FR')} appel{calls > 1 ? 's' : ''} ce mois-ci
+            {topTask ? `, surtout « ${topTask.task} »` : ''}.
+          </span>
+          <Link
+            to="/depenses-ia"
+            className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Analyse détaillée des dépenses
+            <ArrowRight className="size-3.5" aria-hidden="true" />
+          </Link>
+        </div>
       </CardContent>
     </Card>
   );

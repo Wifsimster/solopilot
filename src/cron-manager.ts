@@ -11,6 +11,7 @@ import { sendDiscordNotification } from './adapters/discord-notifier.js';
 import { getRadarSettings, isRadarRunning } from './modules/veille/radar-service.js';
 import { veilleRadarProduit } from './modules/veille/workflows.js';
 import type { Config } from './config.js';
+import { sendWeeklyRecap, WEEKLY_RECAP_CRON } from './ai/usage-recap.js';
 
 /**
  * Veille flip (ADR-0020). When WORKFLOW_SCHEDULER=true, the same cron ticks
@@ -271,6 +272,27 @@ export function scheduleRadarCron(
       await runWorkflowById(veilleRadarProduit.id, { config, trigger: 'cron', guard: false });
     } catch (err) {
       logger.error('Radar produit failed', {
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+}
+
+/**
+ * Weekly « Dépenses IA » recap (Monday 09:00 Paris). The toggle is read at
+ * each tick; the recap itself dedupes per week and makes no AI call.
+ */
+export function scheduleAiRecapCron(
+  baseConfig: Config,
+  buildMergedConfig: (base: Config, overrides: Record<string, string>) => Config,
+): boolean {
+  return scheduleNamedCron('ai-weekly-recap', WEEKLY_RECAP_CRON, async () => {
+    try {
+      const config = buildMergedConfig(baseConfig, getSettingsMap());
+      const status = await sendWeeklyRecap(config);
+      logger.info('AI weekly recap', { status });
+    } catch (err) {
+      logger.error('AI weekly recap failed', {
         message: err instanceof Error ? err.message : String(err),
       });
     }

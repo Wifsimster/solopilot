@@ -356,3 +356,102 @@ export interface AiUsageResponse {
     cost_usd: number;
   }[];
 }
+
+// « Dépenses IA » report (GET /api/ai/usage/report). Amounts are full-precision
+// USD; the UI rounds for display only.
+export type AiSpendPeriod = '7d' | '30d' | 'month' | 'prev-month' | '12m';
+export type AiTaskClassId = 'triage' | 'digest' | 'radar' | 'studio' | 'intent' | 'monthly' | 'other';
+export type AiBudgetLevel = 'ok' | 'warning' | 'exceeded';
+
+export interface AiTokenTotals {
+  inputTokens: number;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
+  outputTokens: number;
+}
+
+export interface AiSpendReport {
+  period: AiSpendPeriod;
+  range: { from: string; to: string; bucket: 'day' | 'month'; days: number; label: string };
+  timeZone: string;
+  generatedAt: number;
+  provider: 'anthropic' | 'github-models';
+  enforced: boolean;
+  budgetUsd: number;
+  warningRatio: number;
+  hasUsage: boolean;
+  totals: AiTokenTotals & {
+    costUsd: number;
+    calls: number;
+    cacheRate: number | null;
+    avgCostPerCall: number | null;
+    avgCostPerDay: number;
+  };
+  previous: { from: string; to: string; label: string; costUsd: number; calls: number };
+  deltaRatio: number | null;
+  cacheSavingsUsd: number;
+  month: {
+    month: string;
+    label: string;
+    complete: boolean;
+    spentUsd: number;
+    daysElapsed: number;
+    daysInMonth: number;
+    projectedUsd: number;
+    budgetUsd: number;
+    budgetRatio: number;
+    projectedRatio: number;
+    level: AiBudgetLevel;
+    projectedLevel: AiBudgetLevel;
+    points: {
+      day: string;
+      dayOfMonth: number;
+      costUsd: number | null;
+      cumulativeUsd: number | null;
+      projectedUsd: number | null;
+    }[];
+  };
+  classes: { id: AiTaskClassId; label: string }[];
+  series: (AiTokenTotals & {
+    bucket: string;
+    costUsd: number;
+    calls: number;
+    byClass: Record<AiTaskClassId, number>;
+  })[];
+  byClass: (AiTokenTotals & {
+    id: AiTaskClassId;
+    label: string;
+    calls: number;
+    costUsd: number;
+    share: number | null;
+  })[];
+  byTask: (AiTokenTotals & {
+    task: string;
+    label: string;
+    classId: AiTaskClassId;
+    calls: number;
+    costUsd: number;
+    share: number | null;
+    costPerCall: number | null;
+  })[];
+  byModel: {
+    model: string;
+    label: string;
+    provider: string;
+    calls: number;
+    costUsd: number;
+    share: number | null;
+    callShare: number | null;
+  }[];
+  topCalls: (AiTokenTotals & {
+    id: number;
+    createdAt: number;
+    task: string;
+    taskLabel: string;
+    model: string;
+    modelLabel: string;
+    costUsd: number;
+  })[];
+  insights: { id: string; tone: 'neutral' | 'good' | 'warning' | 'critical'; text: string }[];
+  recap: { enabled: boolean; webhookConfigured: boolean; schedule: string };
+}

@@ -8,6 +8,7 @@
  */
 import type { Config } from '../config.js';
 import { getDb } from '../db.js';
+import { parisDateOf } from '../date-utils.js';
 import { getSetting } from '../settings-service.js';
 import { sendDiscordEmbeds } from '../adapters/discord-notifier.js';
 import { logger } from '../logger.js';
@@ -35,13 +36,14 @@ export function parisMonth(now: number = Date.now()): string {
 export function recordAiUsage(usage: AiCallUsage, now: number = Date.now()): void {
   getDb()
     .prepare(
-      `INSERT INTO ai_usage (created_at, month, provider, model, task, input_tokens, output_tokens,
+      `INSERT INTO ai_usage (created_at, month, day, provider, model, task, input_tokens, output_tokens,
         cache_creation_input_tokens, cache_read_input_tokens, stop_reason, cost_usd)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       now,
       parisMonth(now),
+      parisDateOf(now),
       usage.provider,
       usage.model,
       usage.task,
@@ -98,7 +100,9 @@ export function assertWithinBudget(
   }
 }
 
-function resolveAlertWebhook(config: Config): string | undefined {
+export function resolveAlertWebhook(
+  config: Pick<Config, 'DISCORD_WEBHOOK_URL' | 'VEILLE_DISCORD_WEBHOOK_URL'>,
+): string | undefined {
   return (
     getSetting('DISCORD_WEBHOOK_URL') ||
     config.DISCORD_WEBHOOK_URL ||

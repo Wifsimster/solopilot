@@ -7,6 +7,8 @@ const EDITABLE_KEYS = [
   'AI_MODEL_FAST',
   'AI_EFFORT',
   'AI_EFFORT_FAST',
+  // Weekly « Dépenses IA » recap on Discord ('true' | 'false', default on).
+  'AI_WEEKLY_RECAP_ENABLED',
   // AI provider endpoint (OpenAI-compatible). Default GitHub Models; set to
   // https://openrouter.ai/api/v1 to use OpenRouter.
   'AI_BASE_URL',

@@ -32,6 +32,14 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-series-3: var(--series-3);
+  --color-series-4: var(--series-4);
+  --color-series-5: var(--series-5);
+  --color-series-6: var(--series-6);
+  --color-series-7: var(--series-7);
+  --color-series-8: var(--series-8);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -106,6 +114,18 @@
   --chart-3: oklch(0.7 0.15 230);
   --chart-4: oklch(0.72 0.16 70);
   --chart-5: oklch(0.62 0.18 162);
+  /* Categorical series for multi-series charts (Dépenses IA). Fixed order =
+     colour-blind safety: validated adjacent pairs (CVD ΔE >= 8, normal-vision
+     ΔE >= 15) on the card surface. --chart-1/2 (indigo/violet, ΔE 13.2) fail
+     the normal-vision floor, so stacks of 3+ series use these instead. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0.003 277);
   --sidebar-foreground: oklch(0.21 0.02 277);
@@ -157,6 +177,15 @@
   --chart-3: oklch(0.74 0.14 230);
   --chart-4: oklch(0.78 0.15 75);
   --chart-5: oklch(0.7 0.16 162);
+  /* Same eight hues stepped for the dark card surface (all >= 3:1). */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
   --sidebar: oklch(0.185 0.009 277);
   --sidebar-foreground: oklch(0.965 0.004 277);
   --sidebar-primary: oklch(0.64 0.19 277.5);

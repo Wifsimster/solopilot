@@ -121,6 +121,18 @@ token, so spend has to be visible and bounded.
     editable or credential setting, it is never written to the DB, and no endpoint
     returns it. `GET /api/ai/usage` returns provider, models and spend only.
 
+11. **Spend analysis (« Dépenses IA »).** Request from the owner (2026-10-10):
+    « Et une très bonne analyse des dépenses avec graphique, pour surveiller et
+    avoir une overview. » A page (`/depenses-ia`) reads
+    `GET /api/ai/usage/report?period=7d|30d|month|prev-month|12m`. `ai_usage`
+    gains a `day` column (Europe/Paris date, written at insert, backfilled once)
+    with an index, so SQL buckets by Paris day across DST. Projection is linear
+    on days elapsed. Cache savings are net: cache reads priced as uncached input
+    minus the cache-write premium. Insights are deterministic code. A weekly
+    Discord recap (Monday 09:00, `AI_WEEKLY_RECAP_ENABLED`, default on, once per
+    week via `ai_usage_recaps`) uses the budget-alert webhook and makes no AI
+    call. Charts use Recharts, already in the frontend (ADR-0021).
+
 ## Consequences
 
 - Moving to Anthropic is a deploy plus one env variable. Rolling back is one env

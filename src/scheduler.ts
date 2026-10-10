@@ -10,6 +10,7 @@ import {
   schedulePublishQueueCron,
   scheduleMetricsCron,
   scheduleRadarCron,
+  scheduleAiRecapCron,
   stopAll as stopAllCrons,
 } from './cron-manager.js';
 import { recoverStaleRuns, isAnyRunning, isAnyCollecting } from './run-service.js';
@@ -98,6 +99,9 @@ if (configResult.success) {
 
   // Radar produit (ADR-0026): hourly, no-op until RADAR_ENABLED is on.
   scheduleRadarCron(config, buildMergedConfig);
+
+  // Weekly « Dépenses IA » recap on Discord (Monday 09:00, no AI call).
+  scheduleAiRecapCron(config, buildMergedConfig);
 } else {
   logger.warn('X AI Daily Bot started in setup mode — missing credentials', {
     missing: configResult.missing.map((m) => m.key),

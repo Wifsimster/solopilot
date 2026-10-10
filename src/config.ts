@@ -76,6 +76,12 @@ const configSchema = z.object({
   // Monthly AI budget in USD (Anthropic only): warning at 80 %, non-essential
   // workflows stopped at 100 %. Invalid/empty = 200.
   AI_MONTHLY_BUDGET_USD: z.coerce.number().positive().catch(200),
+  // Weekly « Dépenses IA » recap on Discord (Monday 09:00 Paris, no AI call).
+  // The Settings value (AI_WEEKLY_RECAP_ENABLED) wins. Invalid/empty = on.
+  AI_WEEKLY_RECAP_ENABLED: z
+    .enum(['true', 'false', '1', '0'])
+    .catch('true')
+    .transform((v) => v === 'true' || v === '1'),
   TWEETS_LOOKBACK_DAYS: z.coerce.number().int().positive().default(1),
   // Hard cap on the number of accumulated items fed to the AI in a single digest.
   // Bounds the prompt size so a backlog can never inflate the request past the

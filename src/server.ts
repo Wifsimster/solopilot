@@ -215,6 +215,7 @@ import {
   validateAiSettingsUpdate,
 } from './ai/settings.js';
 import { getAiBudgetStatus } from './ai/usage.js';
+import { registerAiUsageReportRoutes } from './ai/usage-report-routes.js';
 import { resolveIssuesToken } from './connectors/github-issues.js';
 import {
   fetchGithubRepos,
@@ -230,6 +231,7 @@ const GLOBAL_ONLY_KEYS = new Set([
   ...RADAR_SETTING_KEYS,
   // AI model/effort: one selection for every feature (src/ai/settings.ts).
   ...AI_SELECTION_SETTING_KEYS,
+  'AI_WEEKLY_RECAP_ENABLED',
 ]);
 
 interface MissingCredential {
@@ -2389,6 +2391,8 @@ export function startServer(
 
     // --- AI usage & budget (ADR-0027) --- never returns any key.
     app.get('/api/ai/usage', (c) => c.json(getAiBudgetStatus(config)));
+    // « Dépenses IA » page: aggregated report + weekly recap toggle.
+    registerAiUsageReportRoutes(app, () => config);
     // Model catalogue (price hints, effort levels) + effective selection per class.
     app.get('/api/ai/models', (c) => c.json(getAiModelsView(config)));
 
