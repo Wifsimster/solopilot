@@ -1,7 +1,7 @@
 // Verification scaffolding: preloaded into the backend by `control-solopilot launch`
 // (node --import). Refuses every outbound HTTP(S) call to a host other than
 // localhost, so a verification run can never reach X, Reddit, Hacker News,
-// GitHub Models / OpenRouter, Discord, Stripe or a calendar feed. Each refused
+// Anthropic, GitHub Models / OpenRouter, Discord, Stripe or a calendar feed. Each refused
 // call is appended to $SOLOPILOT_EGRESS_LOG as one JSON line;
 // `control-solopilot doctor` reports the count.
 import fs from 'node:fs'

@@ -5,7 +5,7 @@ description: Launch and drive Solopilot (auto-entrepreneur back-office, React SP
 
 # Verify Solopilot
 
-Primary surface: the web back-office at `http://localhost:3310`, served by the production entry `dist/scheduler.js` (Hono serves the built SPA from `dist/frontend`). The UI is French. Secondary surfaces, not covered by this harness: the `solopilot` CLI (`dist/cli.js`, see the `solopilot` skill), the workflow engine, and every external integration (X, Reddit, HN, GitHub Models / OpenRouter, Discord, Stripe, calendar feed).
+Primary surface: the web back-office at `http://localhost:3310`, served by the production entry `dist/scheduler.js` (Hono serves the built SPA from `dist/frontend`). The UI is French. Secondary surfaces, not covered by this harness: the `solopilot` CLI (`dist/cli.js`, see the `solopilot` skill), the workflow engine, and every external integration (X, Reddit, HN, YouTube, Anthropic, GitHub Models / OpenRouter, the radar's GitHub issues, Discord, Stripe, calendar feed).
 
 Everything goes through one CLI, `control-solopilot`. Each call prints one JSON object (`ok`, data, and on failure `error` + `fix`). Run it from the repo root:
 
@@ -32,9 +32,9 @@ $C launch             # ~40 s with the build; --skip-build reuses dist/ (~2 s)
 3. Starts `dist/scheduler.js` on `:3310` with `scripts/no-egress.mjs` preloaded. It refuses every HTTP(S) call to a host other than localhost and logs it to `.verify-run/egress-blocked.jsonl`.
 4. Starts a headless Chromium daemon (CDP on `:9335`) that every later command attaches to. It records console and HTTP traffic to JSONL, adds the Basic-auth header to every request to the app, and aborts every third-party request (logged with status `blocked`).
 
-`launch` is ready when it returns `"ok": true`. It forces `X_*`, `GITHUB_TOKEN`, `AI_API_KEY`, `AI_BASE_URL`, the Discord webhooks, `STRIPE_*` and `AGENDA_ICS_URL` to empty values, and sets a random throwaway `ADMIN_PASSWORD` (HTTP Basic auth, user `admin`).
+`launch` is ready when it returns `"ok": true`. It forces `X_*`, `GITHUB_TOKEN`, `GITHUB_ISSUES_TOKEN`, `ANTHROPIC_API_KEY`, `AI_API_KEY`, `AI_BASE_URL`, `YOUTUBE_API_KEY`, the Discord webhooks, `STRIPE_*` and `AGENDA_ICS_URL` to empty values, and sets a random throwaway `ADMIN_PASSWORD` (HTTP Basic auth, user `admin`).
 
-No X credentials means the server boots in "setup" mode, the state of a fresh install: `/healthz` answers `unconfigured`, and no cron is scheduled (no collection, no digest, no publish queue). The CRM, invoice, cockpit and veille-item routes are the same in both modes. The runs, settings and summaries pages use stub routes in setup mode, so this harness does not cover them.
+No X credentials means the server boots in "setup" mode, the state of a fresh install: `/healthz` answers `unconfigured`, and no cron is scheduled (no collection, no digest, no publish queue). The CRM, invoice, cockpit and veille-item routes are the same in both modes. The runs, settings and summaries pages use stub routes in setup mode, so this harness does not cover them. The same goes for `/depenses-ia` and the Settings cards "Radar produit", AI models and AI usage: their API routes exist only in configured mode. The "Jetons d'API" card and `/api/tokens` work in both modes (see [`features/backoffice-auth.md`](features/backoffice-auth.md)).
 
 Isolation: one instance per host. Ports 3310 and 9335 are fixed. `launch` refuses to start when either is busy or when `.verify-run/state.json` exists. Never point the CLI at an instance you did not launch, and never at `data/bot.db`.
 
@@ -131,4 +131,6 @@ Run it after every failed iteration too, so a broken attempt does not leave proc
 - **"Relances à valider" counts sent invoices past their due date.** Use `--due-in -10` to create one. The reminder text is drafted, never sent.
 - **The CRM status column shows the raw value** (`lead`, `active`, `inactive`), not the French labels used by the filter buttons.
 - **`/setup` has no `<main>`.** It sits outside the layout. `snapshot --selector main` fails there after 10 s with a hint; snapshot the whole page instead.
+- **Env proxy and loopback.** With `NODE_USE_ENV_PROXY=1` and `HTTP(S)_PROXY` set, Node sends `fetch()` through the proxy even for `localhost`. The proxy drops the socket, and `launch` used to time out on `/api/setup` ("fetch failed") while `app.log` said "Back-office server started". The CLI now adds `localhost,127.0.0.1` to `NO_PROXY`/`no_proxy` at startup, and the processes it spawns inherit it. If you call the local instance from another Node script, do the same.
+- **Processes die with the caller's process tree in some sandboxes.** `launch` detaches the server and the browser daemon, but a tool runner that kills the whole tree when a command returns (seen in an OpenClaw exec, SIGTERM in `app.log` one second after `launch` returned) leaves `doctor` reporting dead PIDs. Run `launch`, every drive and `teardown` inside one shell invocation there.
 - **Stripe is not drivable.** The page shows "Mode ledger local — Stripe non configuré". Checkout and sync need a Stripe key; report them as not verified.
