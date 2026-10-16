@@ -23,6 +23,16 @@ const PORTS = { app: 3310, cdp: 9335 };
 const BASE = `http://localhost:${PORTS.app}`;
 const require = createRequire(path.join(REPO, 'package.json'));
 
+// With NODE_USE_ENV_PROXY=1 and HTTP(S)_PROXY set, Node sends fetch() through the proxy, loopback
+// included. The proxy drops the socket ("fetch failed") and `launch` times out on /api/setup while the
+// server log says "Back-office server started". Every call this CLI makes is local, so keep loopback
+// direct. The server, seed and browser daemon it spawns inherit the same NO_PROXY.
+for (const k of ['NO_PROXY', 'no_proxy']) {
+  const hosts = (process.env[k] || '').split(',').map((h) => h.trim()).filter(Boolean);
+  for (const h of ['localhost', '127.0.0.1']) if (!hosts.includes(h)) hosts.push(h);
+  process.env[k] = hosts.join(',');
+}
+
 // ---------- output ----------
 function out(obj) {
   process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
@@ -183,7 +193,8 @@ Starts one isolated verification instance:
     is scheduled. ADMIN_PASSWORD is a random throwaway, so HTTP Basic auth is on.
   - a headless Chromium daemon (CDP :${PORTS.cdp}) logged in with that Basic auth, recording
     console + HTTP to JSONL; third-party requests are aborted and logged as "blocked".
-GITHUB_TOKEN, AI_API_KEY, DISCORD_WEBHOOK_URL, STRIPE_*, AGENDA_ICS_URL and X_* are forced empty.
+GITHUB_TOKEN, GITHUB_ISSUES_TOKEN, ANTHROPIC_API_KEY, AI_API_KEY, YOUTUBE_API_KEY, DISCORD_WEBHOOK_URL,
+STRIPE_*, AGENDA_ICS_URL and X_* are forced empty.
 Refuses to start if a port is taken (one instance at a time) or if the Chromium build is missing.
 
 --dry-run   print the plan and touch nothing.`,
@@ -222,7 +233,7 @@ Refuses to start if a port is taken (one instance at a time) or if the Chromium 
       SOLOPILOT_EGRESS_LOG: EGRESS_LOG,
       // Never real third parties during verification. No X credentials: the server boots unconfigured.
       X_USERNAME: '', X_SESSION_AUTH_TOKEN: '', X_SESSION_CSRF_TOKEN: '',
-      GITHUB_TOKEN: '', AI_API_KEY: '', AI_BASE_URL: '', DISCORD_WEBHOOK_URL: '', VEILLE_DISCORD_WEBHOOK_URL: '',
+      GITHUB_TOKEN: '', GITHUB_ISSUES_TOKEN: '', ANTHROPIC_API_KEY: '', AI_API_KEY: '', AI_BASE_URL: '', YOUTUBE_API_KEY: '', DISCORD_WEBHOOK_URL: '', VEILLE_DISCORD_WEBHOOK_URL: '',
       STRIPE_API_KEY: '', STRIPE_PUBLISHABLE_KEY: '', AGENDA_ICS_URL: '', WORKFLOW_SCHEDULER: '', DRY_RUN: 'true',
     };
     const steps = flags['skip-build'] ? [] : [['build', 'npm', ['run', 'build']]];
