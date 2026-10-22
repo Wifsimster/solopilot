@@ -24,7 +24,7 @@
     "dev:workflow": "node --env-file=.env dist/workflow/cli.js",
     "dev:frontend": "cd frontend && npx vite",
     "generate:pwa-icons": "node scripts/generate-pwa-icons.mjs",
-    "lint": "eslint src/",
+    "lint": "OXLINT_TSGOLINT_PATH=\"$(tsrslint-path)\" oxlint --type-aware src/",
     "test": "npm run build:backend && node --test \"test/**/*.test.mjs\"",
     "test:workflow": "npm run build:backend && node scripts/workflow-smoke.mjs",
     "format": "prettier --write src/",
@@ -79,7 +79,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.19.0",
+    "@maschwenk/tsrslint": "0.1.5",
     "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/vite": "^4.0.0",
     "@types/better-sqlite3": "^7.6.13",
@@ -88,12 +88,11 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",
-    "eslint": "^9.39.0",
+    "oxlint": "1.89.0",
     "prettier": "^3.8.0",
     "tailwindcss": "^4.0.0",
     "tsrs": "0.18.0-ts7.1.0-dev.20260929",
     "typescript": "^5.7.0",
-    "typescript-eslint": "^8.54.0",
     "vite": "^6.0.0",
     "vite-plugin-pwa": "^1.3.0"
   }
