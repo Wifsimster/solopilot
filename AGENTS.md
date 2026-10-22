@@ -73,7 +73,7 @@ npm install          # Install dependencies
 npm run build        # Build backend (tsc) + frontend (vite) — required before running
 npm run dev          # Run scheduler with .env loading
 npm run dev:once     # One-shot run (no cron, for testing)
-npm run lint         # ESLint on src/
+npm run lint         # oxlint on src/, type-aware via tsrslint (native binary: Linux glibc x64/arm64 and Apple Silicon macOS only)
 npm test             # Unit tests (node --test on test/*.test.mjs, against dist/)
 npm run test:workflow # Workflow engine smoke test
 npm run format       # Prettier formatting
