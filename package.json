@@ -34,7 +34,8 @@
     "release": "npm run build && npm run docker:build && npm run docker:tag && npm run docker:push",
     "version:patch": "npm version patch --no-git-tag-version",
     "version:minor": "npm version minor --no-git-tag-version",
-    "version:major": "npm version major --no-git-tag-version"
+    "version:major": "npm version major --no-git-tag-version",
+    "typecheck": "tsrs --noEmit && tsrs --noEmit -p frontend"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
@@ -90,6 +91,7 @@
     "eslint": "^9.39.0",
     "prettier": "^3.8.0",
     "tailwindcss": "^4.0.0",
+    "tsrs": "0.18.0-ts7.1.0-dev.20260929",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.54.0",
     "vite": "^6.0.0",
