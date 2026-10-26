@@ -38,7 +38,7 @@ interface Briefing {
     summary: string | null;
     pendingItems: number;
   };
-  acquisition: { status: ModuleStatus; newLeads: number };
+  acquisition: { status: ModuleStatus; newLeads: number; suspiciousKeywords?: number };
   facturation: {
     status: ModuleStatus;
     unpaid: number;
@@ -179,6 +179,13 @@ export function CockpitPage() {
               <p className="mt-1.5 text-sm text-muted-foreground">
                 nouveau(x) signal(aux) d'intérêt à traiter
               </p>
+              {(data.acquisition.suspiciousKeywords ?? 0) > 0 && (
+                <p className="mt-2 text-sm text-amber-600 dark:text-amber-500">
+                  ⚠️ {data.acquisition.suspiciousKeywords} mot(s)-clé(s) d'intention
+                  ressemblent à des phrases — le matcher par sous-chaîne ne les
+                  déclenchera quasiment jamais.
+                </p>
+              )}
             </CardContent>
           </Card>
 

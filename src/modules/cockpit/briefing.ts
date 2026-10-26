@@ -9,7 +9,8 @@
  */
 import { getLastDigest } from '../../run-service.js';
 import { getUnpublishedTweets } from '../../tweet-store.js';
-import { listIntentSignals } from '../../intent-service.js';
+import { listIntentSignals, findSentenceLikeKeywords } from '../../intent-service.js';
+import { getProduct, toProductView } from '../../product-service.js';
 import { listWorkflowRuns } from '../../workflow/run-store.js';
 import { facturationSummary } from '../facturation/store.js';
 import { comptaStatus } from '../comptabilite/compta.js';
@@ -31,7 +32,7 @@ export interface Briefing {
     summary: string | null;
     pendingItems: number;
   };
-  acquisition: { status: ModuleStatus; newLeads: number };
+  acquisition: { status: ModuleStatus; newLeads: number; suspiciousKeywords: number };
   facturation: {
     status: ModuleStatus;
     unpaid: number;
@@ -66,6 +67,15 @@ export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing
   const pendingItems = getUnpublishedTweets(activityId).length;
   const newLeads = listIntentSignals({ productId: activityId, status: 'new', limit: 500 }).length;
 
+  // Config smell: intent enabled but keywords written as sentences (ADR-0009's
+  // substring matcher will silently never fire on them).
+  const productRecord = getProduct(activityId);
+  const productView = productRecord ? toProductView(productRecord) : null;
+  const suspiciousKeywords =
+    productView?.intent_enabled === true
+      ? findSentenceLikeKeywords(productView.intent_keywords).length
+      : 0;
+
   const recentRuns = listWorkflowRuns(50, 0, { activityId });
   const byStatus: Record<string, number> = {};
   for (const run of recentRuns) {
@@ -88,7 +98,7 @@ export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing
       summary: lastDigest?.summary ?? null,
       pendingItems,
     },
-    acquisition: { status: 'live', newLeads },
+    acquisition: { status: 'live', newLeads, suspiciousKeywords },
     facturation: {
       status: 'live',
       unpaid: facturation.unpaid,
@@ -146,6 +156,11 @@ export function renderBriefingText(b: Briefing): string {
       ? `• ${b.acquisition.newLeads} nouveau(x) signal(aux) d'intérêt à traiter.`
       : '_Aucun nouveau signal._',
   );
+  if (b.acquisition.suspiciousKeywords > 0) {
+    lines.push(
+      `• ⚠️ ${b.acquisition.suspiciousKeywords} mot(s)-clé(s) d'intention ressemblent à des phrases — le matcher par sous-chaîne ne les déclenchera quasiment jamais.`,
+    );
+  }
   lines.push('');
 
   lines.push('**FACTURATION**');
