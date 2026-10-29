@@ -1,11 +1,3 @@
-/**
- * Agenda steps.
- *
- * `agenda.sync` — pulls events from the ICS feed into the local store. Degradable
- * and a no-op when no feed is configured.
- * `agenda.rappels` — builds today's reminder, emitting `content: null` (so
- * notify.discord skips) when the day is empty. See ADR-0019.
- */
 import { upsertCalendarEvents, listEventsForDay } from '../modules/agenda/store.js';
 import { getTodayDateParis } from '../date-utils.js';
 import type { Step } from '../workflow/types.js';

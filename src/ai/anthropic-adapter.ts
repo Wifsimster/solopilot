@@ -1,19 +1,3 @@
-/**
- * Anthropic adapter of the AI port (ADR-0027), on the official
- * `@anthropic-ai/sdk`.
- *
- * - Structured JSON via `output_config.format` (json_schema), never prefill.
- * - Effort / adaptive thinking per task profile (or the class's effort from
- *   Settings), gated by the model catalogue in `models.ts`.
- * - Server-side `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`)
- *   only on models that support it (Sonnet 5.5, Opus 5.x, Fable): never on
- *   Claude Haiku 5.5, the default, which has no server-side fallback. The
- *   parameter only exists on the beta Messages surface, hence
- *   `client.beta.messages.create` (without `betas` when no fallback is sent).
- *   `stop_reason: "refusal"` is always checked before reading content.
- * - Retries: the SDK retries 429 / 5xx / connection errors itself
- *   (`maxRetries`); what is left is mapped to a typed `AiError`.
- */
 import Anthropic from '@anthropic-ai/sdk';
 import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema';
 import { AiError } from './errors.js';
@@ -34,7 +18,6 @@ import {
 export const ANTHROPIC_MAX_RETRIES = 2;
 const SERVER_SIDE_FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 
-/** Minimal client surface used here (lets tests inject a fake). */
 export interface AnthropicMessagesClient {
   beta: {
     messages: {
@@ -46,21 +29,18 @@ export interface AnthropicMessagesClient {
   };
 }
 
-/** Per-task effort when the class has no effort override. */
 const EFFORT: Record<AiProfile, AiEffort> = {
   classify: 'low',
   generate: 'medium',
   report: 'high',
 };
 
-/** Extra max_tokens on thinking-capable models: thinking tokens count against it. */
 const THINKING_HEADROOM: Record<AiProfile, number> = {
   classify: 2048,
   generate: 4096,
   report: 8192,
 };
 
-/** Reasoning makes reports slower than the historical 60 s GitHub Models timeouts. */
 const MIN_TIMEOUT_MS: Record<AiProfile, number> = {
   classify: 90_000,
   generate: 120_000,
@@ -75,10 +55,6 @@ export interface AnthropicCallResult {
   costUsd: number;
 }
 
-/**
- * Effort sent for a request: the class override when the model accepts it,
- * else the per-task default; nothing when the model has no effort parameter.
- */
 export function effortFor(
   model: string,
   profile: AiProfile,
@@ -106,7 +82,6 @@ export function buildAnthropicParams(
   return {
     model,
     max_tokens: req.maxTokens + (caps.adaptiveThinking ? THINKING_HEADROOM[profile] : 0),
-    // Stable instructions first; the per-call payload is the only user turn.
     system: [
       {
         type: 'text',
@@ -115,11 +90,6 @@ export function buildAnthropicParams(
       },
     ],
     messages: [{ role: 'user', content: req.user }],
-    // Reports ask for adaptive thinking explicitly. Other profiles leave
-    // `thinking` unset: Haiku 5.5 (and every 5.x model) then runs adaptive
-    // thinking anyway, kept short by low/medium effort. `disabled` is never
-    // sent: Opus 5.5, Sonnet 5.5 and Fable reject it, and Haiku 5.5 rejects it
-    // at xhigh/max effort.
     ...(profile === 'report' && caps.adaptiveThinking
       ? { thinking: { type: 'adaptive' as const } }
       : {}),
@@ -130,7 +100,6 @@ export function buildAnthropicParams(
   };
 }
 
-/** SDK error -> AiError. Most specific class first (APIConnectionTimeoutError extends APIConnectionError extends APIError). */
 export function mapAnthropicError(err: unknown, model: string): AiError {
   if (err instanceof AiError) return err;
   if (err instanceof Anthropic.AuthenticationError) {
@@ -193,7 +162,6 @@ export function mapAnthropicError(err: unknown, model: string): AiError {
     });
   }
   if (err instanceof Anthropic.APIError) {
-    // Remaining statuses, e.g. 402 billing_error, 413 request_too_large.
     return new AiError('api', `Erreur de l'API Anthropic (${err.status ?? '?'}) : ${err.message}`, {
       status: err.status,
       cause: err,
@@ -219,10 +187,6 @@ function readUsage(message: Anthropic.Beta.Messages.BetaMessage): TokenUsage {
 }
 
 export function createAnthropicCaller(client: AnthropicMessagesClient) {
-  /**
-   * One request. Usage is reported through `onUsage` BEFORE stop-reason checks
-   * so refused / truncated calls are still accounted for.
-   */
   return async function call(
     model: string,
     req: AiRequest | AiJsonRequest,
@@ -241,7 +205,6 @@ export function createAnthropicCaller(client: AnthropicMessagesClient) {
     }
 
     const usage = readUsage(message);
-    // `message.model` is the model that served the answer (a fallback model when one ran).
     const result: AnthropicCallResult = {
       text: message.content
         .filter((b): b is Anthropic.Beta.Messages.BetaTextBlock => b.type === 'text')
@@ -271,7 +234,6 @@ export function createAnthropicCaller(client: AnthropicMessagesClient) {
   };
 }
 
-/** Parse a structured-output answer. Constrained decoding makes this strict JSON. */
 export function parseStructuredOutput(task: AiTask, text: string): unknown {
   try {
     return JSON.parse(text);

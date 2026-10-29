@@ -26,7 +26,6 @@ interface AgendaResponse {
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/** Convert our ISO event to Schedule-X's `YYYY-MM-DD[ HH:mm]` date strings. */
 function toSx(e: CalendarEvent): SxEvent {
   const timed = /T\d{2}:\d{2}/.test(e.starts_at);
   const fmt = (iso: string) => iso.replace('T', ' ').slice(0, timed ? 16 : 10);
@@ -93,7 +92,6 @@ export function AgendaPage() {
           </CardContent>
         </Card>
       ) : (
-        // key on theme so Schedule-X (which reads isDark at creation) re-themes on toggle.
         <AgendaCalendar key={isDark ? 'dark' : 'light'} events={events} isDark={isDark} />
       )}
     </div>

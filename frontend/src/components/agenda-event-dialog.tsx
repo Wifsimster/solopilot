@@ -14,10 +14,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { withProductId } from '@/lib/product-context-hooks';
 
-/**
- * Manual event creation dialog (ADR-0019). Posts to /api/agenda/events; the
- * starts_at is built from the date plus an optional time (all-day when omitted).
- */
 export function AgendaEventDialog({
   productId,
   onCreated,

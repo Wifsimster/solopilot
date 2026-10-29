@@ -5,17 +5,14 @@ import { isXUrl } from '../ports.js';
 import { logger } from '../logger.js';
 import { DEFAULT_PRODUCT_ID } from '../db.js';
 
-// Public bearer token embedded in X's web app JavaScript bundle
 const BEARER_TOKEN =
   'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
 
-/** Default GraphQL query IDs — used as fallbacks when not overridden */
 export const DEFAULT_GQL_IDS = {
   UserByScreenName: 'pLsOiyHJ1eFwPJlNmLp4Bg',
   HomeLatestTimeline: 'ulQKqowrFU94KfUAZqgGvg',
 } as const;
 
-// Feature flags for UserByScreenName — updated to match X's current API
 const USER_FEATURES = {
   hidden_profile_subscriptions_enabled: true,
   profile_label_improvements_pcf_label_in_post_enabled: true,
@@ -41,7 +38,6 @@ const USER_FIELD_TOGGLES = {
 
 const USER_FIELD_TOGGLES_ENCODED = encodeURIComponent(JSON.stringify(USER_FIELD_TOGGLES));
 
-/** Build browser-like headers required by X's API */
 function browserHeaders(authToken: string, csrfToken: string): Record<string, string> {
   return {
     accept: '*/*',
@@ -65,7 +61,6 @@ function browserHeaders(authToken: string, csrfToken: string): Record<string, st
   };
 }
 
-// Feature flags for timeline queries
 const TIMELINE_FEATURES = {
   rweb_tipjar_consumption_enabled: true,
   responsive_web_graphql_exclude_directive_enabled: true,
@@ -94,7 +89,6 @@ const TIMELINE_FEATURES = {
 
 const TIMELINE_FEATURES_ENCODED = encodeURIComponent(JSON.stringify(TIMELINE_FEATURES));
 
-// Zod schema for validating tweet data from the GraphQL response
 const tweetLegacySchema = z.object({
   id_str: z.string(),
   full_text: z.string(),
@@ -180,7 +174,6 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
     ...browserHeaders(authToken, csrfToken),
   };
 
-  // Mutable IDs — updated in-place when auto-detection kicks in
   let userByScreenNameId = config.X_GQL_USER_BY_SCREEN_NAME_ID ?? DEFAULT_GQL_IDS.UserByScreenName;
   let homeTimelineId = config.X_GQL_HOME_TIMELINE_ID ?? DEFAULT_GQL_IDS.HomeLatestTimeline;
 
@@ -309,7 +302,6 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
 
     const response = await fetch(url, { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!response.ok) {
-      // On 404, try auto-detecting new GQL IDs and retry once
       if (response.status === 404) {
         const updated = await refreshGqlIds();
         if (updated) {
@@ -357,7 +349,6 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
           if (content.entryType === 'TimelineTimelineItem') {
             entries.push(entry);
           } else if (content.entryType === 'TimelineTimelineModule') {
-            // Unwrap conversation threads / grouped tweets
             const items = content.items as Array<Record<string, unknown>> | undefined;
             if (items) {
               for (const item of items) {
@@ -398,14 +389,12 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
         return null;
       }
 
-      // Skip tombstones and unavailable tweets intentionally
       const typename = tweetResult.__typename as string | undefined;
       if (typename === 'TweetTombstone' || typename === 'TweetUnavailable') {
         stats.droppedTombstone++;
         return null;
       }
 
-      // Handle tweet types: regular tweet or tweet-with-visibility-results
       const legacy = tweetResult.legacy ?? getNestedValue(tweetResult, ['tweet', 'legacy']);
       if (!legacy) {
         stats.droppedNoLegacy++;
@@ -425,10 +414,8 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
       const authorHandle = extractAuthorHandle(tweetResult);
       const fetchedAt = new Date().toISOString();
 
-      // For retweets, use the original tweet text
       if (parsed.data.retweeted_status_result) {
         const rtResult = parsed.data.retweeted_status_result as Record<string, unknown>;
-        // Try both direct and visibility-wrapped paths
         const rtLegacy = (getNestedValue(rtResult, ['result', 'legacy']) ??
           getNestedValue(rtResult, ['result', 'tweet', 'legacy'])) as
           | Record<string, unknown>
@@ -493,10 +480,6 @@ export function createScraperReader(config: Config, persister?: GqlIdPersister):
   }
 }
 
-/**
- * Auto-detect current GraphQL query IDs from X's web app JS bundles.
- * Fetches x.com, finds script bundles, then searches for operationName patterns.
- */
 export async function detectGqlIds(): Promise<{
   UserByScreenName?: string;
   HomeLatestTimeline?: string;
@@ -508,7 +491,6 @@ export async function detectGqlIds(): Promise<{
     },
   }).then((r) => r.text());
 
-  // Extract JS bundle URLs from script tags
   const scriptUrls: string[] = [];
   const scriptRegex = /src="(https:\/\/abs\.twimg\.com\/responsive-web\/client-web[^"]+\.js)"/g;
   let match: RegExpExecArray | null;
@@ -527,14 +509,12 @@ export async function detectGqlIds(): Promise<{
   const operationSet = new Set<string>(operations);
   const idPattern = /queryId:"([^"]+)",operationName:"([^"]+)",operationType:"query"/g;
 
-  // Fetch bundles concurrently in batches, stop early once we found both
   for (
     let i = 0;
     i < scriptUrls.length && (!result.UserByScreenName || !result.HomeLatestTimeline);
     i += 5
   ) {
     const batch = scriptUrls.slice(i, i + 5);
-    // react-doctor-disable-next-line react-doctor/async-await-in-loop -- batches are processed sequentially on purpose to stop early once both GraphQL op IDs are found
     const scripts = await Promise.all(
       batch.map((url) =>
         fetch(url)

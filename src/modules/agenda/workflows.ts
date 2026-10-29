@@ -1,10 +1,3 @@
-/**
- * Agenda module — workflow definitions.
- *
- * `agenda.sync` keeps the local store in sync with the ICS feed (no-op without
- * one). `agenda.rappels` pushes today's events each morning. Both ship
- * `enabled: false` (ADR-0019).
- */
 import type { Workflow } from '../../workflow/types.js';
 
 export const agendaSync: Workflow = {

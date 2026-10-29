@@ -1,15 +1,3 @@
-/**
- * Stripe connector (read-only).
- *
- * Optional: when STRIPE_API_KEY is unset, `isConfigured()` is false and
- * `listInvoices()` resolves to [] — the Facturation module then works as a
- * purely local ledger. When configured, it reads invoices from the Stripe REST
- * API and maps them to the core `StripeInvoiceData` shape. Read-only: Solopilot
- * never creates or sends anything on Stripe without explicit user action.
- *
- * The configured path is exercised only when a key is present; the sync step
- * that calls it is degradable, so a Stripe outage can never fail a workflow run.
- */
 import type { Config } from '../config.js';
 import { logger } from '../logger.js';
 import type { StripeConnector, StripeInvoiceData } from '../workflow/types.js';
@@ -71,11 +59,6 @@ export interface CheckoutParams {
   returnUrl: string;
 }
 
-/**
- * Create an embedded Checkout Session to collect payment on an invoice. Returns
- * the session client_secret for the frontend's <EmbeddedCheckout>. Requires
- * STRIPE_API_KEY; the caller must guard the not-configured case.
- */
 export async function createStripeCheckoutSession(
   config: Config,
   params: CheckoutParams,

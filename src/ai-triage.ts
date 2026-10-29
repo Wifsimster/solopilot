@@ -6,9 +6,6 @@ import { createAi, isAiConfigured } from './ai/index.js';
 import { arr, bool, int, obj, str } from './ai/schema.js';
 import { logger } from './logger.js';
 
-// Default triage taxonomy (stolen from Stalkr's mention categories). A product
-// can replace it via `triage_categories`; 'autre' is always kept as the escape
-// hatch so the model never force-fits an item into a wrong bucket.
 export const DEFAULT_TRIAGE_CATEGORIES = [
   'bug',
   'temoignage',
@@ -37,7 +34,6 @@ const triageResponseSchema = z.object({
   items: z.array(triagedItemSchema),
 });
 
-/** Structured-output contract (mirrors triageResponseSchema). */
 const triageJsonSchema = obj({
   items: arr(
     obj({
@@ -62,7 +58,6 @@ interface TriageItemRow {
   author: string;
 }
 
-/** Effective category list for a product: custom list if set, defaults otherwise. */
 export function triageCategoriesForProduct(product: ProductView | null): string[] {
   const custom = product?.triage_categories ?? [];
   const categories = custom.length > 0 ? [...custom] : [...DEFAULT_TRIAGE_CATEGORIES];
@@ -136,16 +131,6 @@ function persistBatchError(itemIds: string[], message: string): void {
   updateMany(itemIds);
 }
 
-/**
- * Classifies newly collected items for a product: category, urgency (0-100)
- * and relevance (0-100), persisted on each `tweets` row (Stalkr-style
- * per-mention triage instead of classify-and-discard at digest time).
- *
- * Opt-in per product (`triage_enabled`). Batched AI calls; a failed batch is
- * marked with `triage_error` (and `triaged_at`) so collection never blocks and
- * failed items are not retried forever. Missing AI key = silent skip so items
- * stay pending and can be triaged once a key is configured.
- */
 export async function triageNewItems(
   config: Config,
   productId: string,
@@ -188,7 +173,6 @@ export async function triageNewItems(
   for (const batch of chunk(rows, TRIAGE_BATCH_SIZE)) {
     let validated: z.infer<typeof triageResponseSchema>;
     try {
-      // Same system prompt for every batch of the run: cacheable prefix.
       const raw = await ai.json({
         task: 'veille.triage',
         maxTokens: 4000,

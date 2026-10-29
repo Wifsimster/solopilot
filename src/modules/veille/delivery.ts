@@ -1,18 +1,3 @@
-/**
- * Veille delivery resolution — where (and how) the daily digest is posted.
- *
- * Pure: takes the environment layer and the global DB settings layer and
- * returns the effective mode + webhook. Same precedence as the rest of the
- * config (env is the base, a non-empty DB setting overrides it). Invalid values
- * never throw — they are ignored with a warning so a typo in Settings can never
- * take the daily digest (or the boot path) down.
- *
- * Consolidated mode posts to VEILLE_DISCORD_WEBHOOK_URL ONLY (ADR-0025 §4).
- * When it is unset the post is skipped (warn + notification_status='skipped'):
- * there is deliberately no fallback to DISCORD_WEBHOOK_URL or to per-product
- * webhooks — those channels are being retired, and silently re-routing would
- * hide the misconfiguration.
- */
 import {
   DEFAULT_VEILLE_DIGEST_MODE,
   discordWebhookUrlSchema,
@@ -22,17 +7,14 @@ import {
 
 export type VeilleDeliveryKey = 'VEILLE_DIGEST_MODE' | 'VEILLE_DISCORD_WEBHOOK_URL';
 
-/** A layer of raw string values (process.env, or the settings table map). */
 export type VeilleDeliveryLayer = Partial<Record<VeilleDeliveryKey, string | undefined>>;
 
 export type VeilleWebhookSource = 'VEILLE_DISCORD_WEBHOOK_URL' | 'none';
 
 export interface VeilleDelivery {
   mode: VeilleDigestMode;
-  /** Webhook for the consolidated digest; undefined when none is configured. */
   webhookUrl?: string;
   webhookSource: VeilleWebhookSource;
-  /** Human-readable reasons for ignored values (never contain secrets). */
   warnings: string[];
 }
 
@@ -43,8 +25,6 @@ function pick(
   isValid: (value: string) => boolean,
   warnings: string[],
 ): string | undefined {
-  // DB setting first (overrides env), then env. An invalid DB value falls back
-  // to env rather than disabling the setting entirely.
   for (const [layer, source] of [
     [settings, 'settings'],
     [env, 'env'],

@@ -18,8 +18,6 @@ import { LeadsPage } from "@/pages/leads";
 import { MentionsPage } from "@/pages/mentions";
 import { StudioPage } from "@/pages/studio";
 
-// Code-split the modules that pull heavy libs (recharts, dnd-kit, schedule-x) —
-// keeps them out of the initial bundle. See ADR-0021.
 const FacturationPage = lazy(() =>
   import("@/pages/facturation").then((m) => ({ default: m.FacturationPage })),
 );

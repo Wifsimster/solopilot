@@ -24,13 +24,6 @@ Each top-level section header should be on its own line, in bold uppercase (e.g.
 
 If no item across all sources is related to AI or tech AND there is no "MENTIONS DIRECTES" group, respond with exactly: NO_TECH_NEWS_FOUND. As soon as a "MENTIONS DIRECTES" group exists, produce a digest (even if it only contains the 📣 MENTIONS section).`;
 
-/**
- * Builds the digest system prompt. When the product has a theme (description or
- * target audience), the digest is curated, filtered and titled for THAT product's
- * domain — so each product's Discord gets an on-theme digest instead of the same
- * generic AI/tech feed. Products without a theme (e.g. `default`) fall back to the
- * generic AI/tech curator prompt.
- */
 function buildSystemPrompt(product?: ProductView): string {
   const hasTheme = product && (product.product_description || product.target_audience);
   if (!hasTheme) return SYSTEM_PROMPT;
@@ -90,8 +83,6 @@ export function createAIFilter(config: Config) {
     opts: { product?: ProductView; date?: Date } = {},
   ): Promise<string | null> {
     const { product, date } = opts;
-    // Brand mentions get their own group, rendered last with an always-include
-    // instruction — the news-relevance filter must never drop them.
     const groups: Record<'x' | 'reddit' | 'hn' | 'youtube', Item[]> = {
       x: [],
       reddit: [],

@@ -1,10 +1,3 @@
-/**
- * AI model/effort selection from the Settings page (ADR-0027).
- *
- * Settings > env > code default, per class. Every AI call reads the Settings
- * layer live through `createAi()`, so a change applies to the next call of
- * every feature (digest, triage, radar, intent, studio) without a restart.
- */
 import { AI_SELECTION_SETTING_KEYS, type AiSelectionSettingKey, type Config } from '../config.js';
 import { deleteSetting, getSetting, setSetting } from '../settings-service.js';
 import { logger } from '../logger.js';
@@ -29,7 +22,6 @@ export function isAiSelectionSettingKey(key: string): key is AiSelectionSettingK
   return (AI_SELECTION_SETTING_KEYS as readonly string[]).includes(key);
 }
 
-/** Current Settings values (DB). A DB failure degrades to "no override". */
 export function readAiModelSettings(): AiModelSettings {
   try {
     const out: AiModelSettings = {};
@@ -63,11 +55,6 @@ export type AiSettingsValidation =
   | { ok: true; updates: Partial<Record<AiSelectionSettingKey, string>> }
   | { ok: false; message: string };
 
-/**
- * Validates the AI keys of a POST /api/settings body. `''` clears an
- * override. Model ids must match `^claude-[a-z0-9-]+$`; an effort must be a
- * level the class's effective model (after this update) accepts.
- */
 export function validateAiSettingsUpdate(
   body: Record<string, unknown>,
   config: Partial<Config>,
@@ -98,7 +85,6 @@ export function validateAiSettingsUpdate(
     updates[key] = value;
   }
 
-  // Effort vs the model the class will run on once this update is applied.
   const next: AiModelSettings = { ...current };
   for (const [key, value] of Object.entries(updates) as [AiSelectionSettingKey, string][]) {
     if (value) next[key] = value;
@@ -119,7 +105,6 @@ export function validateAiSettingsUpdate(
   return { ok: true, updates };
 }
 
-/** Persists validated updates: a value is stored, `''` deletes the override. */
 export function applyAiSettingsUpdate(
   updates: Partial<Record<AiSelectionSettingKey, string>>,
 ): number {
@@ -135,13 +120,11 @@ export function applyAiSettingsUpdate(
 const usd = (n: number) =>
   `${n.toLocaleString('fr-FR', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 3 })} $`;
 
-/** Short price for the dropdown: "dès 0,1 $ / 0,5 $" when prices are tiered. */
 function priceShort(model: string): string {
   const { price, longContext } = priceForModel(model);
   return `${longContext ? 'dès ' : ''}${usd(price.input)} / ${usd(price.output)} par MTok`;
 }
 
-/** Full price line: input / output per MTok, plus the long-prompt tier. */
 function priceHint(model: string): string {
   const { price, longContext, known } = priceForModel(model);
   const base = `${usd(price.input)} entrée / ${usd(price.output)} sortie par MTok`;
@@ -161,17 +144,13 @@ export interface AiModelOption {
 }
 
 export interface AiClassView {
-  /** Value stored in Settings ('' = none). */
   setting: string;
   effortSetting: string;
-  /** Env value ('' = none), shown so the UI can explain the fallback. */
   env: string;
   model: string;
   modelSource: AiSettingSource;
-  /** Effective effort override (null = per-task default). */
   effort: AiEffort | null;
   effortSource: AiSettingSource;
-  /** Catalogue entry of the effective model (null = custom id). */
   known: boolean;
   effortLevels: AiEffort[];
   priceHint: string;
@@ -179,13 +158,11 @@ export interface AiClassView {
 
 export interface AiModelsView {
   provider: AiProvider;
-  /** Code default of both classes on Anthropic. */
   defaultModel: string;
   catalogue: AiModelOption[];
   classes: Record<AiTier, AiClassView>;
 }
 
-/** Catalogue + effective selection per class, for the Settings page. */
 export function getAiModelsView(
   config: Partial<Config>,
   settings: AiModelSettings = readAiModelSettings(),

@@ -84,7 +84,6 @@ import type {
   TargetSource,
 } from '@/types';
 
-// The statuses that get their own tab (transient 'publishing'/'failed' do not).
 type StatusFilter = 'pending' | 'edited' | 'scheduled' | 'used' | 'discarded' | 'published';
 
 type SortKey = 'recent' | 'oldest' | 'longest';
@@ -137,7 +136,6 @@ const TABS: TabConfig[] = [
   },
 ];
 
-// Platforms that support one-click auto-publish today, and how to label them.
 const PUBLISH_PLATFORM_LABEL: Partial<Record<TargetSource, string>> = {
   generic: 'LinkedIn',
   reddit: 'Reddit',
@@ -158,7 +156,6 @@ const USED_ON_OPTIONS: { value: string; label: string }[] = [
 
 const COUNT_OPTIONS = [3, 5, 10];
 
-// Quick presets sit alongside the flexible generator for one-click batches.
 type GeneratePreset = {
   key: string;
   label: string;
@@ -214,7 +211,6 @@ function statusBadgeVariant(
   return 'secondary';
 }
 
-/** Pre-select the "posted on" platform from the draft's target source. */
 function defaultUsedOn(source: TargetSource | null): string {
   if (source === 'reddit') return 'reddit';
   if (source === 'generic') return 'linkedin';
@@ -222,17 +218,14 @@ function defaultUsedOn(source: TargetSource | null): string {
   return 'x';
 }
 
-/** True when a URL points at a code-hosting repo rather than a product site. */
 function isCodeRepoUrl(url: string): boolean {
   return /(?:github\.com|gitlab\.com|bitbucket\.org)/i.test(url);
 }
 
-/** Strip protocol and trailing slash for compact display. */
 function prettyUrl(url: string): string {
   return url.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
 }
 
-/** Live character count with platform-aware over-limit warning. */
 function CharCount({ length, source }: { length: number; source: TargetSource | null }) {
   const limit = source ? PLATFORM_LIMITS[source] : null;
   if (limit === null) {
@@ -272,8 +265,6 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
   const isReddit = draft.target_source === 'reddit';
   const isX = draft.target_source === 'x';
   const isScheduled = draft.status === 'scheduled';
-  // For X, prefer a natively-generated thread (platform_meta.thread) when the
-  // text is unedited; otherwise fall back to splitting the (edited) text at 280.
   const thread = ((): string[] => {
     if (!isX) return [text];
     const mt = draft.platform_meta?.thread;
@@ -284,8 +275,6 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
     return splitIntoThread(text);
   })();
   const isThread = isX && thread.length > 1;
-  // Reddit needs a target subreddit + a title; pre-fill from a prior attempt's
-  // platform_meta or the product's configured subreddits.
   const metaSubreddit = typeof draft.platform_meta?.subreddit === 'string'
     ? (draft.platform_meta.subreddit as string)
     : '';
@@ -296,15 +285,11 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
   const [title, setTitle] = useState(metaTitle);
 
   const platformLabel = publishPlatformLabel(draft.target_source);
-  const canAutoPublish = platformLabel !== null; // platform supported by an adapter
+  const canAutoPublish = platformLabel !== null;
   const isConnected = connection?.status === 'connected';
   const isPublished = draft.status === 'published';
   const redditReady = !isReddit || (subreddit.trim().length > 0 && title.trim().length > 0);
 
-  // Keep textarea in sync if the server-side draft changes (e.g. after refetch)
-  // while preserving in-flight user edits. The last saved value lives in a ref
-  // (it is never rendered) and the sync runs during render rather than in an
-  // effect to avoid an extra pass. A save also updates the ref directly.
   const lastSavedTextRef = useRef(initialText);
   const incomingText = draft.edited_text ?? draft.text;
   if (incomingText !== lastSavedTextRef.current) {
@@ -388,7 +373,6 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
 
   const handlePublish = useCallback(async () => {
     setConfirmOpen(false);
-    // Persist any pending edits first so we publish exactly what's on screen.
     if (dirty) {
       await handleSave();
     }
@@ -462,9 +446,6 @@ function DraftCard({ draft, connection, subredditOptions, onMutated }: DraftCard
     }
   }, [draft.id, onMutated]);
 
-  // Subtle left accent border colored by the draft's source. Uses a literal
-  // class from SOURCE_META so Tailwind's compiler emits it (runtime-built
-  // class names like `bg-…`→`border-l-…` are not detected).
   const accentClass = draft.target_source
     ? SOURCE_META[draft.target_source].borderClass
     : 'border-l-muted';
@@ -864,7 +845,6 @@ function DraftsList({
   );
 }
 
-/** A small muted stat chip for the summary strip. */
 function StatChip({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-xs">
@@ -874,12 +854,6 @@ function StatChip({ label, value }: { label: string; value: string }) {
   );
 }
 
-/**
- * Compact, read-only summary of the product settings that drive generation
- * (language, voice, promo URL) plus actionable hints when settings that
- * materially affect draft quality are missing. Keeps the user from generating
- * a batch of off-target drafts before realising a key field is empty.
- */
 function ProductContextStrip({ product }: { product: ProductRecord }) {
   const lang: ContentLanguage = product.content_language ?? 'fr';
   const voice = product.content_voice ?? product.reply_voice ?? 'professionnelle';
@@ -977,11 +951,6 @@ const CONNECTION_STATUS_META: Record<
   unsupported: { label: 'Bientôt', variant: 'secondary' },
 };
 
-/**
- * Per-platform publish connections: shows session status and lets the user
- * connect by pasting their logged-in browser cookies (mirrors the X cookie
- * flow). Only platforms with an auto-publish adapter are listed.
- */
 function ConnectionsCard({
   connections,
   onChanged,
@@ -1013,7 +982,6 @@ function ConnectionsCard({
     if (!connectPlatform) return;
     setSaving(true);
     try {
-      // X reuses the existing credentials endpoint (validates auth_token + ct0).
       const endpoint =
         connectPlatform === 'reddit'
           ? '/api/publish/connections/reddit'
@@ -1253,11 +1221,6 @@ function ConnectionsCard({
   );
 }
 
-/**
- * Feedback loop: which angles get kept (published/used) vs discarded, plus
- * average engagement where metrics were scraped back. Hidden until there's
- * something to show.
- */
 function AnglePerformanceCard({
   productId,
   onRefreshed,
@@ -1344,15 +1307,11 @@ function AnglePerformanceCard({
 export function StudioPage() {
   const { selectedProductId } = useSelectedProduct();
   const [activeTab, setActiveTab] = useState<StatusFilter>('pending');
-  // Identifies which generate control is in flight ('custom' for the flexible
-  // generator, or a preset key) so only that control shows its spinner.
   const [generatingId, setGeneratingId] = useState<string | null>(null);
 
-  // Flexible generator controls.
   const [genSource, setGenSource] = useState<TargetSource>('x');
   const [genCount, setGenCount] = useState<number>(5);
 
-  // Toolbar (search / filter / sort) — applies to the active tab only.
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('recent');
@@ -1537,8 +1496,6 @@ export function StudioPage() {
   const lang: ContentLanguage = productReq.data?.content_language ?? 'fr';
   const langLabel = lang === 'en' ? 'anglais' : 'français';
 
-  // Filter + sort drafts (count badges stay unfiltered API totals). Reused for
-  // each tab inside the render loop so hidden panels stay self-consistent.
   const filterAndSort = useCallback(
     (drafts: ContentDraft[]): ContentDraft[] => {
       const term = search.trim().toLowerCase();
@@ -1563,7 +1520,6 @@ export function StudioPage() {
     [search, sourceFilter, sortKey],
   );
 
-  // Active-tab visible count, shown in the toolbar.
   const activeVisibleCount = filterAndSort(requestsByStatus[activeTab].data ?? []).length;
 
   return (

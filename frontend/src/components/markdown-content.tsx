@@ -6,8 +6,6 @@ interface MarkdownContentProps {
   className?: string;
 }
 
-// DO NOT add rehype-raw — AI-generated content must not render arbitrary HTML.
-// react-markdown strips raw HTML by default, which is the desired security posture.
 export function MarkdownContent({ content, className }: MarkdownContentProps) {
   return (
     <div className={cn('space-y-2', className)}>

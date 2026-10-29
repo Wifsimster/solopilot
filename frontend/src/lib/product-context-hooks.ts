@@ -42,14 +42,10 @@ export function useSelectedProduct(): ProductContextValue {
   return ctx;
 }
 
-/**
- * Append productId query param to an API URL while preserving existing params.
- */
 export function withProductId(url: string, productId: string): string {
   if (!productId) return url;
   const hasQuery = url.includes('?');
   const separator = hasQuery ? '&' : '?';
-  // Avoid duplicating productId if already present
   if (/[?&]productId=/.test(url)) return url;
   return `${url}${separator}productId=${encodeURIComponent(productId)}`;
 }

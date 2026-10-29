@@ -16,16 +16,12 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-// Generic sortable + faceted-filter table on TanStack Table v8 — see ADR-0021.
-
 export interface FacetedFilter {
   columnId: string;
   title: string;
   options: { label: string; value: string }[];
 }
 
-// Faceted filter: the column filter value is a string[]; a row matches when its
-// value is in the selected set (empty set = no filtering).
 const arrIncludes: FilterFn<unknown> = (row, columnId, filterValue: string[]) =>
   !filterValue?.length || filterValue.includes(String(row.getValue(columnId)));
 
@@ -49,7 +45,6 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = React.useState<SortingState>(initialSorting);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
 
-  // Wire the faceted columns to the array filter fn without burdening callers.
   const facetedIds = React.useMemo(
     () => new Set(facetedFilters?.map((f) => f.columnId)),
     [facetedFilters],

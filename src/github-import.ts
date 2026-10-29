@@ -8,10 +8,6 @@ import {
 } from './product-service.js';
 import { logger } from './logger.js';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export type GithubRepoCandidate = {
   id: string;
   name: string;
@@ -49,20 +45,12 @@ export type BulkImportResult = {
   skipped: SkippedRepo[];
 };
 
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
-
 export class GithubImportError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'GithubImportError';
   }
 }
-
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
 
 const GITHUB_USERNAME_REGEX = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const GITHUB_SLUG_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,62})$/;
@@ -91,10 +79,6 @@ export const bulkImportRequestSchema = z.object({
     .max(100, { message: 'Trop de depots (max 100).' }),
 });
 
-// ---------------------------------------------------------------------------
-// Slug helper
-// ---------------------------------------------------------------------------
-
 function slugifyRepoName(name: string): string {
   return name
     .toLowerCase()
@@ -102,10 +86,6 @@ function slugifyRepoName(name: string): string {
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
-
-// ---------------------------------------------------------------------------
-// GitHub API response shape (only fields we use)
-// ---------------------------------------------------------------------------
 
 interface GithubApiRepo {
   name: string;
@@ -117,10 +97,6 @@ interface GithubApiRepo {
   fork: boolean;
   archived: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// fetchGithubRepos
-// ---------------------------------------------------------------------------
 
 export async function fetchGithubRepos(opts: GithubFetchOpts): Promise<GithubRepoCandidate[]> {
   const { username, includeForks = false, includeArchived = false, githubToken } = opts;
@@ -242,10 +218,6 @@ export async function fetchGithubRepos(opts: GithubFetchOpts): Promise<GithubRep
   return mapped;
 }
 
-// ---------------------------------------------------------------------------
-// Repo context (for AI grounding)
-// ---------------------------------------------------------------------------
-
 export type GithubRepoContext = {
   description: string | null;
   language: string | null;
@@ -255,12 +227,6 @@ export type GithubRepoContext = {
 
 const README_EXCERPT_MAX_CHARS = 4000;
 
-/**
- * Parse a GitHub repository URL into its owner/repo pair. Accepts the canonical
- * `https://github.com/owner/repo` form (with optional `.git`, trailing slash or
- * deeper paths like `/tree/main`), returning `null` for anything that is not a
- * github.com repository URL.
- */
 export function parseGithubRepoUrl(url: string): { owner: string; repo: string } | null {
   let parsed: URL;
   try {
@@ -282,12 +248,6 @@ export function parseGithubRepoUrl(url: string): { owner: string; repo: string }
   return { owner, repo };
 }
 
-/**
- * Best-effort fetch of a repository's description, primary language, topics and
- * a README excerpt, used to ground AI suggestions on the product's repo. Returns
- * `null` when the URL is not a GitHub repo or the metadata request fails; README
- * failures are tolerated (the rest of the context is still returned).
- */
 export async function fetchGithubRepoContext(
   productUrl: string,
   githubToken?: string,
@@ -346,7 +306,6 @@ export async function fetchGithubRepoContext(
         }
       }
     } catch {
-      // README is optional context — ignore failures.
     }
 
     return {
@@ -371,10 +330,6 @@ export async function fetchGithubRepoContext(
   }
 }
 
-// ---------------------------------------------------------------------------
-// bulkImportProducts
-// ---------------------------------------------------------------------------
-
 export function bulkImportProducts(req: BulkImportRequest): BulkImportResult {
   const db = getDb();
   const skipped: SkippedRepo[] = [];
@@ -391,9 +346,6 @@ export function bulkImportProducts(req: BulkImportRequest): BulkImportResult {
         continue;
       }
 
-      // Note: we bypass productCreateSchema here because we deliberately
-      // create products with all sources off (the user enables them later).
-      // The request shape is already validated upstream via bulkImportRequestSchema.
       const input: ProductCreateInput = {
         id: repo.id,
         name: repo.name,

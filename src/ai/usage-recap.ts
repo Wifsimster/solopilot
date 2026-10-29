@@ -1,9 +1,3 @@
-/**
- * Weekly « Dépenses IA » recap on Discord: Monday 09:00 Europe/Paris, last
- * complete Monday-to-Sunday week. Built from the usage report (no AI call),
- * sent once per week (`ai_usage_recaps`) on the budget-alert webhook. Behind
- * the AI_WEEKLY_RECAP_ENABLED setting (default on).
- */
 import { getDb } from '../db.js';
 import { sendDiscordEmbeds, type DiscordEmbed } from '../adapters/discord-notifier.js';
 import { logger } from '../logger.js';
@@ -30,7 +24,6 @@ function deltaText(report: UsageReport): string {
   return `, ${report.deltaRatio > 0 ? '▲' : '▼'} ${pct}\u00a0% vs semaine précédente`;
 }
 
-/** Discord embed for a weekly report. Pure: no I/O. */
 export function buildWeeklyRecapEmbed(report: UsageReport): DiscordEmbed {
   const { totals, month } = report;
   const lines = [

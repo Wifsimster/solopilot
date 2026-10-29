@@ -1,14 +1,8 @@
-/**
- * Radar produit — persistence (ADR-0026): candidates, dedup ledger, caps.
- */
 import { getDb, type RadarProposalRecord, type RadarProposalStatus } from '../../db.js';
 import type { CapState } from './radar.js';
 
-/** Triage relevance (0-100) an item needs before the radar spends a call on it. */
 export const RADAR_PREFILTER_RELEVANCE = 60;
-/** Items older than this are never scanned (no backlog explosion). */
 export const RADAR_LOOKBACK_HOURS = 72;
-/** Max items scored per sweep (bounds the scoring prompt). */
 export const RADAR_MAX_CANDIDATES = 20;
 
 export interface RadarCandidateRow {
@@ -54,7 +48,6 @@ export function proposalExists(itemId: string, productId: string): boolean {
     .get(itemId, productId);
 }
 
-/** Today's proposals that count toward the caps (everything except 'capped'). */
 export function loadCapState(day: string): CapState {
   const rows = getDb()
     .prepare(
@@ -67,10 +60,6 @@ export function loadCapState(day: string): CapState {
   return { perProduct, total };
 }
 
-/**
- * Claims the (item, product) pair. Returns the new row id, or null when the
- * pair already has a row (dedup — never two proposals for the same pair).
- */
 export function claimProposal(input: {
   itemId: string;
   productId: string;
@@ -116,10 +105,6 @@ export function updateProposal(
     .run(...keys.map((k) => patch[k] ?? null), Date.now(), id);
 }
 
-/**
- * Atomically moves a dry_run/failed proposal to 'creating' (manual creation).
- * Returns false when another request already claimed it or it is not eligible.
- */
 export function claimForManualCreate(id: number): boolean {
   const result = getDb()
     .prepare(

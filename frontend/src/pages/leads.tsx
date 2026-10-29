@@ -61,8 +61,6 @@ function sourceLabel(source: IntentSignal['source']): string {
   return 'X';
 }
 
-// Human labels for the AI intent taxonomy (set by the analyze pass). Keys match
-// the `ai_intent_category` values returned by the backend.
 const CATEGORY_LABELS: Record<string, string> = {
   demande_active: 'Demande active',
   mention_concurrent: 'Mention concurrent',
@@ -72,7 +70,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   autre: 'Autre',
 };
 
-// Canonical display order for the taxonomy filter chips.
 const CATEGORY_ORDER = [
   'demande_active',
   'mention_concurrent',
@@ -86,11 +83,6 @@ function categoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category;
 }
 
-/**
- * Single-select chip row to filter the current tab's leads by AI intent
- * category. Counts and chips reflect the active tab only; renders nothing until
- * at least one lead in the tab has been classified.
- */
 function CategoryFilterBar({
   categories,
   active,
@@ -307,8 +299,6 @@ export function LeadsPage() {
   const [activeTab, setActiveTab] = useState<StatusFilter>('new');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
-  // Fetch all statuses in parallel so the tab badges can show counts. Each tab
-  // is a separate request so the backend remains a thin filter.
   const newReq = useApi<IntentSignal[]>(
     `/api/intent-signals?status=new&limit=${FETCH_LIMIT}`,
     { productId: selectedProductId },
@@ -346,8 +336,6 @@ export function LeadsPage() {
     [newReq.data, snoozedReq.data, repliedReq.data, dismissedReq.data],
   );
 
-  // Taxonomy chips reflect the active tab only: count classified leads per
-  // category and order them canonically.
   const activeSignals = requestsByStatus[activeTab].data ?? [];
   const categoryCounts = useMemo(() => {
     const tally = new Map<string, number>();
@@ -380,7 +368,6 @@ export function LeadsPage() {
         } else if ('notes' in patch) {
           toast.success('Note enregistrée.');
         }
-        // Refetch every tab so counts and lists stay coherent after a move.
         newReq.refetch();
         snoozedReq.refetch();
         repliedReq.refetch();
@@ -421,8 +408,6 @@ export function LeadsPage() {
         value={activeTab}
         onValueChange={(v) => {
           setActiveTab(v as StatusFilter);
-          // A category present in one tab may be absent in another; reset so the
-          // new tab never opens on an empty filtered list with no visible chip.
           setCategoryFilter('all');
         }}
       >
@@ -453,8 +438,6 @@ export function LeadsPage() {
 
         {TABS.map((tab) => {
           const req = requestsByStatus[tab.id];
-          // On the "Nouveaux" tab, surface AI-analyzed leads first (highest
-          // score first); leave the original (chronological) order otherwise.
           const signals = req.data ?? [];
           const orderedSignals =
             tab.id === 'new'
@@ -468,8 +451,6 @@ export function LeadsPage() {
                   return 0;
                 })
               : signals;
-          // Apply the taxonomy filter only to the active tab — that is the only
-          // tab whose chips/counts are computed, so others stay unfiltered.
           const visibleSignals =
             tab.id === activeTab && categoryFilter !== 'all'
               ? orderedSignals.filter((s) => s.ai_intent_category === categoryFilter)

@@ -308,7 +308,6 @@ function deserializeStringArray(value: string | null): string[] {
       return parsed.filter((v): v is string => typeof v === 'string');
     }
   } catch {
-    // fall through
   }
   return [];
 }

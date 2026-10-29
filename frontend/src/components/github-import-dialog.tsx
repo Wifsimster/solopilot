@@ -74,7 +74,6 @@ function readStoredUsername(): string {
   try {
     return window.localStorage.getItem(USERNAME_STORAGE_KEY) ?? '';
   } catch {
-    // Ignore — localStorage may be unavailable.
     return '';
   }
 }
@@ -106,8 +105,6 @@ function importReducer(state: ImportState, action: ImportAction): ImportState {
     case 'fetchError':
       return { ...state, loading: false, error: action.message };
     case 'fetchSuccess': {
-      // Preserve current selection but drop ids that are no longer present
-      // or that are already imported (cannot be selected).
       const next = new Set<string>();
       for (const r of action.repos) {
         if (state.selected.has(r.id) && !r.alreadyImported) next.add(r.id);
@@ -172,8 +169,6 @@ export function GithubImportDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
-        {/* Remount the body each time the dialog opens so its state is
-            initialized fresh from props/localStorage — no prop-sync effect. */}
         {open && (
           <GithubImportDialogBody
             key={open ? 'open' : 'closed'}
@@ -228,7 +223,6 @@ function GithubImportDialogBody({
       try {
         window.localStorage.setItem(USERNAME_STORAGE_KEY, user);
       } catch {
-        // Ignore.
       }
     } catch {
       const message = 'Erreur réseau lors du chargement des repos.';

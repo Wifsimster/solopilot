@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-// control-solopilot — drive a throwaway local Solopilot back-office the way its owner does.
-// Agent-facing: JSON on stdout, one object per invocation, exit 0 on success.
-// Run `control-solopilot --help` or `control-solopilot <command> --help`.
 
 import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -23,17 +20,12 @@ const PORTS = { app: 3310, cdp: 9335 };
 const BASE = `http://localhost:${PORTS.app}`;
 const require = createRequire(path.join(REPO, 'package.json'));
 
-// With NODE_USE_ENV_PROXY=1 and HTTP(S)_PROXY set, Node sends fetch() through the proxy, loopback
-// included. The proxy drops the socket ("fetch failed") and `launch` times out on /api/setup while the
-// server log says "Back-office server started". Every call this CLI makes is local, so keep loopback
-// direct. The server, seed and browser daemon it spawns inherit the same NO_PROXY.
 for (const k of ['NO_PROXY', 'no_proxy']) {
   const hosts = (process.env[k] || '').split(',').map((h) => h.trim()).filter(Boolean);
   for (const h of ['localhost', '127.0.0.1']) if (!hosts.includes(h)) hosts.push(h);
   process.env[k] = hosts.join(',');
 }
 
-// ---------- output ----------
 function out(obj) {
   process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
 }
@@ -48,7 +40,6 @@ function fail(message, fix, extra) {
   throw new CliError(message, fix, extra);
 }
 
-// ---------- args ----------
 function parseArgs(argv) {
   const pos = [];
   const flags = {};
@@ -64,7 +55,6 @@ function parseArgs(argv) {
   return { pos, flags };
 }
 
-// ---------- state ----------
 function readState() {
   try {
     return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
@@ -82,13 +72,11 @@ function requireState() {
   return s;
 }
 function evidenceDir(state) {
-  // launch records the evidence root, so later calls write to the same place even without the env var.
   const dir = path.join(state?.evidenceRoot || EVIDENCE_ROOT, state?.runId || 'adhoc');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-// ---------- helpers ----------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function portInUse(port) {
   return new Promise((resolve) => {
@@ -103,7 +91,6 @@ function alive(pid) {
 function sh(cmd, args, opts = {}) {
   return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trim();
 }
-// Read-only view of the throwaway DB (second read for every mutation).
 function dbAll(sql, ...params) {
   if (!fs.existsSync(DB_PATH)) fail('The throwaway DB does not exist.', 'Run `control-solopilot launch` first.');
   const Database = require('better-sqlite3');
@@ -155,8 +142,6 @@ function saveJson(state, name, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
   return file;
 }
-// A fresh browser gets the "Visite guidée" overlay on first visit. Close it the way the owner
-// does ("Fermer la visite"); the app then remembers it in localStorage for the rest of the run.
 async function closeTour(page) {
   const btn = page.getByRole('button', { name: 'Fermer la visite' });
   if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
@@ -176,7 +161,6 @@ function isoDate(offsetDays) {
   return new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10);
 }
 
-// ---------- commands ----------
 const COMMANDS = {};
 
 COMMANDS.launch = {
@@ -210,7 +194,6 @@ Refuses to start if a port is taken (one instance at a time) or if the Chromium 
     const busy = [];
     for (const [k, p] of Object.entries(PORTS)) if (await portInUse(p)) busy.push(`${k}:${p}`);
     if (busy.length) fail(`Ports already in use: ${busy.join(', ')}.`, 'Another app (or a leaked run) owns them. Do not kill it blindly: check `ss -ltnp`, stop your own leftover with `control-solopilot teardown`, or ask the lead.', { busy });
-    // Fail before building anything: otherwise the browser daemon dies and launch only times out after 60 s.
     const chromiumPath = loadPlaywright().chromium.executablePath();
     if (!fs.existsSync(chromiumPath)) fail('The Chromium build for this playwright-core is not installed.', 'Run `npx playwright-core install chromium` at the repo root, then launch again.', { missing: chromiumPath });
 
@@ -231,7 +214,6 @@ Refuses to start if a port is taken (one instance at a time) or if the Chromium 
       DB_PATH,
       ADMIN_PASSWORD: adminPassword,
       SOLOPILOT_EGRESS_LOG: EGRESS_LOG,
-      // Never real third parties during verification. No X credentials: the server boots unconfigured.
       X_USERNAME: '', X_SESSION_AUTH_TOKEN: '', X_SESSION_CSRF_TOKEN: '',
       GITHUB_TOKEN: '', GITHUB_ISSUES_TOKEN: '', ANTHROPIC_API_KEY: '', AI_API_KEY: '', AI_BASE_URL: '', YOUTUBE_API_KEY: '', DISCORD_WEBHOOK_URL: '', VEILLE_DISCORD_WEBHOOK_URL: '',
       STRIPE_API_KEY: '', STRIPE_PUBLISHABLE_KEY: '', AGENDA_ICS_URL: '', WORKFLOW_SCHEDULER: '', DRY_RUN: 'true',
@@ -434,7 +416,6 @@ COMMANDS.key = {
   },
 };
 
-// Pick an option in a Radix Select by its trigger label and the option text.
 async function selectOption(scope, page, triggerLabel, optionText) {
   await scope.getByLabel(triggerLabel).click();
   await page.getByRole('option', { name: optionText, exact: true }).click();
@@ -659,7 +640,6 @@ show    Read-only: the fake veille rows (id, category, urgency, status) from the
       const { browser, page } = await connect();
       try {
         await open(page, '/mentions');
-        // Innermost block holding both the item text and its actions (cards have no list role).
         const card = page.getByRole('tabpanel').locator('div').filter({ hasText: flags.item }).filter({ has: page.getByRole('button', { name: /^Traité$/ }) }).last();
         await card.waitFor({ timeout: 10000 }).catch(() => fail('Item not visible on /mentions.', 'It may not be in "new" any more: `control-solopilot veille show`.'));
         const label = flags.as === 'handled' ? /^Traité$/ : /^Ignorer$/;
@@ -715,7 +695,6 @@ COMMANDS['network-log'] = {
   },
 };
 
-// Internal: the long-lived browser owner, spawned by launch.
 async function browserd() {
   const { chromium } = loadPlaywright();
   const state = readState();
@@ -729,13 +708,10 @@ async function browserd() {
   });
   const con = fs.createWriteStream(path.join(RUN_DIR, 'console.jsonl'), { flags: 'a' });
   const netw = fs.createWriteStream(path.join(RUN_DIR, 'network.jsonl'), { flags: 'a' });
-  // External boundary: no third-party request leaves the browser (Stripe.js, fonts, avatars...).
   await ctx.route((url) => !['localhost', '127.0.0.1'].includes(url.hostname), (route) => {
     netw.write(JSON.stringify({ ts: new Date().toISOString(), method: route.request().method(), url: route.request().url(), status: 'blocked' }) + '\n');
     return route.abort('blockedbyclient');
   });
-  // The owner's browser after answering the Basic-auth prompt: every request to the app carries
-  // the credentials. (Context httpCredentials do not reach pages driven over a second CDP client.)
   const authorization = 'Basic ' + Buffer.from(`admin:${state.adminPassword}`).toString('base64');
   await ctx.route((url) => ['localhost', '127.0.0.1'].includes(url.hostname) && url.port === String(PORTS.app), (route) =>
     route.continue({ headers: { ...route.request().headers(), authorization } }),

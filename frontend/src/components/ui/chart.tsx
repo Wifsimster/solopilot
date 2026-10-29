@@ -3,9 +3,6 @@ import * as RechartsPrimitive from 'recharts';
 
 import { cn } from '@/lib/utils';
 
-// shadcn/ui Chart wrapper around Recharts — see ADR-0021.
-// Themes purely from the OKLCH `--chart-N` tokens in globals.css; no hardcoded colors.
-
 const THEMES = { light: '', dark: '.dark' } as const;
 
 export type ChartConfig = {
@@ -91,8 +88,6 @@ ${colorConfig
 
 export const ChartTooltip = RechartsPrimitive.Tooltip;
 
-// Recharts 3 no longer exposes payload/label on the Tooltip content props, so we
-// type the render-callback shape we rely on locally.
 interface TooltipPayloadItem {
   value?: number | string;
   name?: string;

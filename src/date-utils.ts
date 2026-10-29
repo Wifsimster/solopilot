@@ -16,14 +16,10 @@ const parisDateTimeFormatter = new Intl.DateTimeFormat('en-CA', {
   hour12: false,
 });
 
-/**
- * Returns today's date in YYYY-MM-DD format using Europe/Paris timezone.
- */
 export function getTodayDateParis(): string {
   return formatParisDate(new Date());
 }
 
-/** Europe/Paris `YYYY-MM-DD` of an epoch-millisecond timestamp (DST-safe). */
 export function parisDateOf(epochMs: number): string {
   return formatParisDate(new Date(epochMs));
 }
@@ -40,10 +36,6 @@ function formatParisDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-/**
- * Given a Paris calendar moment, returns the UTC Date for it.
- * Handles DST transitions correctly.
- */
 export function parisToUtc(
   year: number,
   month: number,
@@ -67,17 +59,10 @@ export function parisToUtc(
   return new Date(asUtc - offset);
 }
 
-/**
- * Formats a Date as SQLite's datetime('now') output: 'YYYY-MM-DD HH:MM:SS' in UTC.
- */
 function toSqliteDatetimeUtc(date: Date): string {
   return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())} ${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())}:${pad2(date.getUTCSeconds())}`;
 }
 
-/**
- * Returns the UTC datetime bounds [from, to) for the given Paris calendar month,
- * formatted to match SQLite's datetime('now') output for lexicographic comparison.
- */
 export function getParisMonthRangeUtc(year: number, month: number): { from: string; to: string } {
   const fromDate = parisToUtc(year, month, 1);
   const toMonth = month === 12 ? 1 : month + 1;
@@ -86,16 +71,10 @@ export function getParisMonthRangeUtc(year: number, month: number): { from: stri
   return { from: toSqliteDatetimeUtc(fromDate), to: toSqliteDatetimeUtc(toDate) };
 }
 
-/**
- * Parses a SQLite UTC datetime string ('YYYY-MM-DD HH:MM:SS') as a Date.
- */
 function parseSqliteUtc(utcDateTime: string): Date {
   return new Date(utcDateTime.replace(' ', 'T') + 'Z');
 }
 
-/**
- * Returns Paris-zoned year/month for a SQLite UTC datetime string.
- */
 export function utcToParisYearMonth(utcDateTime: string): { year: number; month: number } {
   const parts = parisDateTimeFormatter.formatToParts(parseSqliteUtc(utcDateTime));
   return {
@@ -104,9 +83,6 @@ export function utcToParisYearMonth(utcDateTime: string): { year: number; month:
   };
 }
 
-/**
- * Returns the Paris-zoned YYYY-MM-DD date for a SQLite UTC datetime string.
- */
 export function utcToParisDate(utcDateTime: string): string {
   return formatParisDate(parseSqliteUtc(utcDateTime));
 }

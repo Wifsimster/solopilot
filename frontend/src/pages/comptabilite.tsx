@@ -71,7 +71,6 @@ interface LedgerEntry {
   api_token_id: string | null;
 }
 
-/** Journal des écritures manuelles / agents (ADR-0017, source + référence ADR-0029). */
 function LedgerCard({ productId }: { productId: string }) {
   const { data, loading, error } = useApi<LedgerEntry[]>('/api/comptabilite/ledger', {
     productId,
@@ -235,17 +234,14 @@ export function ComptabilitePage() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {/* KPI: CA total */}
           <StatCard title={`Chiffre d'affaires ${data.status.year}`} icon={TrendingUp} tone="default">
             <span className="tabular-nums">{euros(data.status.caCents)}</span>
           </StatCard>
 
-          {/* KPI: cotisations */}
           <StatCard title="Cotisations estimées" icon={Receipt} tone="default">
             <span className="tabular-nums">{euros(data.urssaf.cotisationsCents)}</span>
           </StatCard>
 
-          {/* Plafond gauge */}
           <GaugeCard
             label={`Plafond micro ${data.status.year}`}
             description={`sur ${euros(data.status.plafondCents)}`}
@@ -255,7 +251,6 @@ export function ComptabilitePage() {
             icon={ShieldAlert}
           />
 
-          {/* TVA gauge */}
           <GaugeCard
             label="Franchise TVA"
             description={`seuil ${euros(data.status.tvaThresholdCents)}`}
@@ -265,7 +260,6 @@ export function ComptabilitePage() {
             icon={ShieldAlert}
           />
 
-          {/* URSSAF declaration */}
           <Card className="sm:col-span-2">
             <CardHeader className="pb-3">
               <CardTitle>Prochaine déclaration URSSAF</CardTitle>
@@ -311,7 +305,6 @@ export function ComptabilitePage() {
             </CardFooter>
           </Card>
 
-          {/* Repères chart */}
           <Card className="sm:col-span-2">
             <CardHeader className="pb-3">
               <CardTitle>Repères annuels</CardTitle>

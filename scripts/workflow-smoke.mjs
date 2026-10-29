@@ -1,5 +1,3 @@
-// Smoke test for the workflow engine runtime (engine + runner + run-store).
-// Runs against a throwaway DB; no network, no prod data. Exits non-zero on failure.
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -32,7 +30,6 @@ const assert = (cond, msg) => {
 
 resetRegistry();
 
-// Steps: a pure echo, a degradable failer, and a fatal failer.
 registerStep({ use: 'test.echo', run: async (_c, input) => ({ ...input, echoed: true }) });
 registerStep({ use: 'test.degradable-fail', degradable: true, run: async () => { throw new Error('boom-degradable'); } });
 registerStep({ use: 'test.fatal-fail', run: async () => { throw new Error('boom-fatal'); } });
@@ -90,9 +87,6 @@ assert(registered.filter((w) => w.module === 'facturation').length === 2, 'two f
 assert(registered.filter((w) => w.module === 'compta').length === 2, 'two compta workflows registered');
 assert(registered.filter((w) => w.module === 'crm').length === 2, 'two crm workflows registered');
 assert(registered.filter((w) => w.module === 'agenda').length === 2, 'two agenda workflows registered');
-// Only the veille workflows are enabled (the flip), plus crm.lead-from-mention
-// (enabled upstream; the generic workflow scheduler is not wired at boot, so it
-// is only run on demand). Every other module ships disabled.
 assert(veille.every((w) => w.enabled), 'veille workflows are enabled (flip-ready)');
 const enabledOthers = registered.filter((w) => w.module !== 'veille' && w.enabled);
 assert(
@@ -121,7 +115,6 @@ assert(syncRun.status === 'success', 'sync run succeeds without Stripe configure
 assert(syncRun.trace[0].status === 'ok', 'sync step is a graceful no-op when Stripe absent');
 
 console.log('comptabilité (CA, seuils, URSSAF):');
-// The paid invoice above (1200.00) plus a manual recette (500.00) form the year CA.
 compta.addLedgerEntry('default', { kind: 'recette', amount_cents: 50000, label: 'Prestation conseil' });
 const cs = compta.comptaStatus('default');
 assert(cs.caCents === 170000, `year CA aggregates paid invoice + ledger (got ${cs.caCents})`);

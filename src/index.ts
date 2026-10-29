@@ -23,8 +23,6 @@ export async function run(
 
   const runId = getCurrentRunId(productId);
 
-  // 1. Do a final collection sweep across all enabled sources (skip for historical re-runs
-  //    and skip if the hourly collect is already running, to avoid concurrent X API calls).
   if (!overrideCollectionDate) {
     if (collectRunning.get(productId) === true) {
       logger.info('Collect already running, skipping in-publish sweep', { productId });
@@ -43,8 +41,6 @@ export async function run(
     }
   }
 
-  // 2. Read all accumulated items that haven't been published yet (across all dates,
-  //    so tweets stored between yesterday's publish and today's are not stranded).
   const items = overrideCollectionDate
     ? getUnpublishedTweets(productId, { collectionDate })
     : getUnpublishedTweets(productId);
@@ -57,11 +53,6 @@ export async function run(
 
   logger.info('Items accumulated for summary', { count: items.length, productId });
 
-  // 3. Filter and summarize AI news.
-  //    Cap the items sent to the AI so a backlog can never inflate the prompt
-  //    past the provider's token limit (a 402/413 there would throw, leave every
-  //    item un-consumed, and grow the backlog on every subsequent run). Items are
-  //    ordered oldest-first, so the newest `maxItems` are the freshest news.
   const maxItems = config.VEILLE_DIGEST_MAX_ITEMS;
   const itemsForSummary = items.length > maxItems ? items.slice(-maxItems) : items;
   if (items.length > maxItems) {
@@ -73,8 +64,6 @@ export async function run(
     });
   }
 
-  // Theme the digest to this product (description / audience) so each product's
-  // Discord gets an on-theme digest instead of the same generic AI/tech feed.
   const productRecord = getProduct(productId);
   const product = productRecord ? toProductView(productRecord) : undefined;
 
@@ -92,7 +81,6 @@ export async function run(
     return;
   }
 
-  // 4. Mark items as consumed by this run
   if (runId)
     markTweetsAsUsed(
       items.map((t) => t.id),
@@ -102,7 +90,6 @@ export async function run(
   logger.info('Summary generated', { length: summary.length, productId });
 }
 
-// One-shot mode when run directly
 const isDirectRun = process.argv[1]?.endsWith('index.js');
 if (isDirectRun) {
   const config = loadConfig();

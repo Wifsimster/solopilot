@@ -5,10 +5,6 @@ const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1500;
 
 interface UseApiOptions {
-  /**
-   * When provided, the productId is appended as a query parameter to the URL.
-   * Existing productId params (if any) are preserved.
-   */
   productId?: string;
 }
 

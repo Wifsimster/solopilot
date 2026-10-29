@@ -24,20 +24,10 @@ const youtubeSearchSchema = z.object({
 });
 
 export interface YoutubeReaderOptions {
-  /** YouTube Data API v3 key. */
   apiKey: string;
-  /**
-   * Explicit keyword list. When set, it is used as-is (e.g. the brand-mention
-   * pass); when omitted, the product's `youtube_keywords` are used.
-   */
   keywords?: string[];
 }
 
-/**
- * Veille source reader for YouTube via the Data API v3 `search.list` endpoint
- * (official API, free quota tier — no scraping). One search per configured
- * keyword, deduped by video id; `sinceTs` maps to `publishedAfter`.
- */
 export function createYoutubeReader(options: YoutubeReaderOptions): SourceReader {
   const { apiKey } = options;
 
@@ -70,8 +60,6 @@ export function createYoutubeReader(options: YoutubeReaderOptions): SourceReader
 
     for (const keyword of keywords) {
       try {
-        // Sequential by design: paced per-keyword calls to stay within the
-        // Data API's default quota (search.list costs 100 units per call).
         const items = await fetchKeyword(keyword, productId, sinceTs, fetchedAt);
         for (const item of items) {
           if (!dedup.has(item.id)) dedup.set(item.id, item);

@@ -12,53 +12,34 @@ import {
 } from '../ports.js';
 import { logger } from '../logger.js';
 
-// ---------------------------------------------------------------------------
-// We drive x.com's real composer directly (/compose/post). X exposes fairly
-// stable data-testid attributes — we prefer them, with role/text fallbacks.
-// This is THE ONE PLACE to fix selectors when publishing breaks. X is the
-// highest-risk platform: human pacing + careful confirmation matter most.
-// The only French in this file lives in matched UI strings.
-// ---------------------------------------------------------------------------
 const SELECTORS = {
-  // Composer textarea for the i-th tweet (the contenteditable lives inside it).
   tweetTextarea: (i: number) => `[data-testid="tweetTextarea_${i}"]`,
   tweetTextareaEditable: (i: number) =>
     `[data-testid="tweetTextarea_${i}"] [contenteditable="true"]`,
-  // The "+" button that appends another tweet to extend a thread.
   addButtonFallbacks: ['[data-testid="addButton"]'],
-  // The final post button; label becomes "Post all" / "Poster tout" for threads.
   postButtonFallbacks: ['[data-testid="tweetButton"]', '[data-testid="tweetButtonInline"]'],
   postButtonRole: /^Post$|^Poster$|Post all|Poster tout/i,
-  // Logged-in markers on the home timeline / nav.
   loggedInFallbacks: [
     '[data-testid="SideNav_NewTweet_Button"]',
     '[data-testid="AppTabBar_Home_Link"]',
   ],
-  // Login form / redirect markers (unauthenticated sessions land here).
   loginFallbacks: ['[data-testid="loginButton"]', '[autocomplete="username"]'],
-  // Engagement counts on a live tweet's action bar. X exposes an aggregate
-  // aria-label on a [role="group"] container ("12 replies, 3 reposts, 45 likes",
-  // localized fr "réponses/reposts/J'aime") and per-action testids whose visible
-  // text or aria-label carries a leading count.
   metricsGroup: '[role="group"]',
   metricLike: '[data-testid="like"]',
   metricReply: '[data-testid="reply"]',
   metricRetweet: '[data-testid="retweet"]',
 } as const;
 
-// Explicit timeouts (ms). Kept generous because the composer + GraphQL can be slow.
 const NAV_TIMEOUT = 30_000;
 const ACTION_TIMEOUT = 15_000;
 const PUBLISH_CONFIRM_TIMEOUT = 30_000;
 
-// Realistic desktop Chrome UA so the fingerprint stays consistent with a human.
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 const X_BASE = 'https://x.com';
 
-/** Minimal structural type for the chromium runtime we dynamically import. */
 interface ChromiumLike {
   launch(options: {
     headless: boolean;
@@ -97,7 +78,6 @@ export class XPublisher implements Publisher {
       }
       return 'expired';
     } catch (error) {
-      // checkSession must never throw; treat any failure as "needs re-auth".
       logger.warn('X checkSession failed', { error: errMsg(error) });
       return 'expired';
     } finally {
@@ -106,8 +86,6 @@ export class XPublisher implements Publisher {
   }
 
   async publish(input: PublishInput): Promise<PublishResult> {
-    // Compute the list of tweets to post before paying the cost of a browser:
-    // prefer an explicit meta.thread, else split the text into <=280 chunks.
     const tweets = this.resolveTweets(input);
 
     let browser: Browser | undefined;
@@ -119,14 +97,12 @@ export class XPublisher implements Publisher {
       const page = await context.newPage();
       page.setDefaultTimeout(ACTION_TIMEOUT);
 
-      // /compose/post opens the composer directly.
       await page.goto(`${X_BASE}/compose/post`, {
         waitUntil: 'domcontentloaded',
         timeout: NAV_TIMEOUT,
       });
       await this.sleep(this.jitter(600, 1500));
 
-      // Detect login/checkpoint state before touching the composer.
       if (this.isCheckpointUrl(page.url()) || (await this.isCheckpointVisible(page))) {
         throw new PublishError(
           'CHECKPOINT',
@@ -140,10 +116,8 @@ export class XPublisher implements Publisher {
         throw new PublishError('RATE_LIMITED', 'X says you are doing that too much.');
       }
 
-      // Capture the GraphQL CreateTweet response (best source of the rest_id).
       const createPromise = this.captureCreateTweetResponse(page);
 
-      // Fill the first tweet, then extend the thread one tweet at a time.
       const firstEditor = await this.getEditor(page, 0);
       await this.sleep(this.jitter(300, 900));
       await this.humanType(page, firstEditor, tweets[0]);
@@ -159,10 +133,8 @@ export class XPublisher implements Publisher {
       await this.sleep(this.jitter(400, 1200));
       await this.clickPost(page);
 
-      // Confirm success via the CreateTweet response and/or the composer closing.
       const externalId = await this.confirmPublished(page, createPromise);
 
-      // Build a permalink from the captured id; it redirects to the canonical URL.
       const url = externalId
         ? `${X_BASE}/i/web/status/${externalId}`
         : `${X_BASE}/home`;
@@ -176,7 +148,6 @@ export class XPublisher implements Publisher {
       return externalId ? { url, externalId } : { url };
     } catch (error) {
       const publishError = this.toPublishError(error);
-      // NEVER log tweet text or cookie values — only counts/codes.
       logger.warn('X publish failed', {
         tweets: tweets.length,
         code: publishError.code,
@@ -188,12 +159,6 @@ export class XPublisher implements Publisher {
     }
   }
 
-  /**
-   * Best-effort scrape of a live tweet's public engagement counts. NEVER throws:
-   * any failure (auth wall, selector drift, navigation error) yields {} so the
-   * metrics refresher can simply skip this post. X usually requires a logged-in
-   * session to render counts, so a session without cookies short-circuits to {}.
-   */
   async fetchMetrics(url: string, session: PlatformSession): Promise<PostMetrics> {
     if (!session.cookies || session.cookies.length === 0) return {};
 
@@ -207,10 +172,8 @@ export class XPublisher implements Publisher {
       page.setDefaultTimeout(ACTION_TIMEOUT);
 
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
-      // Let the action bar counts hydrate before reading them.
       await this.sleep(this.jitter(800, 1500));
 
-      // 1) Prefer the aggregate aria-label on the [role="group"] action bar.
       const fromGroup = await this.parseMetricsFromGroup(page);
       if (
         fromGroup.likes !== undefined ||
@@ -220,7 +183,6 @@ export class XPublisher implements Publisher {
         return fromGroup;
       }
 
-      // 2) Fallback: read each action button's text / own aria-label.
       return await this.parseMetricsFromButtons(page);
     } catch (error) {
       logger.warn('X fetchMetrics failed', { error: errMsg(error) });
@@ -230,13 +192,7 @@ export class XPublisher implements Publisher {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Browser lifecycle
-  // -------------------------------------------------------------------------
-
   private async launch(): Promise<{ browser: Browser; context: BrowserContext }> {
-    // Dynamic import so the module can load in environments without playwright
-    // and so we never pay the cost at module init.
     const mod = (await import('playwright-core')) as unknown as { chromium: ChromiumLike };
     const chromium = mod.chromium;
 
@@ -263,7 +219,6 @@ export class XPublisher implements Publisher {
     context.setDefaultTimeout(ACTION_TIMEOUT);
     context.setDefaultNavigationTimeout(NAV_TIMEOUT);
 
-    // Mask the automation flag so navigator.webdriver reads as undefined.
     await context.addInitScript(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     });
@@ -273,7 +228,6 @@ export class XPublisher implements Publisher {
 
   private async seedSession(context: BrowserContext, session: PlatformSession): Promise<void> {
     if (!session.cookies || session.cookies.length === 0) return;
-    // The caller provides auth_token + ct0 scoped to .x.com; seed them as-is.
     const cookies = session.cookies.map((c: SessionCookie) => ({
       name: c.name,
       value: c.value,
@@ -292,11 +246,6 @@ export class XPublisher implements Publisher {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Composer flow
-  // -------------------------------------------------------------------------
-
-  /** Resolves the contenteditable for the i-th tweet, preferring the inner node. */
   private async getEditor(page: Page, index: number): Promise<Locator> {
     const editor = await this.firstVisible(
       page,
@@ -339,7 +288,6 @@ export class XPublisher implements Publisher {
     if (!button) {
       throw new PublishError('SELECTOR_DRIFT', 'Could not find the "Post" button.');
     }
-    // X keeps the button disabled until the composer has valid content.
     const deadline = Date.now() + ACTION_TIMEOUT;
     while (Date.now() < deadline) {
       if (await button.isEnabled().catch(() => false)) break;
@@ -348,11 +296,6 @@ export class XPublisher implements Publisher {
     await button.click({ timeout: ACTION_TIMEOUT });
   }
 
-  /**
-   * Confirms the tweet/thread went live. Prefers the captured CreateTweet
-   * response (which also yields the rest_id) and/or the composer closing.
-   * Returns the parsed external id when available.
-   */
   private async confirmPublished(
     page: Page,
     createPromise: Promise<string | undefined>,
@@ -360,7 +303,6 @@ export class XPublisher implements Publisher {
     const composerClosed = this.waitForComposerHidden(page).then(() => 'composer' as const);
     const createDone = createPromise.then((id) => ({ kind: 'create' as const, id }));
 
-    // Whichever signal arrives first within the window counts as success.
     const result = await Promise.race([
       createDone,
       composerClosed,
@@ -374,8 +316,6 @@ export class XPublisher implements Publisher {
       );
     }
 
-    // Give the CreateTweet response a brief chance to resolve so we can grab the
-    // id even when the composer closed first.
     const id =
       typeof result === 'object' && result.kind === 'create'
         ? result.id
@@ -387,8 +327,6 @@ export class XPublisher implements Publisher {
   }
 
   private async waitForComposerHidden(page: Page): Promise<void> {
-    // The composer is "gone" when the first textarea hides or we navigate away
-    // from /compose. Either signal means the post flow completed.
     const textarea = page.locator(SELECTORS.tweetTextarea(0)).first();
     const hidden = textarea
       .waitFor({ state: 'hidden', timeout: PUBLISH_CONFIRM_TIMEOUT })
@@ -403,10 +341,6 @@ export class XPublisher implements Publisher {
     await Promise.race([hidden, navigated]);
   }
 
-  /**
-   * Listens for the GraphQL CreateTweet call and extracts the new tweet's
-   * rest_id from the JSON body. Resolves to the id or undefined.
-   */
   private captureCreateTweetResponse(page: Page): Promise<string | undefined> {
     return page
       .waitForResponse((resp) => resp.url().includes('/CreateTweet'), {
@@ -424,15 +358,6 @@ export class XPublisher implements Publisher {
       .catch(() => undefined);
   }
 
-  // -------------------------------------------------------------------------
-  // Tweet planning
-  // -------------------------------------------------------------------------
-
-  /**
-   * Builds the ordered list of tweets to post. Prefers a caller-provided
-   * meta.thread (array of non-empty strings); otherwise splits input.text into
-   * <=280-char chunks. Always returns at least one tweet.
-   */
   private resolveTweets(input: PublishInput): string[] {
     const raw = input.meta?.thread;
     if (Array.isArray(raw)) {
@@ -446,11 +371,6 @@ export class XPublisher implements Publisher {
     return split.length > 0 ? split : [input.text];
   }
 
-  /**
-   * Splits text into <=limit-char chunks, never breaking mid-word. Prefers to
-   * break on paragraph, then sentence, then word boundaries. A single word
-   * longer than the limit is hard-sliced as a last resort.
-   */
   private splitIntoTweets(text: string, limit = 280): string[] {
     const normalized = text.trim();
     if (normalized.length === 0) return [];
@@ -461,13 +381,11 @@ export class XPublisher implements Publisher {
 
     while (remaining.length > limit) {
       const window = remaining.slice(0, limit + 1);
-      // Prefer a paragraph break, then a sentence end, then a whitespace break.
       let cut = this.lastBoundary(window, /\n\s*\n/g, limit);
       if (cut <= 0) cut = this.lastBoundary(window, /[.!?](?:\s|$)/g, limit);
       if (cut <= 0) cut = window.lastIndexOf(' ', limit);
 
       if (cut <= 0) {
-        // A single word exceeds the limit — hard-slice it.
         chunks.push(remaining.slice(0, limit));
         remaining = remaining.slice(limit).trimStart();
         continue;
@@ -481,10 +399,6 @@ export class XPublisher implements Publisher {
     return chunks.filter((c) => c.length > 0);
   }
 
-  /**
-   * Returns the index just after the last regex match that ends at or before
-   * `limit`, or -1 when no such boundary exists.
-   */
   private lastBoundary(window: string, pattern: RegExp, limit: number): number {
     let best = -1;
     for (const m of window.matchAll(pattern)) {
@@ -494,16 +408,11 @@ export class XPublisher implements Publisher {
     return best;
   }
 
-  // -------------------------------------------------------------------------
-  // State detection
-  // -------------------------------------------------------------------------
-
   private isLoginUrl(url: string): boolean {
     return /\/login|\/i\/flow\/login/i.test(url);
   }
 
   private isCheckpointUrl(url: string): boolean {
-    // /account/access and challenge flows under /i/flow/ (other than login).
     if (/\/account\/access/i.test(url)) return true;
     return /\/i\/flow\//i.test(url) && !/\/i\/flow\/login/i.test(url);
   }
@@ -542,11 +451,6 @@ export class XPublisher implements Publisher {
     return false;
   }
 
-  // -------------------------------------------------------------------------
-  // Human-paced helpers
-  // -------------------------------------------------------------------------
-
-  /** Types text char-by-char with jittered delays and occasional pauses. */
   private async humanType(page: Page, locator: Locator, text: string): Promise<void> {
     await locator.click({ timeout: ACTION_TIMEOUT });
     await this.sleep(this.jitter(150, 500));
@@ -559,14 +463,12 @@ export class XPublisher implements Publisher {
       } else {
         await page.keyboard.type(char, { delay });
       }
-      // Occasional longer human pause (e.g. thinking / after punctuation).
       if (Math.random() < 0.04 || char === '.' || char === '\n') {
         await this.sleep(this.jitter(250, 800));
       }
     }
   }
 
-  /** Returns the first locator that becomes visible, or undefined. */
   private async firstVisible(
     _page: Page,
     locators: Locator[],
@@ -583,15 +485,6 @@ export class XPublisher implements Publisher {
     return undefined;
   }
 
-  // -------------------------------------------------------------------------
-  // Metrics parsing
-  // -------------------------------------------------------------------------
-
-  /**
-   * Reads the aggregate aria-label from the action-bar [role="group"] and pulls
-   * out per-keyword counts (English + French). Returns {} when no labelled group
-   * with recognizable counts is found.
-   */
   private async parseMetricsFromGroup(page: Page): Promise<PostMetrics> {
     const groups = page.locator(SELECTORS.metricsGroup);
     const count = await groups.count().catch(() => 0);
@@ -613,14 +506,8 @@ export class XPublisher implements Publisher {
     return {};
   }
 
-  /**
-   * Parses an aggregate engagement label like "12 replies, 3 reposts, 45 likes"
-   * (or fr "12 réponses, 3 reposts, 45 J'aime"). Numbers immediately precede the
-   * keyword; compact forms (1.2K, 2M) are normalized via parseCount.
-   */
   private parseAggregateLabel(label: string): PostMetrics {
     const metrics: PostMetrics = {};
-    // A count token is a number with optional spaces/commas/dots + K/M suffix.
     const num = '([\\d.,\\s]+[KkMm]?)';
     const pick = (keyword: string): number | undefined => {
       const re = new RegExp(`${num}\\s*${keyword}`, 'i');
@@ -638,10 +525,6 @@ export class XPublisher implements Publisher {
     return metrics;
   }
 
-  /**
-   * Fallback: reads each per-action button (like/reply/retweet), preferring its
-   * own aria-label, then visible text, and parses a leading count from each.
-   */
   private async parseMetricsFromButtons(page: Page): Promise<PostMetrics> {
     const metrics: PostMetrics = {};
     const likes = await this.readButtonCount(page, SELECTORS.metricLike);
@@ -653,7 +536,6 @@ export class XPublisher implements Publisher {
     return metrics;
   }
 
-  /** Reads a single action button's count from its aria-label or visible text. */
   private async readButtonCount(page: Page, selector: string): Promise<number | undefined> {
     const button = page.locator(selector).first();
     if (!(await button.count().catch(() => 0))) return undefined;
@@ -666,17 +548,11 @@ export class XPublisher implements Publisher {
     return text ? this.parseCount(this.leadingCountToken(text)) : undefined;
   }
 
-  /** Extracts the leading count-like token (digits + spaces/commas/dots + K/M). */
   private leadingCountToken(s: string): string {
     const m = s.match(/[\d][\d.,\s]*[KkMm]?/);
     return m ? m[0] : '';
   }
 
-  /**
-   * Normalizes a human count token to a number. Handles compact suffixes
-   * ("1.2K", "1,2 K", "3 k", "2M") and grouped thousands ("1,234" / "1 234").
-   * Returns undefined when no digit is present.
-   */
   private parseCount(s: string): number | undefined {
     const trimmed = s.trim();
     if (!/\d/.test(trimmed)) return undefined;
@@ -685,19 +561,15 @@ export class XPublisher implements Publisher {
     const suffix = suffixMatch ? suffixMatch[1].toLowerCase() : '';
     let core = suffix ? trimmed.slice(0, suffixMatch!.index).trim() : trimmed;
 
-    // Drop any spaces used as thousands separators.
     core = core.replace(/\s/g, '');
 
     let value: number;
     if (suffix) {
-      // With a K/M suffix a single comma/dot is a decimal point ("1,2K" → 1.2).
       const normalized = core.replace(',', '.');
       value = Number.parseFloat(normalized);
     } else if (/^[\d]+([.,][\d]{3})+$/.test(core)) {
-      // Pure grouped thousands ("1,234" / "1.234") — strip the separators.
       value = Number.parseInt(core.replace(/[.,]/g, ''), 10);
     } else {
-      // Plain integer or stray separator — keep digits only.
       value = Number.parseInt(core.replace(/[.,]/g, ''), 10);
     }
 
@@ -714,10 +586,6 @@ export class XPublisher implements Publisher {
   private jitter(min: number, max: number): number {
     return Math.floor(min + Math.random() * (max - min));
   }
-
-  // -------------------------------------------------------------------------
-  // Error classification
-  // -------------------------------------------------------------------------
 
   private toPublishError(error: unknown): PublishError {
     if (error instanceof PublishError) return error;

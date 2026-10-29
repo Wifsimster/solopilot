@@ -168,8 +168,6 @@ export function toContentDraftView(row: ContentDraftRecord): ContentDraftView {
   };
 }
 
-// Columns selected for ContentDraftView. Centralized so the publish columns
-// stay in sync across the read queries.
 const CONTENT_DRAFT_COLUMNS =
   'id, product_id, kind, target_source, angle, text, edited_text, status, used_on, generated_at, used_at, published_url, published_at, platform_meta, publish_error, publish_attempts, scheduled_for';
 
@@ -206,9 +204,6 @@ export function listContentDrafts(filters: ContentDraftListOptions = {}): Conten
     .all(...params) as ContentDraftRecord[];
 
   const views = rows.map(toContentDraftView);
-  // Enrich with the latest engagement snapshot (feedback loop). Queried inline
-  // (not via content-metrics) to avoid a circular import; kept out of
-  // toContentDraftView so getContentDraft's raw record shape is untouched.
   if (views.length > 0) {
     const placeholders = views.map(() => '?').join(',');
     const metricRows = db
@@ -427,11 +422,6 @@ Reponds STRICTEMENT en JSON avec la structure suivante :
 
 const SUGGEST_AI_MAX_TOKENS = 1024;
 
-/**
- * Load the AI config and build the AI port for a content-studio suggestion,
- * throwing a French `ContentStudioError` when the config or key is missing.
- * Shared by every suggestion helper.
- */
 function createSuggestionAi(): { ai: AiPort; config: ReturnType<typeof loadConfig> } {
   let config;
   try {
@@ -449,18 +439,12 @@ function createSuggestionAi(): { ai: AiPort; config: ReturnType<typeof loadConfi
   return { ai: createAi(config), config };
 }
 
-/** Numbered list of value props, or a placeholder when none were provided. */
 function formatValueProps(valueProps: string[] | null | undefined): string {
   return valueProps && valueProps.length > 0
     ? valueProps.map((v, i) => `${i + 1}. ${v}`).join('\n')
     : '(aucune proposition de valeur fournie)';
 }
 
-/**
- * Best-effort GitHub repo context block appended to suggestion prompts so the AI
- * is grounded on the product's actual repository (description + README). Returns
- * an empty string when no URL is given or the repo cannot be fetched.
- */
 async function buildRepoContextBlock(
   productUrl: string | null | undefined,
   githubToken?: string,
@@ -477,11 +461,6 @@ async function buildRepoContextBlock(
   return `\n\nCONTEXTE DU DEPOT GITHUB (source de verite, a privilegier)\n${parts.join('\n')}`;
 }
 
-/**
- * Shared executor for content-studio suggestions: builds the AI client, grounds
- * the prompt on the product's GitHub repo when a URL is given, calls the model,
- * then parses and validates the JSON response.
- */
 async function runSuggestion<T>(opts: {
   productUrl: string | null | undefined;
   systemPrompt: string;
@@ -519,12 +498,6 @@ async function runSuggestion<T>(opts: {
   return validated.data;
 }
 
-/**
- * Propose a concise target-audience description for a product using the AI
- * model. Works from raw form values (name, URL, description, value props) so it
- * can be called before the product is persisted. Grounded on the GitHub repo
- * when `product_url` points to one.
- */
 export async function suggestTargetAudience(input: SuggestAudienceInput): Promise<string> {
   const language = input.content_language ?? 'fr';
   const userPayload = `PRODUIT
@@ -610,12 +583,6 @@ Reponds STRICTEMENT en JSON avec la structure suivante :
   "call_to_actions": ["<cta 1>", "<cta 2>", "<cta 3>"]
 }`;
 
-/**
- * Propose a short list of calls to action for a product using the AI model.
- * Works from raw form values so it can be called before the product is
- * persisted. The returned CTAs are trimmed, length-clamped, de-duplicated and
- * capped at {@link CTAS_MAX_COUNT}.
- */
 export async function suggestCallToActions(input: SuggestCtasInput): Promise<string[]> {
   const language = input.content_language ?? 'fr';
   const userPayload = `PRODUIT
@@ -655,11 +622,6 @@ Propose entre 3 et ${CTAS_MAX_COUNT} appels a l'action courts et varies pour ce 
   return ctas;
 }
 
-/**
- * Trim, length-clamp (dropping items below `min`), case-insensitively
- * de-duplicate and cap a list of AI-proposed short strings. Shared by the CTA
- * and value-prop suggestion helpers.
- */
 function dedupeBoundedList(items: string[], min: number, max: number, cap: number): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -728,12 +690,6 @@ Reponds STRICTEMENT en JSON avec la structure suivante :
   "product_description": "<description factuelle du produit>"
 }`;
 
-/**
- * Propose a factual product description (for lead analysis / reply drafting)
- * using the AI model, grounded on the GitHub repo when `product_url` points to
- * one. Works from raw form values so it can be called before the product is
- * persisted.
- */
 export async function suggestProductDescription(input: SuggestDescriptionInput): Promise<string> {
   const language = input.content_language ?? 'fr';
   const userPayload = `PRODUIT
@@ -814,12 +770,6 @@ Reponds STRICTEMENT en JSON avec la structure suivante :
   "value_props": ["<proposition 1>", "<proposition 2>", "<proposition 3>"]
 }`;
 
-/**
- * Propose a short list of value propositions for a product using the AI model,
- * grounded on the GitHub repo when `product_url` points to one. The returned
- * items are trimmed, length-clamped, de-duplicated and capped at
- * {@link VALUE_PROPS_MAX_COUNT}.
- */
 export async function suggestValueProps(input: SuggestValuePropsInput): Promise<string[]> {
   const language = input.content_language ?? 'fr';
   const userPayload = `PRODUIT
@@ -909,7 +859,6 @@ Reponds STRICTEMENT en JSON avec la structure suivante :
   "subreddits": ["<nom1>", "<nom2>", "<nom3>"]
 }`;
 
-/** Strip an optional `r/` or `/r/` prefix and validate a subreddit name. */
 function sanitizeSubreddit(raw: string): string | null {
   const name = raw
     .trim()
@@ -919,12 +868,6 @@ function sanitizeSubreddit(raw: string): string | null {
   return SUBREDDIT_NAME_REGEX.test(name) ? name : null;
 }
 
-/**
- * Propose real, active subreddits where the product's audience hangs out, using
- * the AI model and grounding on the GitHub repo when `product_url` points to
- * one. Names are stripped of any `r/` prefix, validated, de-duplicated and
- * capped at {@link SUBREDDITS_MAX_COUNT}.
- */
 export async function suggestSubreddits(input: SuggestSubredditsInput): Promise<string[]> {
   const language = input.content_language ?? 'fr';
   const userPayload = `PRODUIT
@@ -965,7 +908,6 @@ Propose entre 3 et ${SUBREDDITS_MAX_COUNT} subreddits reels et pertinents pour c
     );
   }
 
-  // Drop anything the model hallucinated by checking each name against Reddit.
   const subreddits = await verifySubredditsExist(candidates);
   if (subreddits.length === 0) {
     throw new ContentStudioError(
@@ -1029,12 +971,6 @@ Reponds STRICTEMENT en JSON avec la structure suivante :
   "keywords": ["<mot-cle 1>", "<mot-cle 2>", "<mot-cle 3>"]
 }`;
 
-/**
- * Propose Hacker News search keywords for the product using the AI model,
- * grounded on the GitHub repo when `product_url` points to one. Keywords are
- * trimmed, length-clamped, de-duplicated and capped at
- * {@link HN_KEYWORDS_MAX_COUNT}.
- */
 export async function suggestHnKeywords(input: SuggestHnKeywordsInput): Promise<string[]> {
   const language = input.content_language ?? 'fr';
   const userPayload = `PRODUIT
@@ -1122,12 +1058,6 @@ Reponds STRICTEMENT en JSON avec la structure suivante :
   "intent_keywords": ["<expression 1>", "<expression 2>", "<expression 3>"]
 }`;
 
-/**
- * Propose buyer-intent phrases (the kind a prospect would write when looking for
- * a solution the product solves) using the AI model, grounded on the GitHub repo
- * when `product_url` points to one. Phrases are trimmed, length-clamped,
- * de-duplicated and capped at {@link INTENT_KEYWORDS_MAX_COUNT}.
- */
 export async function suggestIntentKeywords(input: SuggestIntentKeywordsInput): Promise<string[]> {
   const language = input.content_language ?? 'fr';
   const userPayload = `PRODUIT
@@ -1291,11 +1221,6 @@ Genere exactement ${count} drafts, chacun avec un angle DIFFERENT.`;
   return rows;
 }
 
-// --- Native X threads -------------------------------------------------------
-// Instead of mechanically slicing a long post at 280 chars, ask the model to
-// author a coherent multi-tweet thread. The draft stores the joined text (for
-// search/preview) plus platform_meta.thread = the ordered tweets the publisher
-// posts verbatim.
 export const generateThreadSchema = z.object({
   count: z
     .number({ invalid_type_error: 'Le nombre de threads doit etre un entier.' })

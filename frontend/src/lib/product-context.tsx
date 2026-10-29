@@ -9,7 +9,6 @@ import {
 export function ProductProvider({ children }: { children: React.ReactNode }) {
   const [selectedProductId, setSelectedProductIdState] = useState<string>(() => readStoredId());
 
-  // Sync across tabs
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === STORAGE_KEY && e.newValue) {
@@ -25,7 +24,6 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
     try {
       window.localStorage.setItem(STORAGE_KEY, id);
     } catch {
-      /* ignore */
     }
   }, []);
 

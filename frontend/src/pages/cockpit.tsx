@@ -130,7 +130,6 @@ export function CockpitPage() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 animate-in fade-in slide-in-from-bottom-2 duration-500 delay-100 fill-mode-backwards">
-          {/* Veille — full width */}
           <Card className="sm:col-span-2 transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader>
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -164,7 +163,6 @@ export function CockpitPage() {
             </CardContent>
           </Card>
 
-          {/* Acquisition */}
           <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-2">
@@ -182,7 +180,6 @@ export function CockpitPage() {
             </CardContent>
           </Card>
 
-          {/* Workflows */}
           <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-3">
@@ -206,7 +203,6 @@ export function CockpitPage() {
             </CardContent>
           </Card>
 
-          {/* Facturation */}
           <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-2">
@@ -234,7 +230,6 @@ export function CockpitPage() {
             </CardContent>
           </Card>
 
-          {/* Comptabilité */}
           <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-2">
@@ -260,7 +255,6 @@ export function CockpitPage() {
             </CardContent>
           </Card>
 
-          {/* CRM */}
           <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-2">
@@ -288,7 +282,6 @@ export function CockpitPage() {
             </CardContent>
           </Card>
 
-          {/* Agenda */}
           <Card className="transition-all duration-200 hover:-translate-y-0.5 hover:border-muted-foreground/20 hover:shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-3">
@@ -307,7 +300,6 @@ export function CockpitPage() {
             </CardContent>
           </Card>
 
-          {/* Placeholder for grid balance on odd module count */}
           <div className="hidden sm:block" aria-hidden="true" />
         </div>
       )}

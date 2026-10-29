@@ -13,11 +13,6 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { withProductId } from '@/lib/product-context-hooks';
 
-/**
- * Stripe Embedded Checkout to collect payment on an invoice (ADR-0016 / ADR-0021).
- * The backend creates the embedded session; on completion Stripe redirects the
- * page to the session's return_url. Only mounted when both Stripe keys are set.
- */
 export function StripeCheckoutDialog({
   invoiceId,
   invoiceLabel,

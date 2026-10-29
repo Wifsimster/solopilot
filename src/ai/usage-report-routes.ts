@@ -1,12 +1,3 @@
-/**
- * HTTP routes of the « Dépenses IA » page. Registered by `server.ts`; kept in
- * their own module so tests can mount them on a bare Hono app.
- *
- * - GET /api/ai/usage/report?period=7d|30d|month|prev-month|12m
- * - PUT /api/ai/usage/recap  { "enabled": boolean }
- *
- * Responses carry aggregates only: no prompt, answer or key.
- */
 import type { Env, Hono } from 'hono';
 import { setSetting } from '../settings-service.js';
 import { resolveAlertWebhook } from './usage.js';

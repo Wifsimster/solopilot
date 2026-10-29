@@ -1,16 +1,5 @@
-/**
- * Veille module — workflow definitions.
- *
- * `veille.collect` / `veille.digest` re-express today's bot on the engine via
- * behaviour-preserving delegations (`veille.collect-run` → `triggerCollect`,
- * `veille.publish-run` → `triggerRun`). They are `enabled: true`, but are ONLY
- * scheduled in production when the `WORKFLOW_SCHEDULER` flag is on (ADR-0020) —
- * the legacy crons remain the default. Schedules here are the defaults; the
- * production scheduler injects the configured CRON/COLLECT schedules.
- */
 import type { Workflow } from '../../workflow/types.js';
 
-/** Hourly source collection — delegates to triggerCollect. */
 export const veilleCollect: Workflow = {
   id: 'veille.collect',
   module: 'veille',
@@ -21,7 +10,6 @@ export const veilleCollect: Workflow = {
   steps: [{ use: 'veille.collect-run' }],
 };
 
-/** Daily AI digest at 07:30 — delegates to triggerRun (AI summary + Discord). */
 export const veilleDigest: Workflow = {
   id: 'veille.digest',
   module: 'veille',
@@ -32,12 +20,6 @@ export const veilleDigest: Workflow = {
   steps: [{ use: 'veille.publish-run' }],
 };
 
-/**
- * Consolidated daily digest (VEILLE_DIGEST_MODE=consolidated): publishes every
- * product in sequence, then posts ONE Discord digest with a section per
- * product. Dispatched by cron-manager on the global publish schedule; a no-op
- * in per-product mode (the default), so registering it changes nothing.
- */
 export const veilleDigestConsolidated: Workflow = {
   id: 'veille.digest-consolidated',
   module: 'veille',
@@ -48,12 +30,6 @@ export const veilleDigestConsolidated: Workflow = {
   steps: [{ use: 'veille.consolidated-digest-run' }],
 };
 
-/**
- * Hourly safety-net sweep for high-urgency alerts (offset from collect). The
- * primary alert path runs inline at the end of each collect; this workflow
- * retries items a failed webhook call left pending and enables manual runs.
- * Idempotent via `alerted_at` — both paths never double-ping.
- */
 export const veilleAlert: Workflow = {
   id: 'veille.alert',
   module: 'veille',
@@ -64,12 +40,6 @@ export const veilleAlert: Workflow = {
   steps: [{ use: 'veille.alert-run' }],
 };
 
-/**
- * Radar produit (ADR-0026): hourly, after collect + triage. Very relevant news
- * become GitHub issue proposals in the product's repo. Gated at each tick by
- * the RADAR_ENABLED setting (off by default) and dry-run by default, so
- * registering it changes nothing until the owner opts in.
- */
 export const veilleRadarProduit: Workflow = {
   id: 'veille.radar-produit',
   module: 'veille',

@@ -21,16 +21,10 @@ export interface CollectResult {
   intentSignals: number;
   triaged: number;
   alerted: number;
-  /** Why urgency alerts were not sent this run (e.g. no webhook in consolidated mode). */
   alertSkipped?: AlertResult['skipped'];
   crmLeads: number;
 }
 
-/**
- * Hourly collection: runs all enabled sources for a product and stores items.
- * No AI call, no summary — just data accumulation with deduplication.
- * Failure of one source does not abort the others.
- */
 export async function collectTweets(
   config: Config,
   productId: string = DEFAULT_PRODUCT_ID,
@@ -153,18 +147,11 @@ export async function collectTweets(
     logger.info('YouTube enabled but YOUTUBE_API_KEY missing — skipping', { productId });
   }
 
-  // Brand-mention pass (Stalkr-style): sitewide keyword search on Reddit, HN
-  // and YouTube for the product's mention keywords (name, aliases, competitors,
-  // founder…). Stored with origin='mention' so the digest never filters them
-  // out as "not news". An item caught by both passes keeps origin='topic'
-  // (INSERT OR IGNORE, topic passes run first). X is not searched: the session
-  // scraper only reads the timeline. Zero behaviour change when the list is empty.
   const mentionKeywords = product?.mention_keywords ?? [];
   if (mentionKeywords.length > 0) {
     const mentionItems = new Map<string, Item>();
     for (const keyword of mentionKeywords) {
       try {
-        // Sequential by design: Reddit 429s under concurrent load.
         const found = await searchRedditPosts(keyword, productId);
         for (const item of found) if (!mentionItems.has(item.id)) mentionItems.set(item.id, item);
       } catch (err) {
@@ -238,8 +225,6 @@ export async function collectTweets(
     }
   }
 
-  // Alerts run every collect (not only when new items arrived) so items left
-  // pending by an earlier failed webhook call are retried within the hour.
   let alerted = 0;
   let alertSkipped: AlertResult['skipped'];
   try {
@@ -253,8 +238,6 @@ export async function collectTweets(
     });
   }
 
-  // Like alerts, the CRM bridge sweeps every collect so items skipped by an
-  // earlier failure are retried; crm_bridged_at keeps it idempotent.
   let crmLeads = 0;
   try {
     const result = await createLeadsFromMentions(config, productId);

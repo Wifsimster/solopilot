@@ -18,19 +18,13 @@ import { buildMergedConfig } from './config-merge.js';
 import { registerSolopilot } from './workflow/bootstrap.js';
 import { recoverStaleWorkflowRuns } from './workflow/run-store.js';
 
-// Always initialize database and boot the web server
 getDb();
 
-// Register workflow definitions and steps. This is inert: it does not schedule
-// anything (every workflow ships enabled: false) — it only populates the
-// registry so the read-only workflow API can surface them. See ADR-0014.
 registerSolopilot();
 
-// Recover any runs stuck in 'running' state from a previous crash
 recoverStaleRuns();
 recoverStaleWorkflowRuns();
 
-// Graceful shutdown handler
 let shuttingDown = false;
 
 function shutdown(signal: string) {
@@ -38,10 +32,8 @@ function shutdown(signal: string) {
   shuttingDown = true;
   logger.info('Shutdown signal received, draining...', { signal });
 
-  // Stop all cron tasks immediately
   stopAllCrons();
 
-  // Wait for in-flight operations to complete (max 30s)
   const deadline = Date.now() + 30_000;
   const interval = setInterval(() => {
     if ((!isAnyRunning() && !isAnyCollecting()) || Date.now() > deadline) {
@@ -63,7 +55,6 @@ const bootConfig = loadBootConfig();
 const dbOverrides = getSettingsMap();
 const configResult = tryLoadConfigWithOverrides(dbOverrides);
 
-// Start web server — always, even if config is incomplete
 startServer(
   configResult.success ? configResult.config : null,
   configResult.success ? null : configResult.missing,
@@ -84,23 +75,17 @@ if (configResult.success) {
     webPort: bootConfig.WEB_PORT,
   });
 
-  // Schedule both cron tasks via the manager (supports hot-reload)
   schedulePublishCron(publishSchedule, config, buildMergedConfig);
   scheduleCollectCron(collectSchedule, config, buildMergedConfig);
 
-  // Daily publish-session canary (alerts on Discord when a session expires).
   scheduleCanaryCron(dbOverrides['PUBLISH_CANARY_CRON'] || '0 8 * * *');
 
-  // Drain the scheduled-publish queue every minute ("Publier plus tard").
   schedulePublishQueueCron(dbOverrides['PUBLISH_QUEUE_CRON'] || '* * * * *');
 
-  // Refresh published-post engagement metrics every 6h (feedback loop).
   scheduleMetricsCron(dbOverrides['PUBLISH_METRICS_CRON'] || '0 */6 * * *');
 
-  // Radar produit (ADR-0026): hourly, no-op until RADAR_ENABLED is on.
   scheduleRadarCron(config, buildMergedConfig);
 
-  // Weekly « Dépenses IA » recap on Discord (Monday 09:00, no AI call).
   scheduleAiRecapCron(config, buildMergedConfig);
 } else {
   logger.warn('X AI Daily Bot started in setup mode — missing credentials', {

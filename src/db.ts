@@ -19,7 +19,6 @@ export interface RunRecord {
   summary: string | null;
   error_message: string | null;
   notification_status: 'pending' | 'sent' | 'failed' | 'skipped' | null;
-  /** Consolidated digest that delivered this run (veille_digest_deliveries.id), else null. */
   digest_delivery_id: number | null;
 }
 
@@ -56,15 +55,9 @@ export interface ProductRecord {
   hn_keywords: string | null;
   youtube_enabled: number;
   youtube_keywords: string | null;
-  // Brand-mention monitoring (Stalkr-style): product name/aliases, competitor
-  // names, founder name… JSON string array. Non-empty = mention pass active.
   mention_keywords: string | null;
   intent_enabled: number;
   intent_keywords: string | null;
-  // Boolean refinement of intent matching (Syften-style): a post is skipped if it
-  // contains ANY exclude term, and (when require is non-empty) must contain at
-  // least one require term. Both are JSON string arrays. Applied before the
-  // include-keyword pass, deterministically, with zero LLM cost.
   intent_exclude_keywords: string | null;
   intent_require_keywords: string | null;
   product_description: string | null;
@@ -76,15 +69,10 @@ export interface ProductRecord {
   call_to_actions: string | null;
   content_voice: string | null;
   content_language: string | null;
-  // Per-item AI triage (stolen from Stalkr): opt-in flag + optional custom
-  // category list (JSON string array) replacing the default taxonomy.
   triage_enabled: number;
   triage_categories: string | null;
-  // Real-time high-urgency alerts: opt-in flag + urgency threshold (NULL =
-  // default 80). Requires triage_enabled to produce anything.
   alert_enabled: number;
   alert_threshold: number | null;
-  // CRM bridge: opt-in flag — high-intent triaged mentions become CRM leads.
   crm_leads_enabled: number;
 }
 
@@ -100,10 +88,9 @@ export interface ContentDraftRecord {
   used_on: string | null;
   generated_at: number;
   used_at: number | null;
-  // Auto-publish result columns (content auto-publish feature).
   published_url: string | null;
   published_at: number | null;
-  platform_meta: string | null; // JSON: platform-specific fields (subreddit, title…)
+  platform_meta: string | null;
   publish_error: string | null;
   publish_attempts: number;
   scheduled_for: number | null;
@@ -114,7 +101,7 @@ export interface PublishJobRecord {
   draft_id: number;
   product_id: string;
   target_source: string;
-  status: string; // queued | running | published | failed
+  status: string;
   scheduled_for: number | null;
   attempt_count: number;
   published_url: string | null;
@@ -149,13 +136,8 @@ export interface IntentSignalRecord {
   ai_drafted_reply: string | null;
   ai_processed_at: number | null;
   ai_error: string | null;
-  // ICP fit scoring (stolen from Buska): how well the author/context matches the
-  // product's Ideal Customer Profile (target_audience + value_props), independent
-  // of buying intent. Lets the owner triage on fit, not just demand.
   ai_icp_score: number | null;
   ai_icp_reason: string | null;
-  // Intent taxonomy bucket (stolen from Buska): one of demande_active,
-  // mention_concurrent, signal_douleur, question, recommandation, autre.
   ai_intent_category: string | null;
 }
 
@@ -192,14 +174,12 @@ function addColumnIfMissing(
   }
 }
 
-// Safe ALTER TABLE migration — runs after initial CREATE TABLE migrations.
 function runAlterMigrations(database: Database.Database) {
   const alterMigrations = [`ALTER TABLE runs ADD COLUMN notification_status TEXT DEFAULT NULL`];
   for (const sql of alterMigrations) {
     try {
       database.exec(sql);
     } catch {
-      // Column already exists — safe to ignore
     }
   }
 }
@@ -263,28 +243,16 @@ function runProductMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'products', 'alert_threshold', `INTEGER`);
   addColumnIfMissing(database, 'products', 'crm_leads_enabled', `INTEGER NOT NULL DEFAULT 0`);
 
-  // Per-item AI triage columns (Stalkr-style): each collected item gets a
-  // category, an urgency score and a relevance score at collect time. NULL
-  // triaged_at = not yet triaged; triage_error explains a NULL category.
   addColumnIfMissing(database, 'tweets', 'triage_category', `TEXT`);
   addColumnIfMissing(database, 'tweets', 'triage_urgency', `INTEGER`);
   addColumnIfMissing(database, 'tweets', 'triage_relevance', `INTEGER`);
   addColumnIfMissing(database, 'tweets', 'triaged_at', `INTEGER`);
   addColumnIfMissing(database, 'tweets', 'triage_error', `TEXT`);
-  // NULL = not alerted; set when a high-urgency Discord alert has been sent so
-  // re-runs never double-ping (idempotent across restarts).
   addColumnIfMissing(database, 'tweets', 'alerted_at', `INTEGER`);
-  // Owner triage feed state (new | handled | ignored) — distinct from the AI
-  // triage above: the AI scores, the owner works through the feed.
   addColumnIfMissing(database, 'tweets', 'triage_status', `TEXT NOT NULL DEFAULT 'new'`);
   addColumnIfMissing(database, 'tweets', 'triage_status_at', `INTEGER`);
-  // 1 = the AI flagged buying intent this product can serve (0 = no, NULL =
-  // not evaluated). crm_bridged_at marks the item consumed by the CRM bridge.
   addColumnIfMissing(database, 'tweets', 'triage_high_intent', `INTEGER`);
   addColumnIfMissing(database, 'tweets', 'crm_bridged_at', `INTEGER`);
-  // How the item was collected: 'topic' (subreddits / topical keywords) or
-  // 'mention' (brand-mention keyword search). Mentions bypass the digest's
-  // news-relevance filter.
   addColumnIfMissing(database, 'tweets', 'origin', `TEXT NOT NULL DEFAULT 'topic'`);
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_tweets_triage ON tweets(product_id, triaged_at, triage_urgency)`,
@@ -308,8 +276,6 @@ function runProductMigrations(database: Database.Database) {
     `CREATE INDEX IF NOT EXISTS idx_content_drafts_product_status ON content_drafts(product_id, status, generated_at DESC)`,
   );
 
-  // Auto-publish result columns on content_drafts (denormalized for cheap list
-  // rendering; the publish_jobs table below is the per-attempt audit log).
   addColumnIfMissing(database, 'content_drafts', 'published_url', `TEXT`);
   addColumnIfMissing(database, 'content_drafts', 'published_at', `INTEGER`);
   addColumnIfMissing(database, 'content_drafts', 'platform_meta', `TEXT`);
@@ -434,8 +400,6 @@ export interface WorkflowRunRecord {
   error_message: string | null;
 }
 
-// Workflow engine migrations (ADR-0013). Idempotent — generalizes the `runs`
-// table into a workflow-aware execution log without touching it.
 function runWorkflowMigrations(database: Database.Database) {
   database.exec(`CREATE TABLE IF NOT EXISTS workflow_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -454,10 +418,6 @@ function runWorkflowMigrations(database: Database.Database) {
   );
 }
 
-// Consolidated veille digest deliveries (VEILLE_DIGEST_MODE=consolidated). One
-// row per consolidated send (the send log). The send outcome is ALSO written to
-// runs.notification_status of every participating run (ADR-0025 notify_failed);
-// runs.digest_delivery_id links a run to the delivery that carried it. Idempotent.
 function runVeilleDigestMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'runs', 'digest_delivery_id', 'INTEGER DEFAULT NULL');
   database.exec(`CREATE TABLE IF NOT EXISTS veille_digest_deliveries (
@@ -476,10 +436,6 @@ function runVeilleDigestMigrations(database: Database.Database) {
   )`);
 }
 
-// Radar produit (ADR-0026). `tweets.radar_scanned_at` marks an item scored
-// against the products; `radar_proposals` is the issue ledger. The UNIQUE pair
-// is the dedup guarantee: a row is claimed (status 'creating') BEFORE any
-// GitHub call, so the same item x product can never yield two issues.
 function runRadarMigrations(database: Database.Database) {
   addColumnIfMissing(database, 'tweets', 'radar_scanned_at', 'INTEGER');
   database.exec(`CREATE TABLE IF NOT EXISTS radar_proposals (
@@ -505,10 +461,6 @@ function runRadarMigrations(database: Database.Database) {
   );
 }
 
-// AI usage ledger (ADR-0027). One row per model call: tokens, model and the
-// estimated USD cost (0 for GitHub Models). `month` is the Europe/Paris
-// YYYY-MM bucket the monthly budget is computed on. `ai_budget_alerts` makes
-// the 80 % / 100 % notifications fire once per month. Idempotent.
 function runAiUsageMigrations(database: Database.Database) {
   database.exec(`CREATE TABLE IF NOT EXISTS ai_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -534,11 +486,6 @@ function runAiUsageMigrations(database: Database.Database) {
   )`);
 }
 
-// AI spend report (« Dépenses IA »). `day` is the Europe/Paris YYYY-MM-DD of
-// `created_at`, stored at insert time so the report buckets by Paris day in SQL
-// (SQLite has no time zone database; DST days are 23 h / 25 h). Rows written
-// before this migration are backfilled once. `ai_usage_recaps` makes the
-// weekly Discord recap fire once per ISO week. Idempotent.
 function runAiUsageReportMigrations(database: Database.Database) {
   const columns = database.prepare('PRAGMA table_info(ai_usage)').all() as { name: string }[];
   if (!columns.some((c) => c.name === 'day')) {
@@ -596,8 +543,6 @@ export interface VeilleDigestDeliveryRecord {
   error_message: string | null;
 }
 
-// Content auto-publish migrations. Idempotent. One row per publish attempt for
-// retry/audit; idempotency_key prevents double-posting the same draft text.
 function runPublishMigrations(database: Database.Database) {
   database.exec(`CREATE TABLE IF NOT EXISTS publish_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -625,8 +570,6 @@ function runPublishMigrations(database: Database.Database) {
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_publish_jobs_idem ON publish_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL`,
   );
 
-  // Engagement metrics for published posts (latest snapshot per draft), scraped
-  // back from the live post to close the feedback loop. One row per draft.
   database.exec(`CREATE TABLE IF NOT EXISTS post_metrics (
     draft_id INTEGER PRIMARY KEY REFERENCES content_drafts(id) ON DELETE CASCADE,
     product_id TEXT NOT NULL DEFAULT '${DEFAULT_PRODUCT_ID}' REFERENCES products(id) ON DELETE CASCADE,
@@ -640,14 +583,10 @@ function runPublishMigrations(database: Database.Database) {
     `CREATE INDEX IF NOT EXISTS idx_post_metrics_product ON post_metrics(product_id, fetched_at DESC)`,
   );
 
-  // Recover drafts orphaned in 'publishing' by a crash mid-publish: return them
-  // to an editable state so they reappear in the UI with a retry path. Safe to
-  // run at every boot — a no-op when nothing is stuck.
   database.exec(
     `UPDATE content_drafts SET status = 'edited', publish_error = 'Publication interrompue (redémarrage).' WHERE status = 'publishing'`,
   );
 
-  // Likewise mark any 'running' job rows from a previous process as failed.
   database
     .prepare(
       `UPDATE publish_jobs SET status = 'failed', error_code = 'INTERRUPTED', error_message = ?, finished_at = ? WHERE status = 'running'`,
@@ -671,8 +610,6 @@ export interface InvoiceRecord {
   created_at: number;
 }
 
-// Facturation module migrations (ADR-0016). Idempotent. Local invoice ledger;
-// Stripe sync is optional and stores its external id in stripe_id.
 function runFacturationMigrations(database: Database.Database) {
   database.exec(`CREATE TABLE IF NOT EXISTS invoices (
     id TEXT PRIMARY KEY,
@@ -706,17 +643,11 @@ export interface LedgerRecord {
   label: string;
   occurred_on: string;
   created_at: number;
-  // ADR-0029: idempotency key from the source system (bank / store payout
-  // reference), unique per product when set.
   external_ref: string | null;
-  // ADR-0029: who wrote the entry (e.g. `agent:budget`); NULL = manual entry.
   source: string | null;
-  // ADR-0029: API token that created the entry; NULL for admin (Basic) writes.
   api_token_id: string | null;
 }
 
-// Comptabilité module migrations (ADR-0017). Idempotent. Manual revenue/expense
-// ledger; invoiced revenue (CA) is read from paid invoices, this complements it.
 function runComptaMigrations(database: Database.Database) {
   database.exec(`CREATE TABLE IF NOT EXISTS ledger (
     id TEXT PRIMARY KEY,
@@ -732,8 +663,6 @@ function runComptaMigrations(database: Database.Database) {
     `CREATE INDEX IF NOT EXISTS idx_ledger_product_date ON ledger(product_id, occurred_on)`,
   );
 
-  // ADR-0029: idempotent agent writes. New nullable columns, so rows written
-  // before this migration keep NULL and never collide on the partial index.
   addColumnIfMissing(database, 'ledger', 'external_ref', 'TEXT');
   addColumnIfMissing(database, 'ledger', 'source', 'TEXT');
   addColumnIfMissing(database, 'ledger', 'api_token_id', 'TEXT');
@@ -747,8 +676,8 @@ export interface ApiTokenRecord {
   name: string;
   token_hash: string;
   token_prefix: string;
-  scopes: string; // JSON string array
-  product_ids: string | null; // JSON string array; NULL = every product
+  scopes: string;
+  product_ids: string | null;
   created_at: number;
   last_used_at: number | null;
   revoked_at: number | null;
@@ -766,9 +695,6 @@ export interface ApiTokenAuditRecord {
   client: string | null;
 }
 
-// Scoped API tokens (ADR-0029). Only the SHA-256 of the secret is stored. The
-// audit table records who/what/when for token-authenticated requests (method,
-// path, product, status) and never request or response bodies. Idempotent.
 function runApiTokenMigrations(database: Database.Database) {
   database.exec(`CREATE TABLE IF NOT EXISTS api_tokens (
     id TEXT PRIMARY KEY,
@@ -834,8 +760,6 @@ export interface InteractionRecord {
   created_at: number;
 }
 
-// CRM module migrations (ADR-0018). Idempotent. Contacts, deals (pipeline) and
-// interactions, all scoped by product_id (activity).
 function runCrmMigrations(database: Database.Database) {
   database.exec(`CREATE TABLE IF NOT EXISTS contacts (
     id TEXT PRIMARY KEY,
@@ -896,8 +820,6 @@ export interface CalendarEventRecord {
   created_at: number;
 }
 
-// Agenda module migrations (ADR-0019). Idempotent. Local calendar events; ICS
-// sync stores its external uid in external_id for idempotent upserts.
 function runAgendaMigrations(database: Database.Database) {
   database.exec(`CREATE TABLE IF NOT EXISTS calendar_events (
     id TEXT PRIMARY KEY,

@@ -1,4 +1,3 @@
-// Unit tests for the pure consolidated-digest builder (runs against dist/).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -73,13 +72,11 @@ test('more than 10 sections splits into ceil(n/10) messages', () => {
   assert.deepEqual(messages.map((m) => m.embeds.length), [10, 10, 3]);
   assert.match(messages[0].content, /\(1\/3\)/);
   assert.match(messages[2].content, /\(3\/3\)/);
-  // Order preserved across messages.
   assert.equal(messages[1].embeds[0].title, 'Produit 11');
   assertWithinLimits(messages);
 });
 
 test('more than 6000 chars splits greedily into the fewest messages', () => {
-  // Each section ≈ 3 items × ~390 chars ≈ 1.2k chars → 4 fit in 6000, not 5.
   const longItems = [1, 2, 3].map((n) => ({ text: `${'x'.repeat(380)} ${n}`, url: `https://ex.com/${n}` }));
   const sections = Array.from({ length: 9 }, (_, i) => section(i + 1, longItems));
   const perEmbed = embedLength(buildConsolidatedDigest([sections[0]], { date: DATE })[0].embeds[0]);
@@ -92,7 +89,6 @@ test('more than 6000 chars splits greedily into the fewest messages', () => {
 });
 
 test('oversize section (>4096) drops lowest-ranked items and ends with "+{n} autres"', () => {
-  // Long URLs are appended verbatim, so three ~1,900-char items exceed 4,096.
   const long = (i) => ({ text: `Item ${i}`, url: `https://ex.com/${i}/${'x'.repeat(1900)}` });
   const messages = buildConsolidatedDigest([section(1, [long(1), long(2), long(3)]), section(2)], {
     date: DATE,

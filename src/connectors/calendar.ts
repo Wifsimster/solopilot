@@ -1,17 +1,7 @@
-/**
- * Calendar connector (read-only, ICS feed).
- *
- * Optional: when AGENDA_ICS_URL is unset, `isConfigured()` is false and
- * `listUpcoming()` resolves to []. When set, it fetches an ICS feed (e.g. a
- * Google Calendar secret address) and parses VEVENTs — no OAuth, no dependency.
- * Read-only: Solopilot never writes back to the calendar. The sync step that
- * uses it is degradable, so a feed outage can never fail a run. See ADR-0019.
- */
 import type { Config } from '../config.js';
 import { logger } from '../logger.js';
 import type { CalendarConnector, CalendarEventData } from '../workflow/types.js';
 
-/** Unfold ICS lines (continuation lines begin with a space or tab). */
 function unfold(ics: string): string[] {
   const out: string[] = [];
   for (const raw of ics.split(/\r?\n/)) {

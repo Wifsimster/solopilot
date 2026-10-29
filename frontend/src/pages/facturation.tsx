@@ -68,7 +68,6 @@ const revenueConfig = {
   revenue: { label: 'CA encaissé', color: 'var(--chart-1)' },
 } satisfies ChartConfig;
 
-/** Sum paid invoices by calendar month (last 6 months that have data). */
 function monthlyRevenue(invoices: Invoice[]): { month: string; revenue: number }[] {
   const byMonth = new Map<string, number>();
   for (const inv of invoices) {
@@ -149,7 +148,6 @@ export function FacturationPage() {
   const revenue = useMemo(() => monthlyRevenue(list), [list]);
   const drafts = relances.data ?? [];
 
-  // Derived KPIs
   const totalPaid = useMemo(
     () => list.filter((i) => i.status === 'paid').reduce((s, i) => s + i.amount_cents, 0),
     [list],
@@ -248,7 +246,6 @@ export function FacturationPage() {
         description="Ledger local de vos factures. Les relances sont préparées mais jamais envoyées sans votre validation."
       />
 
-      {/* Actions: invoice creation + Stripe status */}
       <div className="flex flex-wrap items-center gap-3">
         {stripe.data &&
           (stripe.data.configured ? (
@@ -271,7 +268,6 @@ export function FacturationPage() {
         </div>
       </div>
 
-      {/* KPI row */}
       {invoices.loading ? (
         <div className="grid gap-4 sm:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -298,7 +294,6 @@ export function FacturationPage() {
         )
       )}
 
-      {/* Relance drafts */}
       {drafts.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
@@ -342,7 +337,6 @@ export function FacturationPage() {
         </Card>
       )}
 
-      {/* Revenue chart */}
       {revenue.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
@@ -384,7 +378,6 @@ export function FacturationPage() {
         </Card>
       )}
 
-      {/* Invoice table */}
       {invoices.loading ? (
         <div className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (

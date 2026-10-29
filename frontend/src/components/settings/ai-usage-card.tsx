@@ -16,10 +16,6 @@ function usd(value: number): string {
   return value.toLocaleString('fr-FR', { style: 'currency', currency: 'USD' });
 }
 
-/**
- * Compact summary: provider, models and month-to-date spend vs
- * AI_MONTHLY_BUDGET_USD. The full analysis lives on the « Dépenses IA » page.
- */
 export function AiUsageCard() {
   const { data, loading, error } = useApi<AiUsageResponse>('/api/ai/usage');
 

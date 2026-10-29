@@ -1,7 +1,3 @@
-/**
- * Provider-neutral AI errors (ADR-0027). Messages are French: call sites
- * persist / display `err.message` as-is.
- */
 export type AiErrorCode =
   | 'not_configured'
   | 'budget_exceeded'
@@ -20,7 +16,6 @@ export type AiErrorCode =
 
 export class AiError extends Error {
   readonly code: AiErrorCode;
-  /** Whether a later retry (next cron tick, manual retry) may succeed. */
   readonly retryable: boolean;
   readonly status?: number;
 

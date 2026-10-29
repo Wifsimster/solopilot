@@ -1,33 +1,3 @@
-/**
- * Consolidated daily veille digest (VEILLE_DIGEST_MODE=consolidated).
- *
- * One run, sequenced — never timing-based:
- *   1. publish every active product that follows the GLOBAL publish schedule
- *      (no own `publish_cron`), one after the other, through the exact same
- *      `triggerRun` as per-product mode. In consolidated mode triggerRun stores
- *      the summary but does not post it (notification_status = 'pending').
- *   2. build one section per active product from its latest successful digest
- *      of the day (Paris date) → top items, or "Rien de notable".
- *   3. send the fewest Discord messages (buildConsolidatedDigest) to
- *      VEILLE_DISCORD_WEBHOOK_URL only; unset → skip + warn, no fallback.
- *   4. write the outcome (sent/failed/skipped) to `runs.notification_status` of
- *      every participating product's publish run of the day — per product: a
- *      section is 'sent' only if the message carrying it was accepted — so the
- *      ADR-0025 `notify_failed` check sees it; and log the send in
- *      `veille_digest_deliveries` (linked via `runs.digest_delivery_id`).
- *
- * Item source: the stored AI digest (`runs.summary`) of each product, i.e. the
- * items the per-product AI already selected as relevant, with their links.
- * Raw collected items (`tweets`) are not used: they include everything the AI
- * discarded and have no reliable relevance ranking.
- *
- * Products with their own `publish_cron` keep their own schedule (their Discord
- * post is suppressed too); their section shows today's digest if it already ran,
- * else "Rien de notable".
- *
- * In per-product mode this is a no-op (status 'skipped'), so the cron tick that
- * dispatches it is harmless and the legacy behaviour is untouched.
- */
 import type { Config } from '../../config.js';
 import { buildMergedConfig } from '../../config-merge.js';
 import { getDb, type ProductRecord, type VeilleDigestDeliveryRecord } from '../../db.js';
@@ -56,7 +26,6 @@ export function isConsolidatedDigestRunning(): boolean {
 }
 
 function configForProduct(baseConfig: Config, productId: string): Config {
-  // Same merge as cron-manager's mergeProductConfig: env/base → global → product.
   return buildMergedConfig(baseConfig, { ...getSettingsMap(), ...getProductSettingsMap(productId) });
 }
 
@@ -95,17 +64,12 @@ function closeDelivery(
 
 export type RunNotificationOutcome = 'sent' | 'failed' | 'skipped';
 
-/**
- * Write the consolidated post's outcome on every publish run of `date` (Paris)
- * of each participating product. Returns the number of runs updated.
- */
 function recordRunOutcomes(
   outcomes: Map<string, RunNotificationOutcome>,
   date: string,
   deliveryId: number,
 ): number {
   const db = getDb();
-  // Coarse UTC window, then exact Paris-date filter (runs.started_at is UTC).
   const select = db.prepare(
     `SELECT id, started_at FROM runs
      WHERE product_id = ? AND trigger_type IN ('cron', 'manual')
@@ -163,11 +127,9 @@ export async function runConsolidatedDigest(
     products = listProducts(false);
     logger.info('Consolidated digest started', { date, products: products.length, trigger });
 
-    // 1. Sequenced per-product publish (global-schedule products only).
     for (const product of products) {
       if (product.publish_cron?.trim()) continue;
       try {
-        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: one product at a time, then the consolidated send
         const run = await triggerRun(configForProduct(baseConfig, product.id), trigger, product.id);
         logger.info('Consolidated digest — product published', {
           productId: product.id,
@@ -175,8 +137,6 @@ export async function runConsolidatedDigest(
           status: run.status,
         });
       } catch (err) {
-        // A product already publishing (manual run) or failing must not block
-        // the others; its section falls back to today's digest if any.
         logger.error('Consolidated digest — product publish failed', {
           productId: product.id,
           error: err instanceof Error ? err.message : String(err),
@@ -184,7 +144,6 @@ export async function runConsolidatedDigest(
       }
     }
 
-    // 2. One section per product, from today's latest successful digest.
     const sections: DigestSection[] = products.map((product) => {
       const digest = getLastDigest(product.id);
       const isToday = digest ? utcToParisDate(digest.started_at) === date : false;
@@ -198,7 +157,6 @@ export async function runConsolidatedDigest(
     const messages = buildConsolidatedDigest(sections, { date });
     const base = { products: products.length, productsWithItems, messages: messages.length };
 
-    // 3. Send.
     if (!delivery.webhookUrl) {
       logger.warn(
         'Consolidated digest not sent — VEILLE_DISCORD_WEBHOOK_URL is not configured (no fallback)',
@@ -213,14 +171,11 @@ export async function runConsolidatedDigest(
       return { ...base, status: 'skipped', messagesSent: 0, deliveryId, reason: 'no_products' };
     }
 
-    // Messages carry one embed per section, in section order: walk them to know
-    // which product each accepted/rejected message covered.
     const outcomes = new Map<string, RunNotificationOutcome>();
     let sectionIndex = 0;
     let messagesSent = 0;
     let lastError: string | undefined;
     for (const message of messages) {
-      // react-doctor-disable-next-line react-doctor/async-await-in-loop -- ordered pages; Discord must receive them in sequence
       const result = await sendDiscordMessage(delivery.webhookUrl, message);
       if (result.success) messagesSent += 1;
       else lastError = result.error;

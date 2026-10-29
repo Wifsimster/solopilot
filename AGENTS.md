@@ -101,7 +101,7 @@ workflows). See `docs/api.md`.
 - TypeScript strict mode, ESM imports
 - Single quotes, semicolons, 2-space indent (Prettier defaults)
 - French user-facing text (AI prompts, UI labels, log messages for users)
-- English for code, comments, and variable names
+- English for code and variable names
 - Zod for all config/input validation
 - Structured JSON logging via `logger.ts`
 - Credentials are never logged or exposed in API responses (masked to last 4 chars)
@@ -133,3 +133,16 @@ workflows). See `docs/api.md`.
 - **Radar produit (ADR-0026):** workflow `veille.radar-produit` (`src/modules/veille/radar*.ts`, hourly at :45 via `cron-manager`, always through the engine). Scores triaged topic items against every product whose `product_url` is a GitHub repo; pairs ≥ `RADAR_SCORE_THRESHOLD` get a French marketing report as an issue (`src/connectors/github-issues.ts`, label `veille`). Off by default (`RADAR_ENABLED`), dry-run by default (`RADAR_DRY_RUN`), forced dry-run without `GITHUB_ISSUES_TOKEN` (env only, never `GITHUB_TOKEN`). Dedup = `radar_proposals UNIQUE(item_id, product_id)` claimed before the GitHub call; daily caps per product / global. Model text is untrusted: always render through `sanitizeUntrusted` (no @mentions, #refs, closing keywords, links, HTML).
 - **API tokens (ADR-0029):** `src/api-tokens.ts`. `sp_` tokens (SHA-256 stored, secret shown once) authenticate via `Authorization: Bearer` or `X-Api-Token`. The full-access scope `*` (« Accès complet », the Settings default) reaches every route, method and product like the admin, token management included; it cannot be combined with other scopes or a product restriction. Other scopes only reach the routes in `ROUTE_RULES` (default deny, 403), optionally limited to products, and never `/api/tokens`. A new scoped permission = a label in `API_TOKEN_SCOPES` + rules in `ROUTE_RULES`; `*` is the only wildcard. Revocation, the audit log and the failure rate limit apply to every token. Ledger writes accept `external_ref` (unique per product → 409 with the existing entry) and `source`. `createApp()` builds the Hono app without listening (tests use `app.request()`).
 - All dates use Europe/Paris timezone for consistency
+
+## Comments
+
+Decision 2026-10-29: **no comments in code** (any language, including YAML, Dockerfile, shell, CSS, HTML, `.env.example`). They go stale and mislead agents; the why goes in the commit message and the PR.
+
+Only exceptions: tool directives that change behaviour, and license headers.
+
+- `eslint-disable*`, `oxlint-disable*`, `@ts-expect-error`, `@ts-ignore`, `@ts-nocheck`, `/// <reference …>`
+- shebang (`#!/usr/bin/env …`), `# syntax=` (Dockerfile), `# shellcheck …`, `# noqa`
+- bundler magic comments (`webpackChunkName`, `@vite-ignore`, …)
+- license headers
+
+Generated files (lockfiles, `*.gen.ts`, migrations and their `meta/`, files marked generated) and Markdown are left untouched.

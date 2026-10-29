@@ -63,21 +63,11 @@
   --shadow-md: var(--shadow-md-value);
   --shadow-lg: var(--shadow-lg-value);
   --shadow-raised: var(--shadow-raised-value);
-  /* Micro-type steps below `text-xs` (12px), for dense badges/labels/meta.
-   * Governed scale tokens so components stop reaching for arbitrary
-   * bracketed pixel values. Size-only by design (line-height inherits from
-   * context, matching the previous arbitrary-value behaviour). */
-  --text-2xs: 0.6875rem; /* 11px */
-  --text-3xs: 0.625rem; /* 10px */
-  /* Off-scale steps kept from the original design: compact/large button
-   * labels and the page title. Size-only, like the micro steps above. */
-  --text-ui-sm: 0.8125rem; /* 13px */
-  --text-ui-lg: 0.9375rem; /* 15px */
-  --text-title: 1.75rem; /* 28px */
-  /* Platform identity (content studio) mapped onto the categorical series.
-   * The icon variant mixes in some foreground so a light-mode icon reaches
-   * 3:1 (WCAG 1.4.11) on white and on the hovered --accent/--muted surfaces;
-   * in dark mode it stays above 4:1 on cards. */
+  --text-2xs: 0.6875rem;
+  --text-3xs: 0.625rem;
+  --text-ui-sm: 0.8125rem;
+  --text-ui-lg: 0.9375rem;
+  --text-title: 1.75rem;
   --color-platform-reddit: var(--series-2);
   --color-platform-reddit-icon: color-mix(in oklab, var(--series-2) 85%, var(--foreground));
   --color-platform-generic: var(--series-1);
@@ -86,17 +76,9 @@
   --color-platform-instagram-icon: color-mix(in oklab, var(--series-5) 85%, var(--foreground));
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  /* Titles, KPI figures and amounts (identity "Trajectoire", ADR 0028).
-   * --font-mono is left alone: it renders code identifiers. */
   --font-display: "Space Grotesk Variable", var(--font-sans);
 }
 
-/*
- * Solopilot design system — identity "Trajectoire" (ADR 0028, DESIGN.md).
- * Indigo primary (hue ~277) for action, mint brand accent for the logo dot
- * and brand washes only, cool indigo-tinted neutrals, soft indigo shadows.
- * Light + dark are first-class. Contrast table: DESIGN.md > Identity.
- */
 :root {
   --background: #fafafd;
   --foreground: #16152a;
@@ -110,12 +92,8 @@
   --secondary-foreground: #16152a;
   --muted: #f6f6f6;
   --muted-foreground: #5d5b75;
-  /* Hover / selected-nav surface (role unchanged), not the brand accent. */
   --accent: #f3f1fc;
   --accent-foreground: #5134d8;
-  /* Brand accent (mint). Light mode: logo dot, washes, highlights only —
-     never a status or text on its own (2.5:1 on white). Text in the brand
-     accent uses --brand-accent-text. */
   --brand-accent: #14b891;
   --brand-accent-foreground: #04241c;
   --brand-accent-text: #0b7560;
@@ -135,10 +113,6 @@
   --chart-3: var(--series-3);
   --chart-4: var(--series-4);
   --chart-5: var(--series-5);
-  /* Categorical series for multi-series charts (Dépenses IA). Fixed order =
-     colour-blind safety: validated adjacent pairs (CVD ΔE >= 8, normal-vision
-     ΔE >= 15) on the card surface. --chart-1/2 are brand colours, not a
-     validated sequence, so stacks of 3+ series use these instead. */
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
@@ -157,7 +131,6 @@
   --sidebar-border: #e3e2ee;
   --sidebar-ring: #5134d8;
 
-  /* Soft, diffuse shadows tinted with the primary indigo. */
   --shadow-xs-value: 0 1px 2px 0 rgb(81 52 216 / 0.05);
   --shadow-sm-value: 0 2px 4px -1px rgb(81 52 216 / 0.06),
     0 4px 12px -2px rgb(81 52 216 / 0.08);
@@ -165,7 +138,6 @@
     0 8px 20px -4px rgb(81 52 216 / 0.1);
   --shadow-lg-value: 0 12px 32px -6px rgb(81 52 216 / 0.16),
     0 4px 10px -3px rgb(81 52 216 / 0.08);
-  /* Primary button: top inner highlight + hairline drop, same in both modes. */
   --shadow-raised-value: inset 0 1px 0 0 rgb(255 255 255 / 0.14),
     0 1px 2px 0 rgb(22 21 42 / 0.16);
 }
@@ -199,13 +171,11 @@
   --border: #2a2842;
   --input: #2a2842;
   --ring: #8c7dff;
-  /* --chart-* follow the :root aliases (resolved on the same element). */
   --chart-1: var(--primary);
   --chart-2: var(--brand-accent);
   --chart-3: var(--series-3);
   --chart-4: var(--series-4);
   --chart-5: var(--series-5);
-  /* Same eight hues stepped for the dark card surface (all >= 3:1). */
   --series-1: #3987e5;
   --series-2: #d95926;
   --series-3: #199e70;
@@ -263,18 +233,15 @@
     letter-spacing: -0.02em;
   }
 
-  /* Page titles in the display face; section/card titles stay in Inter. */
   h1 {
     font-family: var(--font-display);
     letter-spacing: -0.025em;
   }
 
-  /* Any figure set in the display face lines up in columns. */
   .font-display {
     font-variant-numeric: tabular-nums;
   }
 
-  /* Cohesive, slim scrollbars that match the surface */
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
@@ -298,8 +265,6 @@
 }
 
 @layer utilities {
-  /* Brand "aurora" wash behind hero / header surfaces: indigo from the
-     top-left, a hint of mint top-right, a cool blue base. */
   .bg-brand-aurora {
     background-image: radial-gradient(
         60% 120% at 0% 0%,
@@ -336,7 +301,6 @@
       );
   }
 
-  /* Faint blueprint grid, masked so it fades out toward the bottom-right */
   .bg-grid-fade {
     background-image: linear-gradient(
         to right,
@@ -362,8 +326,6 @@
       linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 5.5%, transparent) 1px, transparent 1px);
   }
 
-  /* Indigo → mint along the trajectory. Ends on --brand-accent-text so the
-     light-mode tail stays readable (5.6:1 on white, plain mint is 2.5:1). */
   .text-gradient-brand {
     background-image: linear-gradient(
       100deg,

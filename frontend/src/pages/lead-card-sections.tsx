@@ -34,10 +34,6 @@ function ReplyVariantCard({
   const [text, setText] = useState(initialText);
   const [toggling, setToggling] = useState(false);
 
-  // Keep the local editable textarea in sync with the server value if the
-  // upstream reply changes (e.g. after a refetch) but preserve in-flight edits.
-  // The last synced value lives in a ref (it is never rendered) and the sync is
-  // performed during render rather than in an effect to avoid an extra pass.
   const lastSyncedTextRef = useRef(initialText);
   const incomingText = reply.text;
   if (incomingText !== lastSyncedTextRef.current) {
@@ -130,11 +126,6 @@ function ReplyVariantCard({
   );
 }
 
-/**
- * Status action buttons for a lead (snooze / replied / dismissed, or reactivate).
- * Owns the in-flight "busy" state for the action currently being applied so the
- * parent card no longer has to track it.
- */
 export function LeadActions({
   signal,
   onMutate,
@@ -227,10 +218,6 @@ export function LeadActions({
 }
 
 
-/**
- * Small reusable button that asks the AI to (re)generate reply variants.
- * The surrounding analyzed-results sections only differ by their label.
- */
 function GenerateVariantsButton({
   label,
   onGenerate,
@@ -267,11 +254,6 @@ function GenerateVariantsButton({
   );
 }
 
-/**
- * Results of a completed AI analysis: score, explanation, reply variants (or
- * the legacy single draft / no-reply recommendation) and the reanalyze button.
- * Owns the in-flight variant-generation state and the editable legacy draft.
- */
 function LeadAiAnalyzed({
   signal,
   onAnalyzed,
@@ -287,10 +269,6 @@ function LeadAiAnalyzed({
   const initialLegacyReply = signal.ai_drafted_reply ?? '';
   const [legacyReplyDraft, setLegacyReplyDraft] = useState(initialLegacyReply);
 
-  // Keep the editable legacy reply textarea in sync with the latest server
-  // value when a (re)analyze produces a new draft, but preserve in-flight edits.
-  // The last synced value lives in a ref (it is never rendered) and the sync is
-  // performed during render rather than in an effect to avoid an extra pass.
   const lastSyncedLegacyReplyRef = useRef<string | null>(signal.ai_drafted_reply);
   const incomingLegacyReply = signal.ai_drafted_reply;
   if (incomingLegacyReply !== lastSyncedLegacyReplyRef.current) {
@@ -522,11 +500,6 @@ function LeadAiAnalyzed({
   );
 }
 
-/**
- * AI analysis block for a lead. Owns the analysis in-flight state and routes to
- * the right sub-section depending on whether the lead has been analyzed yet,
- * succeeded, or errored.
- */
 export function LeadAiSection({
   signal,
   onAnalyzed,

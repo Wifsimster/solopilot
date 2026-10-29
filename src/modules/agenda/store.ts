@@ -1,10 +1,3 @@
-/**
- * Agenda store — local calendar events.
- *
- * Works standalone (manual events) and is the upsert target for the optional
- * ICS sync (matched on external_id). Scoped by product_id (activity). See
- * ADR-0019.
- */
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { getDb, DEFAULT_PRODUCT_ID, type CalendarEventRecord } from '../../db.js';
@@ -57,7 +50,6 @@ export function listEventsForDay(
     .all(productId, day) as CalendarEventRecord[];
 }
 
-/** Idempotent upsert from a calendar feed (matched on external_id). Returns rows written. */
 export function upsertCalendarEvents(productId: string, events: CalendarEventData[]): number {
   const db = getDb();
   const stmt = db.prepare(

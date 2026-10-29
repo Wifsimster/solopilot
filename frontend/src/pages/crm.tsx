@@ -57,7 +57,6 @@ export function CrmPage() {
   const contacts = useApi<Contact[]>('/api/crm/contacts', { productId: selectedProductId });
   const deals = useApi<Deal[]>('/api/crm/deals', { productId: selectedProductId });
 
-  // Local copy so the pipeline can move cards optimistically before the API confirms.
   const [board, setBoard] = useState<Deal[]>([]);
   useEffect(() => {
     if (deals.data) setBoard(deals.data);

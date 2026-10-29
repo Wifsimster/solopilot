@@ -50,7 +50,6 @@ type NavItem = {
   label: string;
   icon: LucideIcon;
   end?: boolean;
-  /** `data-tour` anchor used by the guided product tour. */
   tourId?: string;
 };
 
@@ -277,7 +276,6 @@ export function Layout() {
         Aller au contenu principal
       </a>
 
-      {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-border bg-sidebar md:flex">
         <div className="flex h-16 items-center border-b border-border px-5">
           <Link
@@ -313,7 +311,6 @@ export function Layout() {
         </div>
       </aside>
 
-      {/* Mobile top bar */}
       <header
         className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-md md:hidden"
         aria-label="En-tête"
@@ -330,7 +327,6 @@ export function Layout() {
         </div>
       </header>
 
-      {/* Content column (offset by sidebar on desktop) */}
       <div className="flex min-h-screen flex-col md:pl-60">
         <main
           id="main-content"
@@ -349,7 +345,6 @@ export function Layout() {
         </footer>
       </div>
 
-      {/* Mobile bottom nav + "more" drawer */}
       <MobileBottomNav onMore={() => setDrawerOpen(true)} />
 
       <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>

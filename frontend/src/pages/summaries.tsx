@@ -37,9 +37,6 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "long", year: "numeric" });
 }
 
-// Daily AI summaries always open with a boilerplate title line
-// ("📅 VEILLE IA & TECH — <date>"). The date already lives in the card header,
-// so we drop that line to give the preview meaningful content instead.
 function stripLeadingTitle(md: string): string {
   const lines = md.split("\n");
   let i = 0;
@@ -51,8 +48,6 @@ function stripLeadingTitle(md: string): string {
   return lines.slice(i).join("\n").trim();
 }
 
-// The digest groups items under bold uppercase section headers, one per source.
-// Detecting them lets us show at-a-glance source chips on each card.
 const SOURCE_PATTERNS: { key: string; label: string; re: RegExp }[] = [
   { key: "x", label: "X", re: /X\s*\(TWITTER\)/i },
   { key: "reddit", label: "Reddit", re: /\bREDDIT\b/i },
@@ -97,7 +92,6 @@ function DailyView() {
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // Debounce search input (300ms)
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchInput);
@@ -106,7 +100,6 @@ function DailyView() {
     return () => clearTimeout(timer);
   }, [searchInput, pagination]);
 
-  // Build API URL with filters
   const params = new URLSearchParams({
     limit: String(pagination.limit),
     offset: String(pagination.offset),
@@ -133,7 +126,6 @@ function DailyView() {
     pagination.reset();
   };
 
-  // Build month options from available data
   const monthOptions = (available || []).map((m) => ({
     value: `${m.year}-${String(m.month).padStart(2, "0")}`,
     label: `${MONTH_NAMES[m.month - 1]} ${m.year} (${m.run_count})`,
@@ -153,7 +145,6 @@ function DailyView() {
 
   return (
     <div className="space-y-4">
-      {/* Filter bar — sticky on mobile under the header */}
       <div className="sticky top-14 z-20 -mx-3 sm:mx-0 px-3 sm:px-0 py-2 sm:py-0 bg-background/95 backdrop-blur sm:bg-transparent sm:backdrop-blur-none border-b sm:border-0">
         <div className="flex flex-col gap-2 sm:flex-row sm:gap-3 sm:items-center">
           <div className="relative flex-1 sm:max-w-sm">

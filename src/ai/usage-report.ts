@@ -1,16 +1,3 @@
-/**
- * « Dépenses IA » report: AI spend aggregated from the `ai_usage` ledger
- * (ADR-0027). Rows are summed in SQL per bucket x task x model; the small
- * result set is rolled up here (classes, totals, model share) at full
- * precision. Nothing is rounded except in the French insight sentences.
- *
- * Days and months follow the Europe/Paris calendar: `ai_usage.day` is the
- * Paris date stored at insert time, so DST days (23 h / 25 h) bucket
- * correctly. Calendar arithmetic below works on `YYYY-MM-DD` strings with UTC
- * math, which has no DST.
- *
- * No prompt or answer content is stored in `ai_usage`, so none can leak here.
- */
 import { z } from 'zod';
 import type { Config } from '../config.js';
 import { getDb } from '../db.js';
@@ -27,10 +14,6 @@ import {
 import { AI_TASKS } from './port.js';
 
 export const TIME_ZONE = 'Europe/Paris';
-
-// ---------------------------------------------------------------------------
-// Periods
-// ---------------------------------------------------------------------------
 
 export const USAGE_REPORT_PERIODS = ['7d', '30d', 'month', 'prev-month', '12m'] as const;
 export type UsageReportPeriod = (typeof USAGE_REPORT_PERIODS)[number];
@@ -49,11 +32,9 @@ export type UsageBucket = 'day' | 'month';
 
 export interface UsageRange {
   period: UsageReportPeriod | 'week';
-  /** Inclusive Paris dates `YYYY-MM-DD`. */
   from: string;
   to: string;
   bucket: UsageBucket;
-  /** Calendar days in [from, to]. */
   days: number;
   label: string;
   previous: { from: string; to: string; label: string };
@@ -93,7 +74,6 @@ function lastDayOf(month: string): string {
   return `${month}-${String(daysInMonth(month)).padStart(2, '0')}`;
 }
 
-/** Same day-of-month in another month, clamped to its length. */
 function sameDayIn(month: string, dayOfMonth: number): string {
   return `${month}-${String(Math.min(dayOfMonth, daysInMonth(month))).padStart(2, '0')}`;
 }
@@ -130,7 +110,6 @@ export function shortDay(day: string): string {
   return shortDayFormatter.format(new Date(dayToUtc(day)));
 }
 
-/** Paris calendar range of a period, plus the equal-length range before it. */
 export function resolveUsageRange(period: UsageReportPeriod, now: number = Date.now()): UsageRange {
   const today = parisDateOf(now);
   const month = today.slice(0, 7);
@@ -182,10 +161,9 @@ export function resolveUsageRange(period: UsageReportPeriod, now: number = Date.
   }
 }
 
-/** Last complete Monday-to-Sunday Paris week before `now` (weekly recap). */
 export function previousWeekRange(now: number = Date.now()): UsageRange {
   const today = parisDateOf(now);
-  const weekday = new Date(dayToUtc(today)).getUTCDay(); // 0 = Sunday
+  const weekday = new Date(dayToUtc(today)).getUTCDay();
   const monday = addDays(today, -((weekday + 6) % 7));
   const from = addDays(monday, -7);
   const to = addDays(monday, -1);
@@ -199,10 +177,6 @@ export function previousWeekRange(now: number = Date.now()): UsageRange {
     previous: { from: addDays(from, -7), to: addDays(from, -1), label: 'la semaine précédente' },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Task classes (chart series): fixed order = fixed colour slot.
-// ---------------------------------------------------------------------------
 
 export const TASK_CLASSES = [
   { id: 'triage', label: 'Tri des mentions' },
@@ -245,10 +219,6 @@ export function modelLabel(model: string): string {
   return findAnthropicModel(model)?.label ?? model;
 }
 
-// ---------------------------------------------------------------------------
-// Pure metrics
-// ---------------------------------------------------------------------------
-
 export interface TokenTotals {
   inputTokens: number;
   cacheWriteTokens: number;
@@ -256,31 +226,20 @@ export interface TokenTotals {
   outputTokens: number;
 }
 
-/** Share of input tokens served from cache: cache reads / every input token. */
 export function cacheRate(t: TokenTotals): number | null {
   const input = t.inputTokens + t.cacheWriteTokens + t.cacheReadTokens;
   return input > 0 ? t.cacheReadTokens / input : null;
 }
 
-/**
- * Linear month-end projection: spend so far / days elapsed (today included)
- * x days in the month.
- */
 export function projectMonthEnd(spentUsd: number, daysElapsed: number, monthDays: number): number {
   if (daysElapsed <= 0) return 0;
   return (spentUsd / Math.min(daysElapsed, monthDays)) * monthDays;
 }
 
-/** Prompt length above which a catalogue model switches to long-context prices. */
 const LONG_PROMPT_TOKENS = Math.min(
   ...ANTHROPIC_MODELS.map((m) => m.longContext?.thresholdTokens ?? Infinity),
 );
 
-/**
- * Net USD saved by prompt caching on Anthropic: cache reads would have been
- * billed as uncached input, minus the cache-write premium over plain input.
- * Negative when writes are never read back. GitHub Models is free: 0.
- */
 export function cacheSavingsUsd(
   provider: string,
   model: string,
@@ -297,15 +256,10 @@ export function cacheSavingsUsd(
   );
 }
 
-// ---------------------------------------------------------------------------
-// French formatting (insights, Discord recap)
-// ---------------------------------------------------------------------------
-
 const usd2 = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const usdSmall = new Intl.NumberFormat('fr-FR', { maximumSignificantDigits: 2 });
 const intFr = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 
-/** `4,12 $`; sub-cent amounts keep two significant digits (`0,0042 $`). */
 export function formatUsdFr(value: number): string {
   const abs = Math.abs(value);
   if (abs > 0 && abs < 0.01) return `${usdSmall.format(value)}\u00a0$`;
@@ -322,10 +276,6 @@ export function formatInt(value: number): string {
   return intFr.format(value);
 }
 
-// ---------------------------------------------------------------------------
-// Report
-// ---------------------------------------------------------------------------
-
 export interface UsageTotals extends TokenTotals {
   costUsd: number;
   calls: number;
@@ -335,7 +285,6 @@ export interface UsageTotals extends TokenTotals {
 }
 
 export interface UsageSeriesPoint extends TokenTotals {
-  /** `YYYY-MM-DD` (day buckets) or `YYYY-MM` (month buckets). */
   bucket: string;
   costUsd: number;
   calls: number;
@@ -395,7 +344,6 @@ export interface UsageMonthBlock {
   spentUsd: number;
   daysElapsed: number;
   daysInMonth: number;
-  /** Linear on days elapsed; equals spentUsd for a complete month. */
   projectedUsd: number;
   budgetUsd: number;
   budgetRatio: number;
@@ -419,15 +367,12 @@ export interface UsageReport {
   timeZone: string;
   generatedAt: number;
   provider: AiProvider;
-  /** Budget guard active (Anthropic). GitHub Models calls cost 0. */
   enforced: boolean;
   budgetUsd: number;
   warningRatio: number;
-  /** At least one call recorded, any date. */
   hasUsage: boolean;
   totals: UsageTotals;
   previous: { from: string; to: string; label: string; costUsd: number; calls: number };
-  /** (current - previous) / previous; null without a previous spend. */
   deltaRatio: number | null;
   cacheSavingsUsd: number;
   month: UsageMonthBlock;
@@ -474,7 +419,6 @@ function ratio(part: number, whole: number): number | null {
   return whole > 0 ? part / whole : null;
 }
 
-/** Ledger cells: one SQL GROUP BY over the range, by bucket x task x model. */
 function queryCells(from: string, to: string, bucket: UsageBucket): CellRow[] {
   const bucketExpr = bucket === 'month' ? 'substr(day, 1, 7)' : 'day';
   return getDb()
@@ -550,7 +494,6 @@ function queryTopCalls(from: string, to: string, limit = 20): UsageTopCall[] {
   }));
 }
 
-/** Month block: cumulative spend, linear projection, budget ratios. */
 export function buildMonthBlock(
   month: string,
   today: string,
@@ -627,11 +570,6 @@ const CLASS_SUBJECT: Record<TaskClassId, string> = {
   other: 'Les autres tâches',
 };
 
-/**
- * 3 to 5 plain-French observations, computed (no AI call). Order: month-end
- * projection, biggest class, trend vs previous period, cache, then the most
- * telling of model concentration or a spike day.
- */
 export function buildInsights(input: InsightInput): UsageInsight[] {
   const out: UsageInsight[] = [];
   const { totals, month } = input;
@@ -756,11 +694,9 @@ export type UsageReportConfig = Pick<
 
 export interface UsageReportDeps {
   now?: number;
-  /** Alert webhook resolution (usage.ts); injected to keep this module testable. */
   webhookConfigured?: boolean;
 }
 
-/** Full report for a range. Every amount is at full precision. */
 export function buildUsageReport(
   config: UsageReportConfig,
   range: UsageRange,

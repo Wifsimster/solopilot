@@ -91,9 +91,6 @@ export function listMonthlySummaries(
     .all(productId, limit) as MonthlySummaryRecord[];
 }
 
-/**
- * Deletes any monthly summaries that reference the given run ID in source_run_ids.
- */
 export function deleteMonthlySummariesReferencingRun(runId: number): void {
   const db = getDb();
   const all = db.prepare('SELECT id, source_run_ids FROM monthly_summaries').all() as {

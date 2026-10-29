@@ -22,7 +22,6 @@ import type {
   AiSettingSource,
 } from '@/types';
 
-/** Radix Select forbids '' as an item value: sentinels for "no override" and "custom id". */
 const DEFAULT = '__default__';
 const CUSTOM = '__custom__';
 const AUTO = '__auto__';
@@ -85,7 +84,6 @@ function draftFrom(view: AiClassView, catalogue: AiModelOption[]): ClassDraft {
   };
 }
 
-/** Effort levels the drafted model accepts (null = unknown custom id: effort not sent). */
 function effortLevelsFor(
   draft: ClassDraft,
   view: AiClassView,
@@ -95,7 +93,7 @@ function effortLevelsFor(
     draft.choice === CUSTOM
       ? draft.custom.trim()
       : draft.choice === DEFAULT
-        ? view.env || data.defaultModel // no Settings override: env, then code default
+        ? view.env || data.defaultModel
         : draft.choice;
   return data.catalogue.find((m) => m.id === id)?.effortLevels ?? null;
 }
@@ -138,7 +136,6 @@ export function AiModelsCard() {
     for (const { tier, modelKey, effortKey } of CLASSES) {
       const d = drafts[tier];
       body[modelKey] = d.choice === DEFAULT ? '' : d.choice === CUSTOM ? d.custom.trim() : d.choice;
-      // No effort for a model without effort levels (or a custom id outside the catalogue).
       const levels = effortLevelsFor(d, data.classes[tier], data);
       body[effortKey] =
         d.effort === AUTO || !levels?.includes(d.effort as AiEffort) ? '' : d.effort;
@@ -208,7 +205,6 @@ export function AiModelsCard() {
                       value={d.choice}
                       onValueChange={(v) => {
                         const next = data.catalogue.find((m) => m.id === v);
-                        // Drop an effort the new model does not accept.
                         const keep =
                           d.effort === AUTO ||
                           (next?.effortLevels ?? []).includes(d.effort as AiEffort);

@@ -1,11 +1,3 @@
-/**
- * Comptabilité module — workflow definitions.
- *
- * `compta.seuils` watches the micro-entreprise plafond and TVA-franchise
- * thresholds and alerts when approaching. `compta.echeance-urssaf` prepares the
- * periodic declaration reminder. Both ship `enabled: false`; reminders and
- * estimates only, no télédéclaration (ADR-0017).
- */
 import type { Workflow } from '../../workflow/types.js';
 
 export const comptaSeuils: Workflow = {

@@ -1,10 +1,3 @@
-/**
- * CRM store — contacts, deals (pipeline) and interactions.
- *
- * Scoped by product_id (activity). Logging an interaction or moving a deal bumps
- * the deal's `updated_at`, which is how staleness is measured. Leads from the
- * Acquisition module can be promoted into contacts here. See ADR-0018.
- */
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
@@ -19,8 +12,6 @@ import { getTodayDateParis } from '../../date-utils.js';
 export const OPEN_STAGES = ['nouveau', 'qualifie', 'proposition'] as const;
 export const CLOSED_STAGES = ['gagne', 'perdu'] as const;
 const ALL_STAGES = [...OPEN_STAGES, ...CLOSED_STAGES] as const;
-
-// --- Contacts ---
 
 export const contactCreateSchema = z.object({
   name: z.string().min(1),
@@ -73,8 +64,6 @@ export function listContacts(productId: string = DEFAULT_PRODUCT_ID): ContactRec
     .all(productId) as ContactRecord[];
 }
 
-// --- Deals ---
-
 export const dealCreateSchema = z.object({
   contact_id: z.string().min(1),
   title: z.string().min(1),
@@ -122,8 +111,6 @@ export function updateDealStage(id: string, stage: string): DealRecord | undefin
   return getDeal(id);
 }
 
-// --- Interactions ---
-
 export const interactionCreateSchema = z.object({
   contact_id: z.string().min(1),
   kind: z.enum(['note', 'email', 'call', 'meeting']).default('note'),
@@ -144,7 +131,6 @@ export function addInteraction(
     `INSERT INTO interactions (id, product_id, contact_id, kind, summary, occurred_on, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).run(id, productId, data.contact_id, data.kind, data.summary, data.occurred_on ?? getTodayDateParis(), now);
-  // Touch the contact and its open deals so an interaction resets staleness.
   db.prepare('UPDATE contacts SET updated_at = ? WHERE id = ?').run(now, data.contact_id);
   db.prepare(
     `UPDATE deals SET updated_at = ? WHERE contact_id = ? AND stage IN ('nouveau','qualifie','proposition')`,
@@ -157,8 +143,6 @@ export function listInteractions(contactId: string): InteractionRecord[] {
     .prepare('SELECT * FROM interactions WHERE contact_id = ? ORDER BY occurred_on DESC')
     .all(contactId) as InteractionRecord[];
 }
-
-// --- Staleness & summary ---
 
 const STALE_DAYS = 14;
 

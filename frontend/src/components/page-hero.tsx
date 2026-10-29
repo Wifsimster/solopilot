@@ -1,9 +1,7 @@
 import { cn } from '@/lib/utils';
 
 interface PageHeroProps {
-  /** Pill content shown above the title, prefixed with a pulsing live dot. */
   badge?: React.ReactNode;
-  /** Hero title — pass a <span className="text-gradient-brand"> for the gradient part. */
   title: React.ReactNode;
   titleId?: string;
   description?: React.ReactNode;

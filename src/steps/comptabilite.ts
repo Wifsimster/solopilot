@@ -1,11 +1,3 @@
-/**
- * Comptabilité steps.
- *
- * `compta.seuils` — checks micro-entreprise plafond and TVA-franchise thresholds,
- * emitting an alert only when approaching/exceeded (otherwise a quiet no-op).
- * `compta.echeance` — prepares the URSSAF declaration reminder for the period
- * that just closed. Both produce estimates only; nothing is filed. See ADR-0017.
- */
 import {
   comptaStatus,
   urssafDeclaration,

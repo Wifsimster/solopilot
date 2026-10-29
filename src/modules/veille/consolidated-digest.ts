@@ -1,59 +1,32 @@
-/**
- * Consolidated veille digest — pure builder.
- *
- * Turns one section per product (name + top items) into the FEWEST Discord
- * webhook messages that respect Discord's limits:
- *   - max 10 embeds per message
- *   - max 6,000 chars across all embeds of a message (title + description here)
- *   - max 256 chars per embed title, 4,096 per embed description
- *
- * One product = one embed, in input order. Messages are packed greedily
- * (next-fit): an embed goes into the current message unless it would break the
- * embed-count or total-chars limit, in which case a new message starts. For an
- * order-preserving split with additive limits, next-fit yields the minimum
- * number of messages. A section is never split across messages. One that alone
- * exceeds the description limit drops its lowest-ranked items (the tail — items
- * are in rank order) and ends with `+{n} autres` (ADR-0025 §4); text is
- * hard-truncated only as a last resort, when the top item alone is oversized.
- *
- * No I/O: safe to unit-test (see test/consolidated-digest.test.mjs).
- */
 import { DISCORD_LIMITS, sanitize, type DiscordEmbed, type DiscordMessage } from '../../adapters/discord-notifier.js';
 
 export interface DigestItem {
-  /** Item text (Discord markdown allowed, e.g. `[titre](https://…)`). */
   text: string;
-  /** Primary link; appended when not already present in `text`. */
   url?: string;
 }
 
 export interface DigestSection {
   productId: string;
   productName: string;
-  /** Top items for the day; empty = "Rien de notable". */
   items: DigestItem[];
 }
 
 export interface BuildConsolidatedDigestOptions {
-  /** Paris date of the digest, YYYY-MM-DD (shown in the header). */
   date: string;
 }
 
 export const NOTHING_NOTABLE = 'Rien de notable';
 export const MAX_ITEMS_PER_SECTION = 3;
-/** Per-item cap so one verbose bullet can't crowd out the others. */
 export const MAX_ITEM_CHARS = 400;
 
 const COLOR_ITEMS = 0x1d9bf0;
 const COLOR_EMPTY = 0x99aab5;
 const ELLIPSIS = '…';
 
-// Bullet: "- x", "* x", "• x", "1. x", "1) x".
 const BULLET = /^\s*(?:[-*•]|\d+[.)])\s+(.+?)\s*$/;
 const MD_LINK = /\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/;
 const BARE_URL = /https?:\/\/[^\s)>\]]+/;
 
-/** Hard-truncate on a code-point boundary (never splits a surrogate pair). */
 function cut(text: string, max: number): string {
   if (text.length <= max) return text;
   const chars = Array.from(text);
@@ -65,12 +38,6 @@ function cut(text: string, max: number): string {
   return out + ELLIPSIS;
 }
 
-/**
- * Extract the top items from a product's AI digest summary: bullet lines,
- * preferring those carrying a link (the AI is told to link every source), in
- * the order the digest lists them. Falls back to unlinked bullets, then to
- * nothing (the caller renders "Rien de notable").
- */
 export function extractTopItems(
   summary: string | null | undefined,
   max: number = MAX_ITEMS_PER_SECTION,
@@ -81,7 +48,6 @@ export function extractTopItems(
     const m = BULLET.exec(line);
     if (!m) continue;
     const text = m[1].trim();
-    // Skip bold-only pseudo bullets such as "- **REDDIT**".
     if (!text || /^\*\*[^*]+\*\*:?$/.test(text)) continue;
     const url = MD_LINK.exec(text)?.[1] ?? BARE_URL.exec(text)?.[0];
     bullets.push(url ? { text, url } : { text });
@@ -96,16 +62,10 @@ function renderItem(item: DigestItem): string {
   return `• ${text}${url}`;
 }
 
-/** Marker line ending a section whose lowest-ranked items were dropped. */
 export function moreItemsMarker(dropped: number): string {
   return `+${dropped} autres`;
 }
 
-/**
- * Fit rank-ordered rendered lines into `max` chars: drop the lowest-ranked
- * lines first and end with `+{n} autres` (n = dropped lines). Only when the
- * top line alone cannot fit is its text hard-truncated (last resort).
- */
 export function fitSectionLines(lines: string[], max: number): string {
   const full = lines.join('\n');
   if (full.length <= max) return full;
@@ -131,7 +91,6 @@ function sectionEmbed(section: DigestSection): DiscordEmbed {
   };
 }
 
-/** Chars counted by Discord towards the 6,000 per-message embed budget. */
 export function embedLength(embed: DiscordEmbed): number {
   return (embed.title?.length ?? 0) + (embed.description?.length ?? 0) + (embed.footer?.text.length ?? 0);
 }

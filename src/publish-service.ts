@@ -14,9 +14,6 @@ import { linkedInPublisher } from './adapters/linkedin-publisher.js';
 import { redditPublisher } from './adapters/reddit-publisher.js';
 import { xPublisher } from './adapters/x-publisher.js';
 
-// --- Publisher registry -----------------------------------------------------
-// Maps a draft's target_source to its browser adapter. All three platforms are
-// wired: LinkedIn ('generic'), Reddit, and X.
 const PUBLISHERS: Partial<Record<PublishTarget, Publisher>> = {
   generic: linkedInPublisher,
   reddit: redditPublisher,
@@ -31,15 +28,12 @@ export function isPublishSupported(source: string | null): source is PublishTarg
   return source !== null && getPublisher(source as PublishTarget) !== undefined;
 }
 
-/** Human-facing platform label stored in content_drafts.used_on after posting. */
 const PLATFORM_LABEL: Record<PublishTarget, string> = {
   generic: 'linkedin',
   x: 'x',
   reddit: 'reddit',
   instagram: 'instagram',
 };
-
-// --- Errors -----------------------------------------------------------------
 
 export class PublishBusyError extends Error {
   constructor() {
@@ -75,10 +69,6 @@ export class PublishRateLimitError extends Error {
   }
 }
 
-// --- Rate-limit guardrails --------------------------------------------------
-// Human-paced caps to keep the accounts safe: a per-platform daily ceiling and
-// a minimum spacing between two posts on the same platform. Defaults are
-// conservative; both are overridable via editable settings.
 const DEFAULT_DAILY_CAP = 5;
 const DEFAULT_MIN_SPACING_MINUTES = 20;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -94,7 +84,6 @@ function getMinSpacingMs(): number {
   return minutes * 60 * 1000;
 }
 
-/** Throws PublishRateLimitError if posting now would breach the cap/spacing. */
 function enforceRateLimits(productId: string, source: PublishTarget, label: string): void {
   const db = getDb();
   const cap = getDailyCap();
@@ -135,11 +124,6 @@ function enforceRateLimits(productId: string, source: PublishTarget, label: stri
   }
 }
 
-// --- Session building -------------------------------------------------------
-// Sessions are cookie-based, mirroring the X scraper. Cookies live in the
-// settings table (masked in API responses by the existing credential masking).
-
-/** Build a PlatformSession from stored credentials, or null when not connected. */
 export function buildSession(source: PublishTarget): PlatformSession | null {
   if (source === 'generic') {
     const liAt = getSetting('LINKEDIN_LI_AT');
@@ -149,7 +133,6 @@ export function buildSession(source: PublishTarget): PlatformSession | null {
       { name: 'li_at', value: liAt, domain: '.linkedin.com', path: '/' },
     ];
     if (jsession) {
-      // LinkedIn wraps JSESSIONID in quotes; keep whatever the user pasted.
       cookies.push({ name: 'JSESSIONID', value: jsession, domain: '.linkedin.com', path: '/' });
     }
     return { cookies };
@@ -162,7 +145,6 @@ export function buildSession(source: PublishTarget): PlatformSession | null {
     };
   }
   if (source === 'x') {
-    // Reuse the same auth_token + ct0 cookies the X scraper already uses.
     const authToken = getSetting('X_SESSION_AUTH_TOKEN');
     const csrf = getSetting('X_SESSION_CSRF_TOKEN');
     if (!authToken || !csrf) return null;
@@ -182,11 +164,9 @@ export interface ConnectionView {
   source: PublishTarget;
   platform: string;
   supported: boolean;
-  /** Presence-based status (cheap): whether a session credential is stored. */
   status: ConnectionStatus;
 }
 
-/** Cheap, presence-based connection status for every publish target. */
 export function listConnections(): ConnectionView[] {
   return (Object.keys(PLATFORM_LABEL) as PublishTarget[]).map((source) => {
     const supported = getPublisher(source) !== undefined;
@@ -200,7 +180,6 @@ export function listConnections(): ConnectionView[] {
   });
 }
 
-/** Live check that actually drives a headless browser. Slow; call on demand. */
 export async function testConnection(source: PublishTarget): Promise<SessionState> {
   const publisher = getPublisher(source);
   if (!publisher) return 'missing';
@@ -215,18 +194,12 @@ export interface CanaryResult {
   state: SessionState;
 }
 
-/**
- * Health-check every connected publish session by driving the browser. Run on a
- * schedule so an expired/broken session is caught BEFORE a real publish needs
- * it. Platforms with no stored session ('missing') are skipped — only sessions
- * the user actually connected are probed.
- */
 export async function runConnectionCanary(): Promise<CanaryResult[]> {
   const results: CanaryResult[] = [];
   for (const conn of listConnections()) {
     if (!conn.supported) continue;
     const session = buildSession(conn.source);
-    if (!session) continue; // never connected — nothing to alert on
+    if (!session) continue;
     const publisher = getPublisher(conn.source);
     if (!publisher) continue;
     let state: SessionState;
@@ -240,11 +213,6 @@ export async function runConnectionCanary(): Promise<CanaryResult[]> {
   return results;
 }
 
-// --- Publish orchestration --------------------------------------------------
-
-// Single-flight guard: only one browser publish at a time across the process
-// (a real browser is heavy and concurrent posts look bot-like). Mirrors the
-// publishRunning/collectRunning guards in run-state.ts.
 let publishInFlight = false;
 
 export function isPublishInFlight(): boolean {
@@ -298,12 +266,6 @@ export interface PublishOutcome {
   published_url: string;
 }
 
-/**
- * Publish a draft by driving the platform's web UI. Enforces single-flight,
- * idempotency (never double-post the same draft text), and fail-closed
- * semantics. Throws PublishBusyError / PublishUnsupportedError /
- * PublishSessionMissingError / PublishError.
- */
 export async function publishDraft(
   draftId: number,
   opts: { meta?: Record<string, unknown> } = {},
@@ -325,7 +287,6 @@ export async function publishDraft(
   const key = idempotencyKey(draftId, text);
   const db = getDb();
 
-  // Idempotency: if this exact text already published, return it — never repost.
   const existing = db
     .prepare(`SELECT * FROM publish_jobs WHERE idempotency_key = ? AND status = 'published'`)
     .get(key) as PublishJobRecord | undefined;
@@ -346,13 +307,8 @@ export async function publishDraft(
   const now = Date.now();
   const productId = draft.product_id || DEFAULT_PRODUCT_ID;
 
-  // Human-paced safety: daily cap + minimum spacing per platform.
   enforceRateLimits(productId, source, PLATFORM_LABEL[source]);
 
-  // One job row per (draft, text) keyed by idempotency_key. Retries reuse the
-  // row via upsert — a plain INSERT would collide with the UNIQUE index on a
-  // prior failed attempt (which keeps its key). RETURNING gives us the id for
-  // both the insert and the update branch.
   const jobRow = db
     .prepare(
       `INSERT INTO publish_jobs
@@ -370,8 +326,6 @@ export async function publishDraft(
     .get(draftId, productId, source, key, now) as { id: number };
   const jobId = jobRow.id;
 
-  // Remember where the draft lived so a failed publish returns it there
-  // (instead of stranding it in a terminal 'failed' status the UI hides).
   const RESTORABLE = ['pending', 'edited', 'used', 'discarded'];
   const restoreStatus = RESTORABLE.includes(draft.status) ? draft.status : 'edited';
 
@@ -413,8 +367,6 @@ export async function publishDraft(
   }
 }
 
-// --- Scheduling ("Publier plus tard") --------------------------------------
-
 export class PublishScheduleError extends Error {
   constructor(message: string) {
     super(message);
@@ -432,7 +384,6 @@ function parseMetaRecord(raw: string | null): Record<string, unknown> | undefine
   }
 }
 
-/** Queue a draft for publication at a future time. Reuses the publish_jobs row. */
 export function scheduleDraft(
   draftId: number,
   scheduledFor: number,
@@ -474,7 +425,6 @@ export function scheduleDraft(
   return toPublishJobView(job);
 }
 
-/** Cancel a pending schedule, returning the draft to an editable state. */
 export function cancelSchedule(draftId: number): void {
   const db = getDb();
   db.prepare(`DELETE FROM publish_jobs WHERE draft_id = ? AND status = 'queued'`).run(draftId);
@@ -484,11 +434,6 @@ export function cancelSchedule(draftId: number): void {
   logger.info('Draft schedule cancelled', { draftId });
 }
 
-/**
- * Publish every scheduled job whose time has come. Called by a 1-minute cron.
- * Rate-limited/busy jobs are left queued to retry on the next tick; real
- * failures are recorded by publishDraft (and won't be re-picked).
- */
 export async function publishDueScheduledJobs(): Promise<void> {
   const db = getDb();
   const due = db
@@ -509,7 +454,7 @@ export async function publishDueScheduledJobs(): Promise<void> {
     } catch (err) {
       if (err instanceof PublishBusyError || err instanceof PublishRateLimitError) {
         logger.info('Scheduled job deferred', { draftId: draft_id, reason: err.name });
-        continue; // stays queued; retried next tick
+        continue;
       }
       logger.warn('Scheduled publish failed', {
         draftId: draft_id,

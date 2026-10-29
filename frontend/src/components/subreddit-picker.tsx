@@ -20,11 +20,6 @@ function formatSubscribers(count: number): string {
 }
 
 export interface SubredditPickerHandle {
-  /**
-   * Flush any pending text into the committed list (mirrors blur behavior).
-   * Returns the resulting array on success, or `null` when the pending text
-   * holds invalid subreddit names (an inline error is shown).
-   */
   flush: () => string[] | null;
 }
 
@@ -35,8 +30,6 @@ interface SearchState {
   loading: boolean;
   open: boolean;
   activeIndex: number;
-  /** Set when the search request itself failed (Reddit unavailable), to avoid
-   * rendering an upstream error as a misleading "no matches" empty state. */
   searchFailed: boolean;
 }
 
@@ -68,7 +61,6 @@ interface SubredditResultsListProps {
   onHover: (idx: number) => void;
 }
 
-/** ARIA listbox dropdown rendering the rich subreddit search results. */
 function SubredditResultsList({
   visibleResults,
   showEmpty,
@@ -81,7 +73,6 @@ function SubredditResultsList({
   return (
     <div
       id="subreddit-search-listbox"
-      // react-doctor-disable-next-line react-doctor/prefer-tag-over-role -- custom ARIA combobox listbox needs rich option markup; <datalist> cannot hold interactive children
       role="listbox"
       aria-label="Résultats de recherche de subreddits"
       className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-auto rounded-md border border-input bg-popover text-popover-foreground shadow-md"
@@ -145,16 +136,9 @@ interface SubredditPickerProps {
   value: string[];
   onChange: (next: string[]) => void;
   disabled?: boolean;
-  /** React 19 ref-as-prop exposing the imperative flush handle. */
   ref?: Ref<SubredditPickerHandle>;
 }
 
-/**
- * Subreddit chip picker with debounced async search (Reddit autocomplete) and
- * full ARIA combobox keyboard navigation. Owns all of its transient state
- * (input text, validation error, search results/loading/open/active index) in a
- * single reducer so the parent only deals with the committed `value: string[]`.
- */
 export function SubredditPicker({
   value: subreddits,
   onChange,
@@ -197,9 +181,6 @@ export function SubredditPicker({
     return true;
   };
 
-  // Debounced subreddit search, driven from the input's onChange handler so the
-  // network request is an explicit consequence of typing rather than a reaction
-  // to a state change in an effect.
   const runSubredditSearch = (rawValue: string) => {
     if (searchTimeoutRef.current !== null) {
       window.clearTimeout(searchTimeoutRef.current);
@@ -387,7 +368,6 @@ export function SubredditPicker({
             <input
               id="product-subreddits"
               type="text"
-              // react-doctor-disable-next-line react-doctor/no-redundant-roles -- ARIA combobox pattern requires explicit role; text input's implicit role is textbox, not combobox
               role="combobox"
               aria-label="Rechercher un subreddit"
               aria-autocomplete="list"

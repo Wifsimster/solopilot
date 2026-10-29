@@ -13,13 +13,6 @@ import { veilleRadarProduit } from './modules/veille/workflows.js';
 import type { Config } from './config.js';
 import { sendWeeklyRecap, WEEKLY_RECAP_CRON } from './ai/usage-recap.js';
 
-/**
- * Veille flip (ADR-0020). When WORKFLOW_SCHEDULER=true, the same cron ticks
- * dispatch through the workflow engine (recording workflow_runs) instead of
- * calling the services directly. The workflows delegate to the exact same
- * triggerCollect/triggerRun, so behaviour is identical; `guard: false` avoids
- * double-guarding (the services guard themselves). Default is the legacy path.
- */
 function workflowSchedulerEnabled(): boolean {
   return process.env.WORKFLOW_SCHEDULER === 'true';
 }
@@ -40,12 +33,6 @@ async function dispatchPublish(config: Config, productId: string): Promise<void>
   }
 }
 
-/**
- * Consolidated digest dispatch (VEILLE_DIGEST_MODE=consolidated). Same flag
- * split as the per-product dispatch: engine path records a workflow_runs trace,
- * legacy path calls the service directly. Both no-op in per-product mode.
- * `baseConfig` is un-merged; each product's config is merged inside.
- */
 async function dispatchConsolidatedDigest(baseConfig: Config): Promise<void> {
   if (workflowSchedulerEnabled()) {
     await runWorkflowById('veille.digest-consolidated', {
@@ -85,7 +72,6 @@ function mergeProductConfig(
   return buildMergedConfig(baseConfig, overrides);
 }
 
-/** Stops and forgets every previously-registered per-product publish task. */
 function clearPublishTasks(): void {
   for (const name of [...tasks.keys()]) {
     if (name === 'publish' || name.startsWith('publish:')) {
@@ -96,14 +82,6 @@ function clearPublishTasks(): void {
   }
 }
 
-/**
- * Schedules the digest per product, honouring each product's own `publish_cron`
- * and falling back to the global `schedule` when it has none. This lets, e.g.,
- * toko run a weekly digest while the others stay daily. Re-invoked on hot-reload
- * (global schedule change or a product's publish_cron change), so it first clears
- * any stale per-product tasks. `schedule` is still recorded as the global default
- * reported by getCurrentSchedule().
- */
 export function schedulePublishCron(
   schedule: string,
   baseConfig: Config,
@@ -117,9 +95,6 @@ export function schedulePublishCron(
     const ownSchedule = Boolean(product.publish_cron?.trim());
     const productSchedule = product.publish_cron?.trim() || schedule;
     const ok = scheduleNamedCron(`publish:${product.id}`, productSchedule, async () => {
-      // Consolidated mode: global-schedule products are published, in sequence,
-      // by the consolidated task below. Checked at tick time so switching mode
-      // in Settings applies without a reschedule.
       if (!ownSchedule && getVeilleDelivery().mode === 'consolidated') {
         logger.info('Per-product publish skipped — handled by the consolidated digest', {
           productId: product.id,
@@ -144,7 +119,6 @@ export function schedulePublishCron(
     allOk = allOk && ok;
   }
 
-  // Consolidated digest on the global schedule (no-op in per-product mode).
   const consolidatedOk = scheduleNamedCron('publish:consolidated', schedule, async () => {
     try {
       await dispatchConsolidatedDigest(baseConfig);
@@ -157,7 +131,6 @@ export function schedulePublishCron(
   });
   allOk = allOk && consolidatedOk;
 
-  // Record the global default so getCurrentSchedule()/the API still report it.
   schedules.set('publish', schedule);
   return allOk;
 }
@@ -173,7 +146,6 @@ export function scheduleCollectCron(
     for (const product of products) {
       try {
         const mergedConfig = mergeProductConfig(baseConfig, buildMergedConfig, product.id);
-        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: per-product collect runs must not hammer the shared X session concurrently
         await dispatchCollect(mergedConfig, product.id);
       } catch (err) {
         logger.error('Tweet collection failed', {
@@ -186,11 +158,6 @@ export function scheduleCollectCron(
   });
 }
 
-/**
- * Schedule the publish-session canary: periodically health-checks every
- * connected publish session and pings Discord when one has expired, so the user
- * reconnects BEFORE a real publish fails. No-op alert when no webhook is set.
- */
 export function scheduleCanaryCron(schedule: string): boolean {
   return scheduleNamedCron('publish-canary', schedule, async () => {
     let results;
@@ -221,10 +188,6 @@ export function scheduleCanaryCron(schedule: string): boolean {
   });
 }
 
-/**
- * Drain the scheduled-publish queue: every tick, publish any draft whose
- * scheduled time has arrived. Defaults to once a minute.
- */
 export function schedulePublishQueueCron(schedule: string): boolean {
   return scheduleNamedCron('publish-queue', schedule, async () => {
     try {
@@ -237,11 +200,6 @@ export function schedulePublishQueueCron(schedule: string): boolean {
   });
 }
 
-/**
- * Periodically refresh engagement metrics for published posts (feedback loop).
- * Defaults to every 6 hours. Best-effort; only platforms exposing fetchMetrics
- * (X today) are scraped.
- */
 export function scheduleMetricsCron(schedule: string): boolean {
   return scheduleNamedCron('publish-metrics', schedule, async () => {
     try {
@@ -254,12 +212,6 @@ export function scheduleMetricsCron(schedule: string): boolean {
   });
 }
 
-/**
- * Radar produit (ADR-0026): one global hourly task (after collect + triage),
- * always dispatched through the workflow engine. The toggle is read at each
- * tick, so a disabled radar costs nothing and leaves no workflow_runs rows.
- * `guard: false` + the service's own running flag (same as ADR-0025).
- */
 export function scheduleRadarCron(
   baseConfig: Config,
   buildMergedConfig: (base: Config, overrides: Record<string, string>) => Config,
@@ -278,10 +230,6 @@ export function scheduleRadarCron(
   });
 }
 
-/**
- * Weekly « Dépenses IA » recap (Monday 09:00 Paris). The toggle is read at
- * each tick; the recap itself dedupes per week and makes no AI call.
- */
 export function scheduleAiRecapCron(
   baseConfig: Config,
   buildMergedConfig: (base: Config, overrides: Record<string, string>) => Config,

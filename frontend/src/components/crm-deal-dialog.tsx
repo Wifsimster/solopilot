@@ -30,10 +30,6 @@ const STAGE_OPTIONS: { value: Stage; label: string }[] = [
   { value: 'perdu', label: 'Perdu' },
 ];
 
-/**
- * Manual deal creation dialog (ADR-0018). Posts to /api/crm/deals. Requires at
- * least one contact to attach the opportunity to.
- */
 export function CrmDealDialog({
   productId,
   contacts,

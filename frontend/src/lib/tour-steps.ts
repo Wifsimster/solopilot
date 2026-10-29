@@ -1,20 +1,7 @@
-/**
- * Guided product tour — declarative step list.
- *
- * Each step optionally navigates to a `route` and spotlights the DOM element
- * carrying the matching `data-tour` attribute (`target`). When the target is
- * not present (e.g. the desktop sidebar on a mobile viewport) the step falls
- * back to a centered card so the copy is still shown. Keep copy in French to
- * match the rest of the UI.
- */
 export interface TourStep {
-  /** Stable id (also used as React key). */
   id: string;
-  /** `data-tour` value of the element to spotlight. Omit for a centered step. */
   target?: string;
-  /** Route to navigate to before showing the step. */
   route?: string;
-  /** Preferred placement of the explanation card relative to the target. */
   placement?: 'right' | 'left' | 'top' | 'bottom';
   title: string;
   body: string;

@@ -9,9 +9,6 @@ import { arr, enumOf, int, obj, str } from './ai/schema.js';
 export const INTENT_STATUSES = ['new', 'snoozed', 'dismissed', 'replied'] as const;
 export type IntentStatus = (typeof INTENT_STATUSES)[number];
 
-// Intent taxonomy (stolen from Buska's 5-category model): every analyzed signal
-// is classified into one bucket so the owner can triage by *kind* of signal, not
-// just by score. 'autre' is the escape hatch so the model never force-fits.
 export const INTENT_CATEGORIES = [
   'demande_active',
   'mention_concurrent',
@@ -115,20 +112,10 @@ export interface MatchIntentResult {
   matched: number;
 }
 
-/**
- * Lowercase, trim, and drop empties — used to pre-process exclude/require lists
- * once per match run so the hot per-item loop only does substring checks.
- */
 function normalizeFilterTerms(terms: string[]): string[] {
   return terms.map((t) => t.toLowerCase().trim()).filter((t) => t.length > 0);
 }
 
-/**
- * Syften-style boolean gate applied before the include-keyword pass:
- * - reject if the post contains ANY exclude term;
- * - if require terms exist, the post must contain AT LEAST ONE of them.
- * `excludeLower` / `requireLower` are assumed already normalized.
- */
 function postPassesFilters(
   lowerText: string,
   excludeLower: string[],
@@ -471,7 +458,6 @@ const repliesOnlyResponseSchema = z.object({
   replies: z.array(replyVariantSchema).min(1).max(MAX_REPLY_COUNT),
 });
 
-/** Structured-output contracts (mirror the Zod schemas above). */
 const replyVariantJsonSchema = obj({
   angle: str({ minLength: 2, maxLength: 60 }),
   text: str({ minLength: 10, maxLength: 600 }),
