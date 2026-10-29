@@ -238,12 +238,10 @@ import {
   GithubImportError,
 } from './github-import.js';
 
-/** Settings that only make sense globally (veille delivery spans all products). */
 const GLOBAL_ONLY_KEYS = new Set([
   'VEILLE_DIGEST_MODE',
   'VEILLE_DISCORD_WEBHOOK_URL',
   ...RADAR_SETTING_KEYS,
-  // AI model/effort: one selection for every feature (src/ai/settings.ts).
   ...AI_SELECTION_SETTING_KEYS,
   'AI_WEEKLY_RECAP_ENABLED',
 ]);
@@ -267,7 +265,6 @@ function buildCredentialInfo(config: Config) {
     csrfTokenMasked: csrfToken ? maskCredential(csrfToken) : '',
     discordWebhookMasked: discordWebhook ? maskCredential(discordWebhook) : '',
     veilleDiscordWebhookMasked: veilleWebhook ? maskCredential(veilleWebhook) : '',
-    // Which webhook the consolidated digest would use (never the URL itself).
     veilleWebhookSource: veilleDelivery.webhookSource,
     hasAuth: !!process.env.ADMIN_PASSWORD,
   };
@@ -321,7 +318,6 @@ function buildProductConfig(baseConfig: Config, productId: string): Config {
   return buildMergedConfig(baseConfig, overrides);
 }
 
-/** Build the Hono app (routes + middleware) without listening. Used by tests. */
 export function createApp(
   config: Config | null,
   missingCredentials: MissingCredential[] | null,
@@ -330,14 +326,8 @@ export function createApp(
   const app = new Hono<{ Variables: ApiAuthVariables }>();
   const isConfigured = config !== null;
 
-  // Populate the workflow registry so the read-only workflow API can serve it.
-  // Idempotent and inert (workflows ship disabled; nothing is scheduled here).
   registerSolopilot();
 
-  // API tokens (ADR-0029) run first: a request carrying a token is
-  // authenticated and authorized by its token only, and skips Basic auth. A
-  // full-access token (`*`) reaches everything like the admin; a scoped token
-  // only its routes (default deny). Requests without a token are untouched.
   app.use('*', apiTokenAuth());
 
   if (process.env.ADMIN_PASSWORD) {
@@ -409,7 +399,7 @@ export function createApp(
       ...cred,
       configured:
         cred.key === 'GITHUB_TOKEN'
-          ? // The AI credential: any provider key counts (ADR-0027).
+          ?
             ['ANTHROPIC_API_KEY', 'AI_API_KEY', 'GITHUB_TOKEN'].some(
               (key) => !!process.env[key]?.trim() || !!getSetting(key),
             )
@@ -418,14 +408,10 @@ export function createApp(
     return c.json({ configured: isConfigured, credentials });
   });
 
-  // --- Cockpit API (read-only) — the single daily picture of the activity ---
-
   app.get('/api/cockpit', (c) => {
     const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(buildBriefing(activityId));
   });
-
-  // --- Facturation API — local invoice ledger (read + manual create/mark-paid) ---
 
   app.get('/api/facturation/invoices', (c) => {
     const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
@@ -453,7 +439,6 @@ export function createApp(
     return c.json({ success: true });
   });
 
-  // Staged reminders for overdue invoices — preview only, nothing is sent.
   app.get('/api/facturation/relances', (c) => {
     const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const today = getTodayDateParis();
@@ -461,9 +446,6 @@ export function createApp(
     return c.json(drafts);
   });
 
-  // Stripe connection status — read-only; the ledger works standalone when unset.
-  // `checkout` is true only when both the secret and publishable keys are set,
-  // which is what the embedded Checkout needs. The publishable key is public.
   app.get('/api/facturation/stripe', (c) => {
     const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     const productConfig = config ? buildProductConfig(config, activityId) : null;
@@ -472,7 +454,6 @@ export function createApp(
     return c.json({ configured, publishableKey, checkout: configured && !!publishableKey });
   });
 
-  // Create an embedded Checkout Session to collect payment on an invoice.
   app.post('/api/facturation/invoices/:id/checkout', async (c) => {
     if (!config) return c.json({ error: 'Stripe non configuré' }, 400);
     const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
@@ -496,7 +477,6 @@ export function createApp(
     }
   });
 
-  // Manual Stripe sync — degradable: a no-op when Stripe is not configured.
   app.post('/api/facturation/sync', async (c) => {
     const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     if (!config) return c.json({ synced: 0, skipped: true });
@@ -513,8 +493,6 @@ export function createApp(
       return c.json({ error: 'Échec de la synchronisation Stripe' }, 502);
     }
   });
-
-  // --- Comptabilité API — turnover, thresholds and URSSAF estimates (read + config) ---
 
   app.get('/api/comptabilite', (c) => {
     const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
@@ -547,10 +525,6 @@ export function createApp(
     return c.json(listLedger(activityId, { since }));
   });
 
-  // ADR-0029: `productId` is the product slug (products.id). An unknown product
-  // is a 404 (it used to surface as a foreign-key 500). With `external_ref`, a
-  // second POST for the same (product, external_ref) is a 409 carrying the
-  // existing entry in `entry`; nothing is written.
   app.post('/api/comptabilite/ledger', async (c) => {
     const activityId = requestProductId(c);
     const parsed = ledgerCreateSchema.safeParse(await c.req.json().catch(() => ({})));
@@ -572,10 +546,6 @@ export function createApp(
     }
   });
 
-  // --- API tokens (ADR-0029) — admin or full-access token; no scoped token
-  // reaches these routes. Only hashes are stored and never returned: no caller
-  // can read a token's secret after creation. ---
-
   app.get('/api/tokens', (c) =>
     c.json({
       tokens: listApiTokens(),
@@ -592,7 +562,6 @@ export function createApp(
     if (unknown.length > 0) {
       return c.json({ error: `Produit(s) introuvable(s) : ${unknown.join(', ')}` }, 400);
     }
-    // `secret` is returned once, here, and never again.
     return c.json(createApiToken(parsed.data), 201);
   });
 
@@ -612,8 +581,6 @@ export function createApp(
       }),
     );
   });
-
-  // --- CRM API — contacts, deals (pipeline) and interactions ---
 
   app.get('/api/crm/contacts', (c) => {
     const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
@@ -655,13 +622,10 @@ export function createApp(
     return c.json(updated);
   });
 
-  // Staged follow-ups for stale deals — preview only, nothing is sent.
   app.get('/api/crm/relances', (c) => {
     const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
     return c.json(listStaleDeals(activityId).map(draftFollowup));
   });
-
-  // --- Agenda API — calendar events (read + manual create) ---
 
   app.get('/api/agenda', (c) => {
     const activityId = c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
@@ -678,11 +642,6 @@ export function createApp(
     if (!parsed.success) return c.json({ error: 'Données invalides', issues: parsed.error.issues }, 400);
     return c.json(createEvent(activityId, parsed.data), 201);
   });
-
-  // --- Workflows API (read-only, available in both setup and operational mode) ---
-  // Surfaces the workflow registry and the workflow_runs log. Read-only by
-  // design in this phase: the engine runs disabled, so there is nothing to
-  // trigger here yet (ADR-0014). Triggering/enabling lands with the flip.
 
   const serializeWorkflowRun = (row: ReturnType<typeof getWorkflowRun>) => {
     if (!row) return null;
@@ -750,14 +709,10 @@ export function createApp(
     return c.json(run);
   });
 
-  // --- Products API (available in both setup and operational mode) ---
-
   app.get('/api/products', (c) => {
     const includeArchived = c.req.query('includeArchived') === 'true';
     const token = c.get('apiToken');
     if (token && !isFullAccess(token)) {
-      // Scoped token callers (products:read) get a minimal projection, limited
-      // to the products the token may act on. Full access sees the admin view.
       return c.json(
         listProducts(includeArchived)
           .filter((p) => tokenAllowsProduct(token, p.id))
@@ -929,8 +884,6 @@ export function createApp(
       }
     }
 
-    // A product's publish_cron drives its own digest schedule — re-register the
-    // per-product publish crons so a changed frequency applies without a restart.
     if (parsed.data.publish_cron !== undefined && config) {
       reschedule(getCurrentSchedule() || config.CRON_SCHEDULE, config, buildMergedConfig);
     }
@@ -1007,8 +960,6 @@ export function createApp(
     return c.json({ success: true, message: 'Parametre du produit mis a jour.' });
   });
 
-  // --- Reddit subreddit search (available in both setup and operational mode) ---
-
   app.get('/api/reddit/search-subreddits', async (c) => {
     const q = (c.req.query('q') ?? '').trim();
     if (!q) {
@@ -1040,8 +991,6 @@ export function createApp(
       );
     }
   });
-
-  // --- Veille items API (per-item AI triage, ADR-agnostic read model) ---
 
   app.get('/api/veille/items', (c) => {
     const parsed = veilleItemListQuerySchema.safeParse({
@@ -1106,8 +1055,6 @@ export function createApp(
     }
     return c.json({ categories: triageCategoriesForProduct(toProductView(product)) });
   });
-
-  // --- Intent signals API (available in both setup and operational mode) ---
 
   app.get('/api/intent-signals', (c) => {
     const parsed = intentSignalListQuerySchema.safeParse({
@@ -1266,8 +1213,6 @@ export function createApp(
     }
     return c.json(updated);
   });
-
-  // --- Content Studio API (available in both setup and operational mode) ---
 
   app.post('/api/content/suggest-audience', async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -1640,8 +1585,6 @@ export function createApp(
     return c.json({ success: true });
   });
 
-  // --- Auto-publish API (drives platform web UI as the logged-in user) ---
-
   const PUBLISH_TARGETS: readonly PublishTarget[] = ['x', 'reddit', 'generic'];
   function isPublishTargetParam(v: string): v is PublishTarget {
     return (PUBLISH_TARGETS as readonly string[]).includes(v);
@@ -1689,7 +1632,6 @@ export function createApp(
         400,
       );
     }
-    // Reddit needs a target subreddit + a title (the body is the draft text).
     if (draft.target_source === 'reddit') {
       const meta = parsed.data.platform_meta ?? {};
       const subreddit = typeof meta.subreddit === 'string' ? meta.subreddit.trim() : '';
@@ -1831,8 +1773,6 @@ export function createApp(
     return c.json(listConnections());
   });
 
-  // --- Feedback loop: engagement metrics + angle performance ---
-
   app.get('/api/content/angle-performance', (c) => {
     const productId = resolveProductId(c.req.query('productId'));
     return c.json(getAnglePerformance(productId));
@@ -1850,7 +1790,6 @@ export function createApp(
     }
   });
 
-  // Live session check — launches a headless browser, so it's slow and on-demand.
   app.post('/api/publish/connections/:platform/test', async (c) => {
     const platform = c.req.param('platform');
     if (!isPublishTargetParam(platform)) {
@@ -1866,8 +1805,6 @@ export function createApp(
     }
   });
 
-  // Save a LinkedIn session by pasting its cookies (li_at required, JSESSIONID
-  // optional) — mirrors the X auth_token/ct0 cookie-paste flow.
   app.post('/api/publish/connections/linkedin', async (c) => {
     const body = await c.req.json().catch(() => null);
     if (body === null || typeof body !== 'object') {
@@ -1882,7 +1819,6 @@ export function createApp(
     if (jsession) {
       setSetting('LINKEDIN_JSESSIONID', jsession);
     }
-    // Best-effort live verification; storing succeeds even if the check can't run.
     let state: string | undefined;
     try {
       state = await testConnection('generic');
@@ -1899,7 +1835,6 @@ export function createApp(
     });
   });
 
-  // Save a Reddit session by pasting its reddit_session cookie.
   app.post('/api/publish/connections/reddit', async (c) => {
     const body = await c.req.json().catch(() => null);
     if (body === null || typeof body !== 'object') {
@@ -1925,8 +1860,6 @@ export function createApp(
       state,
     });
   });
-
-  // --- GitHub Import API (available in both setup and operational mode) ---
 
   const githubImportQuerySchema = z.object({
     username: z.string().trim().min(1, { message: "Nom d'utilisateur GitHub requis." }),
@@ -2118,7 +2051,6 @@ export function createApp(
         }
       }
 
-      // AI model/effort (ADR-0027): validated as a whole, '' clears an override.
       const aiValidation = validateAiSettingsUpdate(body, config, readAiModelSettings());
       if (!aiValidation.ok) {
         return c.json({ success: false, message: aiValidation.message }, 400);
@@ -2175,8 +2107,6 @@ export function createApp(
           'Cookies de session mis à jour et validés avec succès. Les prochains runs utiliseront ces valeurs.',
       });
     });
-
-    // --- Summaries API ---
 
     app.get('/api/summaries', (c) => {
       const limit = Number(c.req.query('limit') || '20');
@@ -2295,8 +2225,6 @@ export function createApp(
         return c.json({ success: false, message: `Erreur de détection : ${msg}` });
       }
     });
-
-    // --- Cron schedule hot-reload ---
 
     app.get('/api/cron-schedule', (c) => {
       const dbSchedule = getSetting('CRON_SCHEDULE');
@@ -2448,7 +2376,6 @@ export function createApp(
       return c.json({ success: true, message: 'Webhook Discord supprimé.' });
     });
 
-    // Dedicated webhook for the consolidated veille digest (global).
     app.post('/api/veille-discord-webhook', async (c) => {
       const body = await c.req.json().catch(() => ({}));
       const url =
@@ -2478,16 +2405,10 @@ export function createApp(
       return c.json({ success: true, message: 'Webhook de veille supprimé.' });
     });
 
-    // --- AI usage & budget (ADR-0027) --- never returns any key.
     app.get('/api/ai/usage', (c) => c.json(getAiBudgetStatus(config)));
-    // « Dépenses IA » page: aggregated report + weekly recap toggle.
     registerAiUsageReportRoutes(app, () => config);
-    // Model catalogue (price hints, effort levels) + effective selection per class.
     app.get('/api/ai/models', (c) => c.json(getAiModelsView(config)));
 
-    // --- Radar produit (ADR-0026) ---
-
-    // Effective settings + recent proposals. The token itself is never returned.
     app.get('/api/veille/radar', (c) => {
       const settings = getRadarSettings();
       const limit = Math.min(Math.max(Number(c.req.query('limit') || '30') || 30, 1), 100);
@@ -2510,7 +2431,6 @@ export function createApp(
       });
     });
 
-    // Explicit human action: create the issue for a dry_run/failed proposal.
     app.post('/api/veille/radar/proposals/:id/create', async (c) => {
       const id = Number(c.req.param('id'));
       if (!Number.isInteger(id) || id < 1) {
@@ -2523,7 +2443,6 @@ export function createApp(
       return c.json({ success: true, message: 'Issue créée.', url: result.url });
     });
 
-    // Consolidated digest delivery log (no webhook URLs stored or returned).
     app.get('/api/veille/digest-deliveries', (c) => {
       const limit = Math.min(Math.max(Number(c.req.query('limit') || '20') || 20, 1), 100);
       return c.json(listDigestDeliveries(limit));
@@ -2635,9 +2554,6 @@ export function createApp(
   });
 
   app.onError((err, c) => {
-    // Middleware errors that already carry a response (basicAuth's 401 with
-    // its WWW-Authenticate challenge) must reach the client as-is: turning
-    // them into a 500 stops browsers from ever showing the login prompt.
     if (err instanceof HTTPException) return err.getResponse();
     logger.error('HTTP error', { error: err.message, path: c.req.path });
     return c.text('Internal Server Error', 500);

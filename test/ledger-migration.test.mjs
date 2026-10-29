@@ -1,6 +1,3 @@
-// Ledger migration (ADR-0029): a database created before external_ref/source
-// existed is upgraded in place, keeps its rows, and gets the partial UNIQUE
-// index. Runs on a throwaway DB built with the pre-0029 schema.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
@@ -11,7 +8,6 @@ import Database from 'better-sqlite3';
 const dbPath = path.join(mkdtempSync(path.join(tmpdir(), 'solopilot-ledger-mig-')), 'old.db');
 process.env.DB_PATH = dbPath;
 
-// Pre-ADR-0029 schema (ADR-0017 ledger) with one existing row.
 const old = new Database(dbPath);
 old.exec(`CREATE TABLE products (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, x_query TEXT, discord_webhook TEXT,
@@ -52,7 +48,6 @@ test('addLedgerEntry raises LedgerDuplicateError carrying the existing entry', (
     () => compta.addLedgerEntry('default', { ...input, amount_cents: 1 }),
     (err) => err instanceof compta.LedgerDuplicateError && err.existing.id === first.id,
   );
-  // Raw SQL also refuses the duplicate: the index, not the code, is the guard.
   assert.throws(() =>
     getDb()
       .prepare(`INSERT INTO ledger (id, product_id, kind, amount_cents, label, occurred_on, created_at, external_ref)

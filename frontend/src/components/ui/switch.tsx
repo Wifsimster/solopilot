@@ -10,11 +10,6 @@ interface SwitchProps {
   'aria-labelledby'?: string;
 }
 
-/**
- * Minimal Tailwind-only toggle switch — keeps the bundle free of
- * an extra Radix peer dependency. Behaves as a checkbox under the hood
- * so it integrates with form submission and a11y assistive tech.
- */
 export function Switch({
   checked,
   onCheckedChange,

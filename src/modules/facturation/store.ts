@@ -1,10 +1,3 @@
-/**
- * Facturation store — local invoice ledger.
- *
- * Works standalone (manual invoice entry) and is the upsert target for the
- * optional Stripe sync. Scoped by product_id (activity). Idempotent writes via
- * the stripe_id unique index. See ADR-0016.
- */
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { getDb, DEFAULT_PRODUCT_ID, type InvoiceRecord } from '../../db.js';
@@ -39,7 +32,6 @@ export function createInvoice(
   productId: string = DEFAULT_PRODUCT_ID,
   input: InvoiceCreateInput,
 ): InvoiceRecord {
-  // Parse here too so defaults (currency, status) apply regardless of caller.
   const data = invoiceCreateSchema.parse(input);
   const db = getDb();
   const id = randomUUID();
@@ -88,7 +80,6 @@ export function listInvoices(
     .all(productId) as InvoiceRecord[];
 }
 
-/** Invoices that are sent and past their due date — candidates for a reminder. */
 export function listOverdueInvoices(
   productId: string = DEFAULT_PRODUCT_ID,
   today: string = getTodayDateParis(),
@@ -100,7 +91,6 @@ export function listOverdueInvoices(
     .all(productId, today) as InvoiceRecord[];
 }
 
-/** Sum of invoices marked paid within [from, to) — the encaissed turnover (CA). */
 export function sumPaidInvoicesCents(productId: string, from: string, to: string): number {
   const row = getDb()
     .prepare(
@@ -141,7 +131,6 @@ export function facturationSummary(
   return { total, unpaid, overdue: overdueRows.length, overdueAmountCents };
 }
 
-/** Idempotent upsert from Stripe (matched on stripe_id). Returns rows written. */
 export function upsertStripeInvoices(
   productId: string,
   invoices: StripeInvoiceData[],

@@ -1,11 +1,3 @@
-/**
- * Deterministic French payment-reminder drafting.
- *
- * Produces a staged reminder per overdue invoice — never sent automatically.
- * No AI call, so reminders are free and reproducible. An AI-composed variant
- * (tone matching the activity's voice) can land later behind an `ai.compose`
- * step. See ADR-0016.
- */
 import type { InvoiceRecord } from '../../db.js';
 
 export interface RelanceDraft {

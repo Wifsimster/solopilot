@@ -156,7 +156,6 @@ export function RunsPage() {
         description={`${total} run${total !== 1 ? 's' : ''} au total`}
       />
 
-      {/* Mobile card view */}
       <div className="md:hidden space-y-3">
         {runs.length === 0 ? (
           <Card>
@@ -177,7 +176,6 @@ export function RunsPage() {
         )}
       </div>
 
-      {/* Desktop table view */}
       <div className="hidden md:block rounded-xl border border-border overflow-hidden">
         <Table>
           <TableHeader>

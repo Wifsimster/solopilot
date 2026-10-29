@@ -10,7 +10,6 @@ export interface RunRecord {
   summary: string | null;
   error_message: string | null;
   notification_status: 'pending' | 'sent' | 'failed' | 'skipped' | null;
-  /** Set when the run was delivered by a consolidated veille digest (veille_digest_deliveries.id). */
   digest_delivery_id: number | null;
 }
 
@@ -81,7 +80,6 @@ export interface TweetRecord {
   text: string;
   createdAt: string;
   urls: string[];
-  /** Source of the item — defaults to 'x' for legacy rows that omit the field. */
   source?: FeedItemSource;
 }
 
@@ -260,14 +258,10 @@ export interface VeilleItem {
   alerted_at: number | null;
   triage_status: VeilleItemStatus;
   triage_status_at: number | null;
-  /** 1 = AI flagged buying intent; 0 = no; null = not evaluated. */
   triage_high_intent: number | null;
   crm_bridged_at: number | null;
-  /** How the item was collected: topical veille vs brand-mention search. */
   origin: 'topic' | 'mention';
 }
-
-// --- Radar produit (ADR-0026) ---
 
 export type RadarProposalStatus = 'creating' | 'dry_run' | 'created' | 'failed' | 'capped';
 
@@ -305,7 +299,6 @@ export interface RadarResponse {
   proposals: RadarProposal[];
 }
 
-/** GET /api/ai/usage — month-to-date AI spend (ADR-0027). Never carries a key. */
 export type AiEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type AiSettingSource = 'settings' | 'env' | 'default';
 
@@ -357,8 +350,6 @@ export interface AiUsageResponse {
   }[];
 }
 
-// « Dépenses IA » report (GET /api/ai/usage/report). Amounts are full-precision
-// USD; the UI rounds for display only.
 export type AiSpendPeriod = '7d' | '30d' | 'month' | 'prev-month' | '12m';
 export type AiTaskClassId = 'triage' | 'digest' | 'radar' | 'studio' | 'intent' | 'monthly' | 'other';
 export type AiBudgetLevel = 'ok' | 'warning' | 'exceeded';

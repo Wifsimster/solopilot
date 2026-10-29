@@ -6,8 +6,6 @@ interface MobileBottomNavProps {
   onMore: () => void;
 }
 
-// Ordered by daily priority: the briefing first, then the modules with
-// time-sensitive daily actions (overdue invoices, today's events, stale deals).
 const ITEMS = [
   { to: '/cockpit', label: 'Cockpit', icon: Gauge },
   { to: '/facturation', label: 'Facturation', icon: Receipt },

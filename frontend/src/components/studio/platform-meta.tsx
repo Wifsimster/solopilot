@@ -3,10 +3,6 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TargetSource } from '@/types';
 
-// Character budgets per platform, mirroring the backend generation prompt
-// (src/content-studio.ts → platformConstraints). X enforces a hard 280-char
-// cap; reddit/generic are soft "recommended" ceilings. The live counter uses
-// these to warn before the user pastes something the platform will reject.
 export const PLATFORM_LIMITS: Record<TargetSource, number> = {
   x: 280,
   reddit: 500,
@@ -17,19 +13,11 @@ export const PLATFORM_LIMITS: Record<TargetSource, number> = {
 export interface SourceMeta {
   label: string;
   Icon: LucideIcon;
-  /** Tailwind background class for a small colored dot. */
   dotClass: string;
-  /** Tailwind text-color class for the icon. */
   textClass: string;
-  /** Tailwind left-border class for the card accent. Kept as a full literal
-   *  string so Tailwind's compiler can detect it (runtime-built class names
-   *  are not emitted). */
   borderClass: string;
 }
 
-// Centralized platform identity. Brand logos are deliberately avoided (lucide
-// does not ship reliable brand icons): platform identity is conveyed through a
-// generic icon + color + label instead.
 export const SOURCE_META: Record<TargetSource, SourceMeta> = {
   x: {
     label: 'X',
@@ -61,12 +49,6 @@ export const SOURCE_META: Record<TargetSource, SourceMeta> = {
   },
 };
 
-/**
- * Split text into ≤limit-char tweets for an X thread, breaking on paragraph →
- * sentence → word boundaries (never mid-word; a single over-long word is hard
- * sliced). Mirrors the fallback split in the backend X adapter so the preview
- * matches what gets posted. Returns a single-element array when it already fits.
- */
 export function splitIntoThread(text: string, limit = PLATFORM_LIMITS.x): string[] {
   const trimmed = text.trim();
   if (trimmed.length <= limit) return [trimmed];
@@ -82,7 +64,6 @@ export function splitIntoThread(text: string, limit = PLATFORM_LIMITS.x): string
 
   for (const word of words) {
     if (word.length > limit) {
-      // Hard-slice a word that can't fit on its own.
       flush();
       let rest = word;
       while (rest.length > limit) {
@@ -104,7 +85,6 @@ export function splitIntoThread(text: string, limit = PLATFORM_LIMITS.x): string
   return tweets.length > 0 ? tweets : [trimmed.slice(0, limit)];
 }
 
-/** Small rounded badge showing the colored platform icon + label. */
 export function SourceBadge({ source }: { source: TargetSource | null }) {
   if (source === null) {
     return (

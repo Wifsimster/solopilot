@@ -1,10 +1,3 @@
-/**
- * Radar produit — AI calls (ADR-0026): relevance scoring and marketing report.
- *
- * News content is UNTRUSTED data. Both prompts say so explicitly, items are
- * passed as quoted blocks, and outputs are schema-validated (unknown ids are
- * dropped by the caller). Only public product marketing fields are sent.
- */
 import { z } from 'zod';
 import type { Config } from '../../config.js';
 import { createAi, type AiTask, type JsonObjectSchema } from '../../ai/index.js';
@@ -38,10 +31,6 @@ export interface RadarAi {
   report(item: RadarItemInput, product: RadarProductInput, reason: string): Promise<RadarReport>;
 }
 
-/**
- * Public, marketing-only view of a product. Never webhooks, prompts, settings,
- * nor mention keywords (they may hold the founder's name or private aliases).
- */
 export function toRadarProduct(p: ProductView): RadarProductInput {
   const keywords = [...new Set([...p.hn_keywords, ...p.youtube_keywords])];
   return {
@@ -92,7 +81,6 @@ const scoreResponseSchema = z.object({
   ),
 });
 
-/** Structured-output contracts (mirror the Zod schemas, which stay authoritative). */
 const scoreJsonSchema = obj({
   items: arr(
     obj({

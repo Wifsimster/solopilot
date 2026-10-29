@@ -1,11 +1,3 @@
-/**
- * Workflow runner.
- *
- * Bridges the pure engine to the rest of the app: resolves a workflow, builds a
- * StepContext (config + connectors), persists the run to `workflow_runs`, and
- * enforces a per-(module, activity) concurrency guard — the generalization of
- * the existing `publishRunning` / `collectRunning` guards (ADR-0013).
- */
 import type { Config } from '../config.js';
 import { logger } from '../logger.js';
 import { DEFAULT_PRODUCT_ID } from '../db.js';
@@ -15,19 +7,12 @@ import { buildConnectors } from './connectors.js';
 import { openWorkflowRun, closeWorkflowRun } from './run-store.js';
 import type { StepContext, Trigger, WorkflowRun } from './types.js';
 
-/** key = `${module}:${activityId}` — one workflow per module per activity at a time. */
 const moduleGuards = new Map<string, boolean>();
 
 export interface RunWorkflowOptions {
   config: Config;
   activityId?: string;
   trigger?: Trigger['kind'];
-  /**
-   * Apply the per-(module, activity) concurrency guard. Default true. Set false
-   * when the delegated work already has its own guard (e.g. the veille flip,
-   * where triggerCollect/triggerRun guard themselves) to preserve exact
-   * behaviour and avoid over-serializing collect vs digest (ADR-0020).
-   */
   guard?: boolean;
 }
 
@@ -71,8 +56,6 @@ export async function runWorkflowById(
     closeWorkflowRun(runId, run);
     return run;
   } catch (err) {
-    // Defensive: the engine catches step errors itself, so reaching here means
-    // an infrastructure failure. Record it rather than leaving a stuck run.
     const message = err instanceof Error ? err.message : String(err);
     const failed: WorkflowRun = {
       id: runId,

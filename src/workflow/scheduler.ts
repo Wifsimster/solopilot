@@ -1,13 +1,3 @@
-/**
- * Workflow scheduler.
- *
- * Reads cron-triggered, ENABLED workflows from the registry and schedules each
- * one with node-cron (Europe/Paris, matching the existing cron-manager). This
- * is the generalization of cron-manager that will eventually drive veille; for
- * now every workflow ships `enabled: false`, so calling this is a safe no-op
- * until the strangler-fig flip (migration plan, Phase 1). It does not replace
- * the existing crons — both can coexist during migration.
- */
 import cron, { type ScheduledTask } from 'node-cron';
 import type { Config } from '../config.js';
 import { logger } from '../logger.js';

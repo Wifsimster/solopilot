@@ -1,8 +1,3 @@
-/**
- * GitHub Models / OpenAI-compatible adapter of the AI port (ADR-0027): the
- * historical behaviour, unchanged (chat.completions + JSON mode where the
- * endpoint supports it). Kept as the rollback path (`AI_PROVIDER=github-models`).
- */
 import OpenAI from 'openai';
 import type { Config } from '../config.js';
 import { AiError } from './errors.js';
@@ -27,7 +22,6 @@ export function createOpenAiClient(config: Config): OpenAI {
   return new OpenAI({
     baseURL: config.AI_BASE_URL,
     apiKey,
-    // OpenRouter uses these optional headers for attribution / rankings.
     ...(isOpenRouter && {
       defaultHeaders: {
         'HTTP-Referer': 'https://github.com/Wifsimster/solopilot',
@@ -37,18 +31,10 @@ export function createOpenAiClient(config: Config): OpenAI {
   });
 }
 
-/**
- * Whether the endpoint accepts `response_format: {type: 'json_object'}`.
- * Anthropic's OpenAI-compatible endpoint rejects it.
- */
 export function supportsJsonObjectMode(config: Pick<Config, 'AI_BASE_URL'>): boolean {
   return !config.AI_BASE_URL.includes('api.anthropic.com');
 }
 
-/**
- * Parse a JSON object/array from a model response, tolerating Markdown code
- * fences and surrounding prose (no constrained decoding on this path).
- */
 export function parseJsonResponse(raw: string): unknown {
   let s = raw.trim();
   const fenced = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);

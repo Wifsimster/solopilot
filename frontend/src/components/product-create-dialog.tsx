@@ -92,11 +92,6 @@ function slugify(input: string): string {
     .slice(0, 60);
 }
 
-/**
- * Parse + validate factory for a length-bounded keyword/phrase chip field. The
- * returned function splits on commas/newlines, trims, and enforces the
- * min/max-length bounds, producing a French error message on violation.
- */
 function makeLengthParser(
   min: number,
   max: number,
@@ -129,7 +124,6 @@ const parseIntentKeywords = makeLengthParser(
   (j) => `Mot-clé trop court : ${j} (min ${INTENT_KEYWORD_MIN} caractères).`,
   (j) => `Mot-clé trop long : ${j} (max ${INTENT_KEYWORD_MAX} caractères).`,
 );
-/** Triage categories are backend slugs: lowercase, digits, underscores (2-40). */
 function parseTriageCategories(raw: string): ChipParseResult {
   const tokens = raw.split(/[,\n]+/).flatMap((t) => {
     const trimmed = t.trim().toLowerCase().replaceAll(' ', '_');
@@ -161,7 +155,6 @@ const parseCtas = makeLengthParser(
   (j) => `CTA trop long : ${j} (max ${CTA_MAX} caractères).`,
 );
 
-/** POST a suggestion request and pull the typed value out, or null on any failure. */
 async function postSuggestion<T>(
   endpoint: string,
   body: Record<string, unknown>,
@@ -182,16 +175,6 @@ async function postSuggestion<T>(
   }
 }
 
-/**
- * Drives the single "Tout générer avec l'IA" action: fills every generatable
- * field from the product name (+ optional URL) in one click. Suggestions feed
- * each other, so the foundation fields (description → audience → value props)
- * are generated sequentially and threaded through a local accumulator — React
- * state updates are async and wouldn't be visible to the next call — then the
- * dependent fields (subreddits, HN keywords, CTAs, intent phrases) run in
- * parallel off that foundation. Failures are collected per field so a single
- * endpoint error doesn't abort the rest.
- */
 function useGenerateAll(
   state: FormState,
   set: Setter,
@@ -207,7 +190,6 @@ function useGenerateAll(
     setGenerating(true);
     const language = state.contentLanguage ?? 'fr';
     const url = state.productUrl.trim() || null;
-    // Seed from anything the user already typed so existing input informs the AI.
     const acc = {
       description: state.productDescription.trim(),
       audience: state.targetAudience.trim(),
@@ -216,7 +198,6 @@ function useGenerateAll(
     const failed: string[] = [];
 
     try {
-      // --- Foundation: sequential, each builds on the previous result ---
       const description = await postSuggestion<string>(
         '/api/content/suggest-description',
         {
@@ -271,7 +252,6 @@ function useGenerateAll(
         failed.push('propositions de valeur');
       }
 
-      // --- Dependent fields: parallel, off the freshly built foundation ---
       const sourceCtx = {
         name,
         product_url: url,
@@ -349,7 +329,6 @@ function useGenerateAll(
   return { generating, generateAll };
 }
 
-/** Prominent single-click "fill every field with AI" control. */
 function GenerateAllButton({ generating, onClick }: { generating: boolean; onClick: () => void }) {
   return (
     <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-4">
@@ -444,8 +423,6 @@ function buildInitialFormState(initialValues: ProductRecord | null): FormState {
     intentKeywords: initialValues?.intent_keywords ?? [],
     intentExcludeKeywords: initialValues?.intent_exclude_keywords ?? [],
     intentRequireKeywords: initialValues?.intent_require_keywords ?? [],
-    // discord_webhook is masked from backend — leave blank so user can re-enter
-    // only if changing.
     discordWebhook: '',
     aiPromptOverride: initialValues?.ai_prompt_override ?? '',
     productDescription: initialValues?.product_description ?? '',
@@ -472,7 +449,6 @@ function buildInitialFormState(initialValues: ProductRecord | null): FormState {
   };
 }
 
-/** Typed field setter shared by the form sections. */
 type Setter = <K extends keyof FormState>(field: K, value: FormState[K]) => void;
 
 interface SubmitFlushers {
@@ -498,12 +474,6 @@ interface SubmitContext {
   onOpenChange: (open: boolean) => void;
 }
 
-/**
- * Validate the form, flush any pending chip input, build the request payload and
- * persist it. Extracted from the component so the render stays small; reports
- * problems through `set('error', …)` and closes the dialog on success. Preserves
- * the exact validation order, omit-when-blank edit semantics and payload shape.
- */
 async function submitProduct({
   state,
   isEdit,
@@ -530,13 +500,11 @@ async function submitProduct({
     return;
   }
 
-  // At least one source must be enabled
   if (!state.xEnabled && !state.redditEnabled && !state.hnEnabled && !state.youtubeEnabled) {
     set('error', 'Active au moins une source.');
     return;
   }
 
-  // Flush pending subreddit input
   let pendingSubs = state.subreddits;
   if (state.redditEnabled) {
     const flushed = flushers.subreddit?.flush();
@@ -552,7 +520,6 @@ async function submitProduct({
     return;
   }
 
-  // Flush pending HN keyword input
   let pendingHnKeywords = state.hnKeywords;
   if (state.hnEnabled) {
     const flushed = flushers.hn?.flush();
@@ -573,7 +540,6 @@ async function submitProduct({
     return;
   }
 
-  // Flush pending YouTube keyword input
   let pendingYoutubeKeywords = state.youtubeKeywords;
   if (state.youtubeEnabled) {
     const flushed = flushers.youtube?.flush();
@@ -594,7 +560,6 @@ async function submitProduct({
     return;
   }
 
-  // Flush pending mention keyword input (optional field — empty disables the pass)
   const pendingMentionKeywords = flushers.mention?.flush();
   if (pendingMentionKeywords === null || pendingMentionKeywords === undefined) {
     set('error', 'Corrige les mots-clés de mention invalides avant de continuer.');
@@ -605,7 +570,6 @@ async function submitProduct({
     return;
   }
 
-  // Flush pending triage category input (optional — empty keeps the default taxonomy)
   const pendingTriageCategories = flushers.triageCategory?.flush();
   if (pendingTriageCategories === null || pendingTriageCategories === undefined) {
     set('error', 'Corrige les catégories de triage invalides avant de continuer.');
@@ -616,7 +580,6 @@ async function submitProduct({
     return;
   }
 
-  // Alert threshold: blank = backend default (80), else integer 0-100.
   let alertThresholdValue: number | null = null;
   const trimmedThreshold = state.alertThreshold.trim();
   if (trimmedThreshold) {
@@ -628,7 +591,6 @@ async function submitProduct({
     alertThresholdValue = parsedThreshold;
   }
 
-  // Flush pending intent keyword input
   let pendingIntentKeywords = state.intentKeywords;
   if (state.intentEnabled) {
     const flushed = flushers.intent?.flush();
@@ -649,7 +611,6 @@ async function submitProduct({
     return;
   }
 
-  // Flush pending exclude / require refinement inputs (optional fields).
   let pendingIntentExclude = state.intentExcludeKeywords;
   let pendingIntentRequire = state.intentRequireKeywords;
   if (state.intentEnabled) {
@@ -700,7 +661,6 @@ async function submitProduct({
     return;
   }
 
-  // Flush pending value-prop input
   const pendingValueProps = flushers.valueProp?.flush();
   if (pendingValueProps === null || pendingValueProps === undefined) {
     set('error', 'Corrige les propositions de valeur invalides avant de continuer.');
@@ -711,7 +671,6 @@ async function submitProduct({
     return;
   }
 
-  // Flush pending CTA input
   const pendingCtas = flushers.cta?.flush();
   if (pendingCtas === null || pendingCtas === undefined) {
     set('error', 'Corrige les CTA invalides avant de continuer.');
@@ -739,11 +698,6 @@ async function submitProduct({
       body.id = trimmedId;
     }
 
-    // In edit mode, blank inputs mean "keep existing" for text-like fields
-    // whose UX advertises this behavior (or where intent is ambiguous —
-    // default to omit-when-blank to avoid wiping stored values).
-    // The X query is only persisted when the X source is enabled; disabling X
-    // is an explicit user action that nulls the column.
     if (state.xEnabled) {
       const trimmedXQuery = state.xQuery.trim();
       if (trimmedXQuery) {
@@ -751,41 +705,25 @@ async function submitProduct({
       } else if (!isEdit) {
         body.x_query = null;
       }
-      // edit mode + blank: omit to preserve existing value
     } else {
       body.x_query = null;
     }
 
-    // Subreddits are tied to the Reddit toggle: required when enabled
-    // (validated above), explicitly cleared when disabled.
     body.reddit_subreddits = state.redditEnabled && pendingSubs.length > 0 ? pendingSubs : null;
 
-    // HN keywords mirror the Reddit subreddit rule: when HN is enabled, send
-    // the current array (never null — validated above); when disabled,
-    // explicitly clear with null.
     body.hn_keywords = state.hnEnabled ? pendingHnKeywords : null;
 
-    // YouTube keywords follow the same toggle rule.
     body.youtube_keywords = state.youtubeEnabled ? pendingYoutubeKeywords : null;
 
-    // Mention keywords have no toggle: the chip count is the switch (empty =
-    // mention pass off). Always sent so clearing chips clears the column.
     body.mention_keywords = pendingMentionKeywords.length > 0 ? pendingMentionKeywords : null;
 
-    // Custom triage categories: empty = default taxonomy (null resets it).
     body.triage_categories =
       pendingTriageCategories.length > 0 ? pendingTriageCategories : null;
 
-    // Alert threshold: null = backend default (80). Always sent so clearing
-    // the field restores the default.
     body.alert_threshold = alertThresholdValue;
 
-    // Intent keywords: when enabled, send the current array (validated above);
-    // when disabled, explicitly clear with null.
     body.intent_keywords = state.intentEnabled ? pendingIntentKeywords : null;
 
-    // Boolean refinement lists travel with the intent toggle. Empty arrays are
-    // sent as null so the backend stores "no filter" rather than "[]".
     body.intent_exclude_keywords =
       state.intentEnabled && pendingIntentExclude.length > 0 ? pendingIntentExclude : null;
     body.intent_require_keywords =
@@ -797,9 +735,6 @@ async function submitProduct({
     } else if (!isEdit) {
       body.discord_webhook = null;
     }
-    // edit mode + blank: omit to preserve the stored webhook (the placeholder
-    // explicitly says "laisser vide pour conserver"). There is no
-    // explicit "clear webhook" action today.
 
     const trimmedPrompt = state.aiPromptOverride.trim();
     if (trimmedPrompt) {
@@ -807,7 +742,6 @@ async function submitProduct({
     } else if (!isEdit) {
       body.ai_prompt_override = null;
     }
-    // edit mode + blank: omit to preserve existing prompt override
 
     const trimmedDescription = state.productDescription.trim();
     if (trimmedDescription) {
@@ -815,16 +749,13 @@ async function submitProduct({
     } else if (!isEdit) {
       body.product_description = null;
     }
-    // edit mode + blank: omit to preserve existing description
 
     if (state.replyVoice !== null) {
       body.reply_voice = state.replyVoice;
     } else if (!isEdit) {
       body.reply_voice = null;
     }
-    // edit mode + null: omit to preserve existing voice
 
-    // Studio fields — same omit-when-blank semantics in edit mode.
     if (trimmedProductUrl) {
       body.product_url = trimmedProductUrl;
     } else if (!isEdit) {
@@ -844,9 +775,6 @@ async function submitProduct({
       body.target_audience = null;
     }
 
-    // Chip arrays: in edit mode, omit when empty to preserve existing
-    // (consistent with HN/intent which keep arrays tied to a toggle, but
-    // here we don't have a toggle, so the chip count is the source of truth).
     if (pendingValueProps.length > 0 || !isEdit) {
       body.value_props = pendingValueProps;
     }
@@ -878,7 +806,6 @@ async function submitProduct({
       set('error', data.message || `Erreur HTTP ${res.status}`);
       return;
     }
-    // Backend may return the product directly or under `product`
     const product: ProductRecord = data.product || data;
     if (isEdit) {
       toast.success(`Produit « ${product.name || trimmedName} » mis à jour.`);
@@ -906,7 +833,6 @@ interface SourcesSectionProps {
   youtubeRef: Ref<ChipInputHandle>;
 }
 
-/** "Sources" card: X (Twitter), Reddit (subreddit picker), Hacker News and YouTube. */
 function SourcesSection({ state, set, subredditRef, hnRef, youtubeRef }: SourcesSectionProps) {
   return (
     <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
@@ -915,7 +841,6 @@ function SourcesSection({ state, set, subredditRef, hnRef, youtubeRef }: Sources
         <p className="text-xs text-muted-foreground">Active au moins une source pour ce produit.</p>
       </div>
 
-      {/* X (Twitter) row */}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor="source-x-enabled" className="flex flex-col gap-0.5">
@@ -948,7 +873,6 @@ function SourcesSection({ state, set, subredditRef, hnRef, youtubeRef }: Sources
 
       <div className="border-t border-border" />
 
-      {/* Reddit row */}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor="source-reddit-enabled" className="flex flex-col gap-0.5">
@@ -979,7 +903,6 @@ function SourcesSection({ state, set, subredditRef, hnRef, youtubeRef }: Sources
 
       <div className="border-t border-border" />
 
-      {/* Hacker News row */}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor="source-hn-enabled" className="flex flex-col gap-0.5">
@@ -1023,7 +946,6 @@ function SourcesSection({ state, set, subredditRef, hnRef, youtubeRef }: Sources
 
       <div className="border-t border-border" />
 
-      {/* YouTube row */}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor="source-youtube-enabled" className="flex flex-col gap-0.5">
@@ -1074,10 +996,6 @@ interface VeilleSectionProps {
   triageCategoryRef: Ref<ChipInputHandle>;
 }
 
-/**
- * "Veille intelligente" card: per-item AI triage, real-time urgency alerts,
- * CRM lead bridge and brand-mention keywords.
- */
 function VeilleSection({ state, set, mentionRef, triageCategoryRef }: VeilleSectionProps) {
   return (
     <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
@@ -1088,7 +1006,6 @@ function VeilleSection({ state, set, mentionRef, triageCategoryRef }: VeilleSect
         </p>
       </div>
 
-      {/* Triage row */}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor="triage-enabled" className="flex flex-col gap-0.5">
@@ -1131,7 +1048,6 @@ function VeilleSection({ state, set, mentionRef, triageCategoryRef }: VeilleSect
 
       <div className="border-t border-border" />
 
-      {/* Alerts row */}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor="alert-enabled" className="flex flex-col gap-0.5">
@@ -1170,7 +1086,6 @@ function VeilleSection({ state, set, mentionRef, triageCategoryRef }: VeilleSect
 
       <div className="border-t border-border" />
 
-      {/* CRM leads row */}
       <div className="flex items-center justify-between gap-3">
         <Label htmlFor="crm-leads-enabled" className="flex flex-col gap-0.5">
           <span>Leads CRM automatiques</span>
@@ -1188,7 +1103,6 @@ function VeilleSection({ state, set, mentionRef, triageCategoryRef }: VeilleSect
 
       <div className="border-t border-border" />
 
-      {/* Mention keywords row */}
       <div className="space-y-2">
         <Label htmlFor="product-mention-keywords">Mots-clés de mention</Label>
         <ChipInput
@@ -1220,7 +1134,6 @@ interface IntentSectionProps {
   intentRequireRef: Ref<ChipInputHandle>;
 }
 
-/** "Détection d'intention" card: intent toggle + keywords + AI analysis context. */
 function IntentSection({
   state,
   set,
@@ -1330,7 +1243,6 @@ function IntentSection({
 
       <div className="border-t border-border" />
 
-      {/* AI analysis context — applies to lead analysis, independent of matching toggle */}
       <div className="space-y-3">
         <div className="space-y-2">
           <Label htmlFor="product-description">Description du produit (pour l'IA)</Label>
@@ -1395,7 +1307,6 @@ interface StudioSectionProps {
   ctaRef: Ref<ChipInputHandle>;
 }
 
-/** "Studio de contenu" card: URL, audience, value props, CTAs, voice & language. */
 function StudioSection({ state, set, valuePropRef, ctaRef }: StudioSectionProps) {
   return (
     <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
@@ -1566,19 +1477,13 @@ function ProductForm({
   onUpdated,
   onOpenChange,
 }: ProductFormProps) {
-  // Form state is seeded once from initialValues. The parent remounts this
-  // component via a `key` whenever the dialog opens or the edited product
-  // changes, so there is no need to mirror props into state with an effect.
   const [state, dispatch] = useReducer(formReducer, null, () =>
     buildInitialFormState(initialValues),
   );
   const set = <K extends keyof FormState>(field: K, value: FormState[K]) =>
     dispatch({ type: 'set', field, value } as FormAction);
 
-  // idTouched is only consulted inside handlers (never during render), so a ref
-  // avoids a needless re-render when the user first edits the id field.
   const idTouchedRef = useRef(Boolean(initialValues));
-  // Imperative flush handles let handleSubmit force-commit pending chip input.
   const subredditRef = useRef<SubredditPickerHandle>(null);
   const hnRef = useRef<ChipInputHandle>(null);
   const youtubeRef = useRef<ChipInputHandle>(null);
@@ -1628,7 +1533,6 @@ function ProductForm({
       <GenerateAllButton generating={generating} onClick={() => void generateAll()} />
 
       <div className="grid gap-x-6 gap-y-4 md:grid-cols-2 lg:grid-cols-3 md:items-start">
-      {/* Column 1 — identité et configuration */}
       <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="product-name">Nom</Label>
@@ -1692,12 +1596,10 @@ function ProductForm({
 
       </div>
 
-      {/* Column 2 — studio de contenu */}
       <div className="space-y-4">
       <StudioSection state={state} set={set} valuePropRef={valuePropRef} ctaRef={ctaRef} />
       </div>
 
-      {/* Column 3 — sources de collecte, veille intelligente et détection d'intention */}
       <div className="space-y-4">
       <SourcesSection
         state={state}
@@ -1775,8 +1677,6 @@ export function ProductCreateDialog({
               : 'Créez un produit pour isoler ses sources, son webhook Discord et son prompt IA.'}
           </DialogDescription>
         </DialogHeader>
-        {/* Remounting the form whenever the dialog opens or the edited product
-            changes resets all field state without a prop-sync effect. */}
         {open && (
           <ProductForm
             key={isEdit ? (initialValues?.id ?? 'edit') : 'create'}

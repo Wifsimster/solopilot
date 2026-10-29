@@ -32,10 +32,6 @@ interface ConfirmDialogProps {
   onConfirm: () => void | Promise<void>;
 }
 
-/**
- * Confirmation dialog that uses a bottom Drawer on mobile (vaul) and a centered
- * AlertDialog on desktop — both share the same accessible semantics.
- */
 export function ConfirmDialog({
   trigger,
   title,

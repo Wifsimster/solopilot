@@ -1,15 +1,3 @@
-/**
- * Comptabilité — micro-entreprise turnover tracking, thresholds and URSSAF.
- *
- * IMPORTANT — these are *estimates and reminders*, not authoritative figures.
- * Solopilot prepares and alerts; it does not télédéclare and does not replace an
- * accountant. Thresholds and rates are the published micro-entreprise values and
- * may change year to year — they are constants here, easy to update. See ADR-0017.
- *
- * Turnover (CA) is computed on encaissements: paid invoices (facturation) plus
- * manual `recette` ledger entries. The micro plafond is assessed on the calendar
- * year.
- */
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { getDb, DEFAULT_PRODUCT_ID, type LedgerRecord } from '../../db.js';
@@ -22,7 +10,6 @@ export type DeclarationPeriod = 'monthly' | 'quarterly';
 
 const ACTIVITY_TYPES: ActivityType[] = ['services_bnc', 'services_bic', 'vente'];
 
-// Published micro-entreprise values (EUR). Update when the law changes.
 const PLAFOND_CENTS: Record<ActivityType, number> = {
   services_bnc: 77_700_00,
   services_bic: 77_700_00,
@@ -33,11 +20,10 @@ const TVA_FRANCHISE_CENTS: Record<ActivityType, number> = {
   services_bic: 36_800_00,
   vente: 91_900_00,
 };
-// Social-contribution rates (basis points). Estimates — clearly flagged as such.
 const COTISATION_BPS: Record<ActivityType, number> = {
-  services_bnc: 2460, // 24.6%
-  services_bic: 2120, // 21.2%
-  vente: 1230, // 12.3%
+  services_bnc: 2460,
+  services_bic: 2120,
+  vente: 1230,
 };
 
 const KEY_ACTIVITY = 'COMPTA_ACTIVITY_TYPE';
@@ -69,19 +55,12 @@ export function setComptaConfig(
   if (config.declarationPeriod) setProductSetting(productId, KEY_PERIOD, config.declarationPeriod);
 }
 
-// --- Ledger ---
-
 export const ledgerCreateSchema = z.object({
   kind: z.enum(['recette', 'depense']),
   amount_cents: z.coerce.number().int().positive(),
   label: z.string().min(1),
   occurred_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  // ADR-0029: idempotency key (bank / store payout reference). Unique per
-  // product: a second write with the same reference is refused with the
-  // existing entry instead of creating a duplicate.
   external_ref: z.string().trim().min(1).max(128).optional(),
-  // ADR-0029: who wrote the entry, e.g. `agent:budget`. Informational; the
-  // authenticated token id is stored separately and cannot be spoofed.
   source: z
     .string()
     .regex(/^[a-z0-9][a-z0-9:._-]{0,63}$/, 'source: [a-z0-9:._-], 64 caractères max')
@@ -90,11 +69,9 @@ export const ledgerCreateSchema = z.object({
 export type LedgerCreateInput = z.infer<typeof ledgerCreateSchema>;
 
 export interface LedgerWriteMeta {
-  /** Id of the API token that authenticated the write (ADR-0029). */
   apiTokenId?: string | null;
 }
 
-/** Thrown when (product, external_ref) already exists; carries that entry. */
 export class LedgerDuplicateError extends Error {
   constructor(public readonly existing: LedgerRecord) {
     super(`Écriture déjà enregistrée (external_ref ${existing.external_ref ?? ''})`);
@@ -148,7 +125,6 @@ export function addLedgerEntry(
         meta.apiTokenId ?? null,
       );
   } catch (err) {
-    // The partial UNIQUE index is the source of truth (no check-then-insert race).
     if (externalRef && isUniqueViolation(err)) {
       const existing = findLedgerByExternalRef(productId, externalRef);
       if (existing) throw new LedgerDuplicateError(existing);
@@ -185,12 +161,9 @@ function sumLedgerRecettesCents(productId: string, from: string, to: string): nu
   return row.total;
 }
 
-/** Encaissed turnover for [from, to): paid invoices + manual recettes. */
 export function caForPeriodCents(productId: string, from: string, to: string): number {
   return sumPaidInvoicesCents(productId, from, to) + sumLedgerRecettesCents(productId, from, to);
 }
-
-// --- Status & declaration ---
 
 export interface ComptaStatus {
   year: number;
@@ -242,7 +215,6 @@ export interface UrssafDeclaration {
   isEstimate: true;
 }
 
-/** Declaration for the period that just closed before `today`. */
 export function urssafDeclaration(
   productId: string = DEFAULT_PRODUCT_ID,
   today: string = getTodayDateParis(),
@@ -250,17 +222,16 @@ export function urssafDeclaration(
   const activityType = getActivityType(productId);
   const period = getDeclarationPeriod(productId);
   const year = Number(today.slice(0, 4));
-  const month = Number(today.slice(5, 7)); // 1-12
+  const month = Number(today.slice(5, 7));
 
   let from: string;
   let to: string;
   let periodLabel: string;
   if (period === 'quarterly') {
-    // Previous quarter relative to current month.
-    const currentQuarter = Math.floor((month - 1) / 3); // 0-3
+    const currentQuarter = Math.floor((month - 1) / 3);
     const prevQuarter = currentQuarter - 1;
     const qYear = prevQuarter < 0 ? year - 1 : year;
-    const q = ((prevQuarter % 4) + 4) % 4; // 0-3
+    const q = ((prevQuarter % 4) + 4) % 4;
     const startMonth = q * 3 + 1;
     from = `${qYear}-${String(startMonth).padStart(2, '0')}-01`;
     to = q === 3 ? `${qYear + 1}-01-01` : `${qYear}-${String(startMonth + 3).padStart(2, '0')}-01`;
@@ -285,8 +256,6 @@ export function urssafDeclaration(
     isEstimate: true,
   };
 }
-
-// --- French renderers (estimates, for the brief / notifications) ---
 
 const euros = (cents: number): string => `${(cents / 100).toFixed(2)} €`;
 

@@ -57,7 +57,6 @@ const TABS: TabConfig[] = [
 
 const SOURCE_LABELS: Record<string, string> = { x: 'X', reddit: 'Reddit', hn: 'HN', youtube: 'YouTube' };
 
-/** Human labels for the default AI triage taxonomy; custom slugs fall through prettified. */
 const CATEGORY_LABELS: Record<string, string> = {
   bug: 'Bug',
   temoignage: 'Témoignage',
@@ -215,7 +214,6 @@ function MentionCard({
   );
 }
 
-/** Single-select chip rows to filter the active tab by category / source / urgency. */
 function MentionFilterBar({
   categories,
   activeCategory,
@@ -322,8 +320,6 @@ export function MentionsPage() {
   const [urgentOnly, setUrgentOnly] = useState(false);
   const [mentionOnly, setMentionOnly] = useState(false);
 
-  // One request per status so tab badges show counts; the "new" tab is served
-  // urgency-first (that is the work queue), the others chronologically.
   const newReq = useApi<VeilleItem[]>(
     `/api/veille/items?status=new&sort=urgency&limit=${FETCH_LIMIT}`,
     { productId: selectedProductId },
@@ -422,8 +418,6 @@ export function MentionsPage() {
         value={activeTab}
         onValueChange={(v) => {
           setActiveTab(v as VeilleItemStatus);
-          // Filters are computed for the active tab only; reset so the new tab
-          // never opens on an empty filtered list with no visible chip.
           setCategoryFilter('all');
           setUrgentOnly(false);
           setMentionOnly(false);

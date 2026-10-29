@@ -1,11 +1,3 @@
-/**
- * GitHub Issues connector (write) — Radar produit, ADR-0026.
- *
- * Uses ONLY `GITHUB_ISSUES_TOKEN` (fine-grained, Issues: read & write on the
- * product repos). The GitHub Models inference token (`GITHUB_TOKEN`) is never
- * used here. When the token is absent, `isConfigured()` is false and callers
- * must stay in dry-run.
- */
 import type { Config } from '../config.js';
 import { logger } from '../logger.js';
 import type { GithubIssuesConnector } from '../workflow/types.js';
@@ -29,7 +21,6 @@ export class GithubIssuesError extends Error {
   }
 }
 
-/** Token resolution: env/config only — never the DB, never GITHUB_TOKEN. */
 export function resolveIssuesToken(config: Pick<Config, 'GITHUB_ISSUES_TOKEN'>): string | undefined {
   const token = config.GITHUB_ISSUES_TOKEN?.trim();
   return token ? token : undefined;
@@ -86,7 +77,6 @@ export function createGithubIssuesConnector(
 ): GithubIssuesConnector {
   const token = resolveIssuesToken(config);
 
-  /** Ensures the `veille` label exists. Returns false when it can't (no permission...). */
   async function ensureLabel(owner: string, repo: string): Promise<boolean> {
     if (!token) return false;
     try {
@@ -98,7 +88,6 @@ export function createGithubIssuesConnector(
       if (existing.ok) return true;
       if (existing.status !== 404) return false;
       const created = await call(token, 'POST', `${repoPath(owner, repo)}/labels`, RADAR_LABEL);
-      // 422 = created concurrently (already_exists) — usable either way.
       return created.ok || created.status === 422;
     } catch (err) {
       logger.warn('GitHub label check failed, issue will be created without label', {

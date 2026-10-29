@@ -8,7 +8,6 @@ import { logger } from './logger.js';
 
 export const DEFAULT_ALERT_THRESHOLD = 80;
 
-// Discord allows at most 10 embeds per message; one message per batch.
 const EMBEDS_PER_MESSAGE = 10;
 const EXCERPT_MAX_CHARS = 300;
 
@@ -21,9 +20,7 @@ const SOURCE_LABELS: Record<string, string> = {
 
 export interface AlertResult {
   alerted: number;
-  /** Delivery channel used (or that would have been used) for this product. */
   channel?: 'consolidated' | 'product';
-  /** Set when alerts were not attempted; pending items stay un-stamped. */
   skipped?: 'no_webhook';
 }
 
@@ -37,7 +34,6 @@ interface AlertItemRow {
   triage_urgency: number;
 }
 
-/** Product webhook > per-product setting > global setting > env — same order as the digest. */
 export function resolveDiscordWebhook(config: Config, productId: string): string | undefined {
   const product = getProduct(productId);
   if (product?.discord_webhook) return product.discord_webhook;
@@ -46,11 +42,6 @@ export function resolveDiscordWebhook(config: Config, productId: string): string
   return getSetting('DISCORD_WEBHOOK_URL') ?? config.DISCORD_WEBHOOK_URL;
 }
 
-/**
- * Where urgent alerts go. Consolidated mode (read on every call, no restart):
- * the veille webhook only, same resolution as the consolidated digest, no
- * fallback. Per-product mode: resolveDiscordWebhook.
- */
 function resolveAlertTarget(
   config: Config,
   productId: string,
@@ -62,10 +53,6 @@ function resolveAlertTarget(
   return { channel: 'product', webhookUrl: resolveDiscordWebhook(config, productId) };
 }
 
-/**
- * `productName` is set in consolidated mode only, where alerts of every product
- * share one channel; per-product embeds stay unchanged.
- */
 function buildAlertEmbed(item: AlertItemRow, productName?: string): DiscordEmbed {
   const excerpt =
     item.text.length > EXCERPT_MAX_CHARS ? `${item.text.slice(0, EXCERPT_MAX_CHARS)}…` : item.text;
@@ -84,7 +71,7 @@ function buildAlertEmbed(item: AlertItemRow, productName?: string): DiscordEmbed
       : `🚨 Mention urgente (${item.triage_urgency}/100)`,
     ...(item.url ? { url: item.url } : {}),
     description: lines.join('\n'),
-    color: 0xed4245, // Discord red
+    color: 0xed4245,
     timestamp: new Date().toISOString(),
   };
 }
@@ -97,19 +84,6 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-/**
- * Sends an immediate Discord alert for every triaged item whose urgency reaches
- * the product's threshold and that has not been alerted yet (Stalkr-style
- * "mentions you can't afford to miss", without waiting for the 07:30 digest).
- *
- * Idempotent: `alerted_at` is only stamped after a successful Discord send, so
- * a failed webhook call leaves items pending for the next collect run, and
- * re-runs never double-ping. Opt-in per product (`alert_enabled`); requires
- * triage (#109) to have scored the items.
- *
- * VEILLE_DIGEST_MODE=consolidated routes alerts to VEILLE_DISCORD_WEBHOOK_URL
- * (unset → skipped, no fallback) with the product name in each embed.
- */
 export async function sendPendingAlerts(config: Config, productId: string): Promise<AlertResult> {
   const productRecord = getProduct(productId);
   if (!productRecord) return { alerted: 0 };
@@ -156,7 +130,6 @@ export async function sendPendingAlerts(config: Config, productId: string): Prom
       batch.map((row) => buildAlertEmbed(row, productName)),
     );
     if (!result.success) {
-      // Leave alerted_at NULL — the next collect run retries these items.
       logger.warn('Urgency alert send failed', {
         productId,
         items: batch.length,

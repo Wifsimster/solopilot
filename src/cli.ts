@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-/**
- * Solopilot CLI — drive the Solopilot HTTP API from the command line.
- *
- * Designed for AI agents and scripting: generic HTTP verbs give full API
- * coverage, plus convenience shortcuts for common endpoints. Uses only the
- * global fetch and node builtins (no extra dependencies, no project logger).
- *
- *   solopilot <command> [args] [flags]
- *   solopilot cockpit
- *   solopilot get /api/runs --query limit=5
- *   solopilot post crm/contacts '{"name":"Ada"}'
- */
 import process from 'node:process';
 
 const DEFAULT_URL = 'http://localhost:3000';
@@ -24,7 +12,6 @@ interface ParsedArgs {
   raw: boolean;
 }
 
-/** A convenience command maps a single token to a fixed method + path. */
 interface Shortcut {
   method: string;
   path: string;
@@ -51,7 +38,6 @@ const SHORTCUTS: Record<string, Shortcut> = {
 
 const VERBS = new Set(['get', 'post', 'put', 'patch', 'delete']);
 
-/** Embedded endpoint catalog, grouped by module, for the `endpoints` command. */
 const ENDPOINT_CATALOG: { group: string; lines: string[] }[] = [
   {
     group: 'System',
@@ -226,7 +212,6 @@ Examples:
   echo '{"stage":"won"}' | solopilot post crm/deals/42/stage -
 `;
 
-/** Manual argv parser: pulls known flags out, leaves the rest as positionals. */
 function parseArgs(argv: string[]): ParsedArgs {
   const result: ParsedArgs = { positionals: [], query: [], raw: false };
   const takesValue = new Set(['--url', '--password', '--product', '--query']);
@@ -236,14 +221,12 @@ function parseArgs(argv: string[]): ParsedArgs {
     let flag = token;
     let inlineValue: string | undefined;
 
-    // Support --flag=value form.
     if (token.startsWith('--') && token.includes('=')) {
       const eq = token.indexOf('=');
       flag = token.slice(0, eq);
       inlineValue = token.slice(eq + 1);
     }
 
-    // Normalize the -q alias to --query.
     if (flag === '-q') flag = '--query';
 
     if (flag === '--raw') {
@@ -277,14 +260,12 @@ function parseArgs(argv: string[]): ParsedArgs {
   return result;
 }
 
-/** Normalize a user path into a full API path. */
 function normalizePath(path: string): string {
   if (path.startsWith('/')) return path;
   if (path.startsWith('api/')) return `/${path}`;
   return `/api/${path}`;
 }
 
-/** Read the entire stdin stream as a UTF-8 string. */
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
@@ -293,7 +274,6 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-/** Pretty-print or pass through a body depending on content type and --raw. */
 function formatBody(body: string, contentType: string | null, raw: boolean): string {
   if (raw) return body;
   if (contentType && contentType.includes('application/json')) {
@@ -306,7 +286,6 @@ function formatBody(body: string, contentType: string | null, raw: boolean): str
   return body;
 }
 
-/** Build the full URL with merged query params and optional product scope. */
 function buildUrl(base: string, path: string, args: ParsedArgs): string {
   const target = new URL(base);
   target.pathname = normalizePath(path);
@@ -315,7 +294,6 @@ function buildUrl(base: string, path: string, args: ParsedArgs): string {
     target.searchParams.append(key, value);
   }
 
-  // Apply product scope unless the caller already set productId via --query.
   const product = args.product ?? process.env.SOLOPILOT_PRODUCT_ID;
   if (product && !target.searchParams.has('productId')) {
     target.searchParams.set('productId', product);
@@ -324,7 +302,6 @@ function buildUrl(base: string, path: string, args: ParsedArgs): string {
   return target.toString();
 }
 
-/** Perform the HTTP request and handle output + exit codes. */
 async function request(
   method: string,
   path: string,
@@ -337,8 +314,6 @@ async function request(
   const headers: Record<string, string> = {};
   const password =
     args.password ?? process.env.SOLOPILOT_ADMIN_PASSWORD ?? process.env.ADMIN_PASSWORD;
-  // API token (ADR-0029) takes precedence over the admin password. Behind a
-  // forward-auth proxy that owns `Authorization`, the token goes in X-Api-Token.
   const token = process.env.SOLOPILOT_TOKEN;
   const proxyBasic = process.env.SOLOPILOT_PROXY_BASIC;
   if (token && proxyBasic) {
@@ -375,7 +350,6 @@ async function request(
   return process.exit(1);
 }
 
-/** Resolve and validate a JSON body positional (or stdin for "-"). */
 async function resolveBody(raw: string | undefined): Promise<string | undefined> {
   if (raw === undefined) return undefined;
   const text = raw === '-' ? await readStdin() : raw;

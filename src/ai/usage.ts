@@ -1,11 +1,3 @@
-/**
- * AI usage ledger + monthly budget guard (ADR-0027).
- *
- * Every call is recorded in `ai_usage` with its estimated cost. On the
- * Anthropic provider the month-to-date spend is compared to
- * `AI_MONTHLY_BUDGET_USD`: a one-time warning at 80 % (logs + Discord + UI) and,
- * at 100 %, non-essential tasks are refused until the next Paris month.
- */
 import type { Config } from '../config.js';
 import { getDb } from '../db.js';
 import { parisDateOf } from '../date-utils.js';
@@ -25,7 +17,6 @@ const monthFormatter = new Intl.DateTimeFormat('en-CA', {
   month: '2-digit',
 });
 
-/** Europe/Paris `YYYY-MM` of a timestamp. */
 export function parisMonth(now: number = Date.now()): string {
   const parts = monthFormatter.formatToParts(new Date(now));
   const year = parts.find((p) => p.type === 'year')!.value;
@@ -79,10 +70,6 @@ const NON_ESSENTIAL_LABELS = Object.values(AI_TASKS)
   .filter((t) => !t.essential)
   .map((t) => t.label);
 
-/**
- * Refuses a non-essential task once the month's Anthropic budget is spent.
- * GitHub Models is free: never blocked.
- */
 export function assertWithinBudget(
   config: Config,
   provider: AiProvider,
@@ -117,10 +104,6 @@ export interface BudgetAlertDeps {
   now?: number;
 }
 
-/**
- * After a recorded call: fire the 80 % / 100 % alert once per month. Returns
- * the level that was newly alerted (tests), or null.
- */
 export async function checkBudgetAlerts(
   config: Config,
   deps: BudgetAlertDeps = {},
@@ -188,12 +171,10 @@ export interface AiBudgetStatus {
   budgetUsd: number;
   spentUsd: number;
   level: BudgetLevel;
-  /** True when the budget guard applies (Anthropic provider). */
   enforced: boolean;
   byTask: AiUsageTaskRow[];
 }
 
-/** Month-to-date summary for the Settings page. Never exposes any key. */
 export function getAiBudgetStatus(config: Config, now?: number): AiBudgetStatus {
   const provider = resolveAiProvider(config);
   const month = parisMonth(now);

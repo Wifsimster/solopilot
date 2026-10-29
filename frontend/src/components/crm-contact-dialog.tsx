@@ -23,9 +23,6 @@ import { withProductId } from '@/lib/product-context-hooks';
 
 type Status = 'lead' | 'active' | 'inactive';
 
-/**
- * Manual contact creation dialog (ADR-0018). Posts to /api/crm/contacts.
- */
 export function CrmContactDialog({
   productId,
   onCreated,

@@ -1,5 +1,3 @@
-// Scoped API tokens + ledger idempotency (ADR-0029). Throwaway SQLite DB, the
-// real Hono app via createApp() + app.request(): no port, no network.
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
@@ -47,8 +45,6 @@ const GG1 = {
   source: 'agent:budget',
 };
 
-// --- Hashing & storage ---
-
 test('token secret format and SHA-256 hashing', () => {
   const secret = tokens.generateTokenSecret();
   assert.match(secret, /^sp_[A-Za-z0-9_-]{43}$/);
@@ -86,8 +82,6 @@ test('token creation validates scopes and products, admin only', async () => {
   assert.equal(res.status, 401);
 });
 
-// --- Scopes: allowed / denied routes ---
-
 test('write token restricted to toko: allowed route works, everything else is 403', async () => {
   const { token, secret } = await createToken({
     name: 'budget-agent',
@@ -109,7 +103,6 @@ test('write token restricted to toko: allowed route works, everything else is 40
   res = await app.request('/api/comptabilite?productId=toko', { headers: h });
   assert.equal(res.status, 200);
 
-  // Other product, including the implicit default product → 403.
   res = await app.request('/api/comptabilite/ledger?productId=autre', json(h, { ...GG1, external_ref: 'Z1' }));
   assert.equal(res.status, 403);
   res = await app.request('/api/comptabilite/ledger', { headers: h });
@@ -117,7 +110,6 @@ test('write token restricted to toko: allowed route works, everything else is 40
   res = await app.request('/api/comptabilite/ledger?activity=autre', { headers: h });
   assert.equal(res.status, 403);
 
-  // Default deny: routes outside the token's scopes.
   for (const [method, url] of [
     ['GET', '/api/tokens'],
     ['POST', '/api/tokens'],
@@ -175,14 +167,11 @@ test('X-Api-Token header is accepted (Authorization left to a forward-auth proxy
 test('admin Basic auth still reaches everything; no auth is still 401', async () => {
   assert.equal((await app.request('/api/comptabilite/ledger?productId=toko', { headers: ADMIN })).status, 200);
   assert.equal((await app.request('/api/comptabilite/ledger?productId=toko')).status, 401);
-  // A non-sp_ bearer is not a token: Basic auth applies and rejects it.
   assert.equal(
     (await app.request('/api/comptabilite/ledger', { headers: { Authorization: 'Bearer abc' } })).status,
     401,
   );
 });
-
-// --- Invalid, revoked, rate limit ---
 
 test('unknown and malformed tokens are 401', async () => {
   const fake = tokens.generateTokenSecret();
@@ -211,7 +200,6 @@ test('repeated failures lock the client out (429), even with a valid token', asy
   const locked = await app.request('/api/comptabilite?productId=toko', { headers: bearer(secret) });
   assert.equal(locked.status, 429);
   assert.ok(locked.headers.get('retry-after'));
-  // Admin Basic auth is not affected by the token lockout.
   assert.equal((await app.request('/api/comptabilite?productId=toko', { headers: ADMIN })).status, 200);
   tokens.resetAuthRateLimit();
   assert.equal((await app.request('/api/comptabilite?productId=toko', { headers: bearer(secret) })).status, 200);
@@ -246,8 +234,6 @@ test('audit log records who/what/when without bodies; last_used_at is updated', 
   assert.ok(row.last_used_at > 0);
 });
 
-// --- Ledger idempotency ---
-
 test('same (product, external_ref) → 409 with the existing entry, nothing written', async () => {
   const body = { ...GG1, external_ref: 'GG104IQZ35', amount_cents: 356, occurred_on: '2026-09-15' };
   const first = await app.request('/api/comptabilite/ledger?productId=toko', json(ADMIN, body));
@@ -262,10 +248,8 @@ test('same (product, external_ref) → 409 with the existing entry, nothing writ
   assert.equal(payload.entry.amount_cents, 356);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM ledger').get().n, before);
 
-  // Same reference on another product is a different entry.
   const other = await app.request('/api/comptabilite/ledger?productId=autre', json(ADMIN, body));
   assert.equal(other.status, 201);
-  // No external_ref: no idempotency, duplicates allowed as before.
   const { external_ref: _omit, ...noRef } = body;
   assert.equal((await app.request('/api/comptabilite/ledger?productId=toko', json(ADMIN, noRef))).status, 201);
   assert.equal((await app.request('/api/comptabilite/ledger?productId=toko', json(ADMIN, noRef))).status, 201);
@@ -283,8 +267,6 @@ test('ledger: unknown product is 404, bad source/since are 400, since filters', 
   assert.ok(rows.length > 0);
   assert.ok(rows.every((r) => r.occurred_on >= '2026-09-01'));
 });
-
-// --- Full-access scope `*` (decision of 2026-10-10) ---
 
 test('full-access scope: alone, every product; combinations are 400', async () => {
   let res = await app.request('/api/tokens', json(ADMIN, { name: 'x', scopes: ['*', 'comptabilite:read'] }));
@@ -332,7 +314,6 @@ test('full-access token reaches every route, method and product like the admin',
   assert.equal((await app.request('/api/settings', { headers: h })).status, 200);
   assert.equal((await app.request('/api/config', { headers: h })).status, 200);
 
-  // Ledger write on any product, stamped with the token id.
   const res = await app.request(
     '/api/comptabilite/ledger?productId=autre',
     json(h, { ...GG1, external_ref: 'FULL-1', source: 'agent:openclaw' }),
@@ -340,12 +321,10 @@ test('full-access token reaches every route, method and product like the admin',
   assert.equal(res.status, 201);
   assert.equal((await res.json()).api_token_id, token.id);
 
-  // Products: the admin view (all products, full objects), not the projection.
   const products = await (await app.request('/api/products', { headers: h })).json();
   const adminProducts = await (await app.request('/api/products', { headers: ADMIN })).json();
   assert.deepEqual(products, adminProducts);
 
-  // X-Api-Token works too; audit still records every call.
   assert.equal((await app.request('/api/settings', { headers: { 'X-Api-Token': secret } })).status, 200);
   const audit = await (await app.request(`/api/tokens/audit?tokenId=${token.id}&limit=500`, { headers: ADMIN })).json();
   assert.ok(audit.length >= cases.length);
@@ -371,7 +350,6 @@ test('full-access token manages tokens but never reads a secret or hash', async 
   const rows = db.prepare('SELECT * FROM api_tokens WHERE id IN (?, ?)').all(full.id, child.id);
   assert.ok(rows.every((r) => !JSON.stringify(r).includes(secret.slice(3)) && !JSON.stringify(r).includes(childSecret.slice(3))));
 
-  // The child stays scoped: no settings.
   assert.equal((await app.request('/api/settings', { headers: bearer(childSecret) })).status, 403);
   assert.equal((await app.request(`/api/tokens/${child.id}`, { method: 'DELETE', headers: h })).status, 200);
   assert.equal((await app.request('/api/comptabilite?productId=toko', { headers: bearer(childSecret) })).status, 401);

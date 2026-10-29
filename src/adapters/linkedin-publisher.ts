@@ -11,51 +11,37 @@ import {
 } from '../ports.js';
 import { logger } from '../logger.js';
 
-// ---------------------------------------------------------------------------
-// LinkedIn DOM drifts frequently (class names are hashed, labels are localized).
-// This is THE ONE PLACE to fix selectors when publishing breaks. Prefer the
-// role-based locators; the CSS fallbacks exist only as a safety net.
-// The only French in this file lives in these matched UI strings.
-// ---------------------------------------------------------------------------
 const SELECTORS = {
-  // The "Start a post" trigger on the feed that opens the composer dialog.
   startPostRole: /Commencer un post|Start a post|Créer un post|Create a post/i,
   startPostFallbacks: [
     'button.share-box-feed-entry__trigger',
     '[data-control-name="share_to_followers"]',
     '.share-box-feed-entry__top-bar button',
   ],
-  // The composer rich-text editor (contenteditable) inside the share dialog.
   editorFallbacks: [
     '.share-creation-state__msg-form div[role="textbox"]',
     'div.ql-editor[contenteditable="true"]',
     'div[role="textbox"][contenteditable="true"]',
   ],
-  // The final "Post" button in the composer footer.
   postButtonRole: /^Publier$|^Post$/i,
   postButtonFallbacks: [
     '.share-actions__primary-action',
     'button.share-actions__primary-action',
   ],
-  // The composer dialog container; used to detect open/close.
   dialogFallbacks: ['div[role="dialog"]', '.share-box', '.share-creation-state'],
-  // Logged-in markers on the feed.
   loggedInFallbacks: ['#global-nav', '.global-nav__me', '[data-control-name]'],
 } as const;
 
-// Explicit timeouts (ms). Kept generous because the feed + composer can be slow.
 const NAV_TIMEOUT = 30_000;
 const ACTION_TIMEOUT = 15_000;
 const PUBLISH_CONFIRM_TIMEOUT = 30_000;
 
-// Realistic desktop Chrome UA so the fingerprint stays consistent with a human.
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 const FEED_URL = 'https://www.linkedin.com/feed/';
 
-/** Minimal structural type for the chromium runtime we dynamically import. */
 interface ChromiumLike {
   launch(options: {
     headless: boolean;
@@ -94,7 +80,6 @@ export class LinkedInPublisher implements Publisher {
       }
       return 'expired';
     } catch (error) {
-      // checkSession must never throw; treat any failure as "needs re-auth".
       logger.warn('LinkedIn checkSession failed', { error: errMsg(error) });
       return 'expired';
     } finally {
@@ -115,7 +100,6 @@ export class LinkedInPublisher implements Publisher {
       await page.goto(FEED_URL, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
       await this.sleep(this.jitter(600, 1500));
 
-      // Detect login/checkpoint state before touching the composer.
       if (this.isCheckpointUrl(page.url()) || (await this.isCheckpointVisible(page))) {
         throw new PublishError(
           'CHECKPOINT',
@@ -126,7 +110,6 @@ export class LinkedInPublisher implements Publisher {
         throw new PublishError('SESSION_EXPIRED', 'LinkedIn session is no longer logged in.');
       }
 
-      // Capture the voyager share response (best source of the post urn/id).
       const sharePromise = this.captureShareResponse(page);
 
       await this.openComposer(page);
@@ -138,12 +121,8 @@ export class LinkedInPublisher implements Publisher {
 
       await this.clickPost(page);
 
-      // Confirm success via response and/or dialog close — never a fixed sleep.
       const externalId = await this.confirmPublished(page, sharePromise);
 
-      // The precise permalink is not reliably exposed by the composer flow.
-      // When we parse a urn/activity id from the share API we build a permalink;
-      // otherwise we fall back to the feed URL. This is a documented limitation.
       const url = externalId
         ? `https://www.linkedin.com/feed/update/${externalId}/`
         : FEED_URL;
@@ -167,13 +146,7 @@ export class LinkedInPublisher implements Publisher {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Browser lifecycle
-  // -------------------------------------------------------------------------
-
   private async launch(): Promise<{ browser: Browser; context: BrowserContext }> {
-    // Dynamic import so the module can load in environments without playwright
-    // and so we never pay the cost at module init.
     const mod = (await import('playwright-core')) as unknown as { chromium: ChromiumLike };
     const chromium = mod.chromium;
 
@@ -200,7 +173,6 @@ export class LinkedInPublisher implements Publisher {
     context.setDefaultTimeout(ACTION_TIMEOUT);
     context.setDefaultNavigationTimeout(NAV_TIMEOUT);
 
-    // Mask the automation flag so navigator.webdriver reads as undefined.
     await context.addInitScript(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     });
@@ -227,10 +199,6 @@ export class LinkedInPublisher implements Publisher {
       logger.warn('LinkedIn browser close failed', { error: errMsg(error) });
     }
   }
-
-  // -------------------------------------------------------------------------
-  // Composer flow
-  // -------------------------------------------------------------------------
 
   private async openComposer(page: Page): Promise<void> {
     const roleTrigger = page.getByRole('button', { name: SELECTORS.startPostRole });
@@ -266,7 +234,6 @@ export class LinkedInPublisher implements Publisher {
     if (!button) {
       throw new PublishError('SELECTOR_DRIFT', 'Could not find the "Post" button.');
     }
-    // Wait until enabled (LinkedIn disables it until the editor has content).
     const deadline = Date.now() + ACTION_TIMEOUT;
     while (Date.now() < deadline) {
       if (await button.isEnabled().catch(() => false)) break;
@@ -275,11 +242,6 @@ export class LinkedInPublisher implements Publisher {
     await button.click({ timeout: ACTION_TIMEOUT });
   }
 
-  /**
-   * Confirms the post went live. Prefers the captured voyager share response
-   * (which also yields the post urn) and/or the composer dialog closing.
-   * Returns the parsed external id when available.
-   */
   private async confirmPublished(
     page: Page,
     sharePromise: Promise<string | undefined>,
@@ -287,7 +249,6 @@ export class LinkedInPublisher implements Publisher {
     const dialogClosed = this.waitForDialogHidden(page).then(() => 'dialog' as const);
     const shareDone = sharePromise.then((id) => ({ kind: 'share' as const, id }));
 
-    // Whichever signal arrives first within the window counts as success.
     const result = await Promise.race([
       shareDone,
       dialogClosed,
@@ -301,8 +262,6 @@ export class LinkedInPublisher implements Publisher {
       );
     }
 
-    // Give the share response a brief chance to resolve so we can grab the id
-    // even when the dialog closed first.
     const id =
       typeof result === 'object' && result.kind === 'share'
         ? result.id
@@ -321,13 +280,8 @@ export class LinkedInPublisher implements Publisher {
         return;
       }
     }
-    // No dialog currently visible — treat as already closed.
   }
 
-  /**
-   * Listens for the voyager share API call and tries to extract the post urn.
-   * Resolves to the external id (e.g. urn:li:activity:...) or undefined.
-   */
   private captureShareResponse(page: Page): Promise<string | undefined> {
     return page
       .waitForResponse(
@@ -358,15 +312,10 @@ export class LinkedInPublisher implements Publisher {
       .catch(() => undefined);
   }
 
-  /** Extracts an activity/share/ugcPost urn from an arbitrary string blob. */
   private parseUrn(blob: string): string | undefined {
     const match = blob.match(/urn:li:(?:activity|share|ugcPost|fsd_update):[0-9A-Za-z_-]+/);
     return match ? match[0] : undefined;
   }
-
-  // -------------------------------------------------------------------------
-  // State detection
-  // -------------------------------------------------------------------------
 
   private isAuthWallUrl(url: string): boolean {
     return /\/login|\/authwall|\/checkpoint/i.test(url);
@@ -409,11 +358,6 @@ export class LinkedInPublisher implements Publisher {
     return false;
   }
 
-  // -------------------------------------------------------------------------
-  // Human-paced helpers
-  // -------------------------------------------------------------------------
-
-  /** Types text char-by-char with jittered delays and occasional pauses. */
   private async humanType(page: Page, locator: Locator, text: string): Promise<void> {
     await locator.click({ timeout: ACTION_TIMEOUT });
     await this.sleep(this.jitter(150, 500));
@@ -426,14 +370,12 @@ export class LinkedInPublisher implements Publisher {
       } else {
         await page.keyboard.type(char, { delay });
       }
-      // Occasional longer human pause (e.g. thinking / after punctuation).
       if (Math.random() < 0.04 || char === '.' || char === '\n') {
         await this.sleep(this.jitter(250, 800));
       }
     }
   }
 
-  /** Returns the first locator that becomes visible, or undefined. */
   private async firstVisible(
     _page: Page,
     locators: Locator[],
@@ -457,10 +399,6 @@ export class LinkedInPublisher implements Publisher {
   private jitter(min: number, max: number): number {
     return Math.floor(min + Math.random() * (max - min));
   }
-
-  // -------------------------------------------------------------------------
-  // Error classification
-  // -------------------------------------------------------------------------
 
   private toPublishError(error: unknown): PublishError {
     if (error instanceof PublishError) return error;

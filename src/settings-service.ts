@@ -1,16 +1,11 @@
 import { getDb, type SettingRecord, type ProductSettingRecord } from './db.js';
 
 const EDITABLE_KEYS = [
-  // AI model/effort per class (ADR-0027). Validated by src/ai/settings.ts;
-  // an empty value deletes the override (back to env, then code default).
   'AI_MODEL',
   'AI_MODEL_FAST',
   'AI_EFFORT',
   'AI_EFFORT_FAST',
-  // Weekly « Dépenses IA » recap on Discord ('true' | 'false', default on).
   'AI_WEEKLY_RECAP_ENABLED',
-  // AI provider endpoint (OpenAI-compatible). Default GitHub Models; set to
-  // https://openrouter.ai/api/v1 to use OpenRouter.
   'AI_BASE_URL',
   'TWEETS_LOOKBACK_DAYS',
   'DRY_RUN',
@@ -18,15 +13,12 @@ const EDITABLE_KEYS = [
   'COLLECT_CRON_SCHEDULE',
   'X_GQL_USER_BY_SCREEN_NAME_ID',
   'X_GQL_HOME_TIMELINE_ID',
-  // Auto-publish guardrails + canary schedule (see publish-service / cron-manager).
   'PUBLISH_DAILY_CAP',
   'PUBLISH_MIN_SPACING_MINUTES',
   'PUBLISH_CANARY_CRON',
   'PUBLISH_QUEUE_CRON',
   'PUBLISH_METRICS_CRON',
-  // Veille delivery mode: 'per-product' (default) or 'consolidated'.
   'VEILLE_DIGEST_MODE',
-  // Radar produit (ADR-0026): toggle, dry-run, threshold, daily caps.
   'RADAR_ENABLED',
   'RADAR_DRY_RUN',
   'RADAR_SCORE_THRESHOLD',
@@ -37,19 +29,11 @@ const CREDENTIAL_KEYS = [
   'X_SESSION_AUTH_TOKEN',
   'X_SESSION_CSRF_TOKEN',
   'DISCORD_WEBHOOK_URL',
-  // Dedicated webhook for the consolidated veille digest (no fallback: unset
-  // means the consolidated post is skipped).
   'VEILLE_DISCORD_WEBHOOK_URL',
-  // AI provider API key (OpenRouter sk-or-... or any OpenAI-compatible key).
-  // Falls back to GITHUB_TOKEN when unset.
   'AI_API_KEY',
-  // LinkedIn auto-publish session cookies (drive the web UI as the logged-in
-  // user). li_at is the auth cookie; JSESSIONID is the CSRF cookie.
   'LINKEDIN_LI_AT',
   'LINKEDIN_JSESSIONID',
-  // Reddit auto-publish session cookie (reddit_session), used against old.reddit.
   'REDDIT_SESSION',
-  // YouTube Data API v3 key for the veille YouTube source.
   'YOUTUBE_API_KEY',
 ] as const;
 

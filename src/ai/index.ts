@@ -1,8 +1,3 @@
-/**
- * AI port factory (ADR-0027). `createAi(config)` picks the adapter from
- * `AI_PROVIDER` / `ANTHROPIC_API_KEY`, records usage and enforces the monthly
- * budget. Business code only sees `AiPort`.
- */
 import Anthropic from '@anthropic-ai/sdk';
 import type OpenAI from 'openai';
 import type { Config } from '../config.js';
@@ -44,14 +39,12 @@ export type { AiPort, AiTask, AiRequest, AiJsonRequest, JsonObjectSchema } from 
 export { resolveAiProvider, resolveAiModel, resolveAiSelection } from './models.js';
 export type { AiProvider, AiSelection } from './models.js';
 
-/** Whether the active provider has its credential. */
 export function isAiConfigured(config: Config): boolean {
   return resolveAiProvider(config) === 'anthropic'
     ? Boolean(config.ANTHROPIC_API_KEY)
     : Boolean(githubModelsApiKey(config));
 }
 
-/** French "missing key" message for the active provider. */
 export function aiNotConfiguredMessage(config: Config): string {
   return resolveAiProvider(config) === 'anthropic'
     ? 'Client AI indisponible : clé ANTHROPIC_API_KEY manquante.'
@@ -68,7 +61,6 @@ export function createAnthropicClient(
       'Client AI indisponible : clé ANTHROPIC_API_KEY manquante.',
     );
   }
-  // Key from the validated config (env only, never the DB).
   return new Anthropic({
     apiKey: config.ANTHROPIC_API_KEY,
     maxRetries: ANTHROPIC_MAX_RETRIES,
@@ -80,18 +72,13 @@ export interface CreateAiDeps {
   anthropicClient?: AnthropicMessagesClient;
   openaiClient?: OpenAI;
   recordUsage?: AiUsageRecorder;
-  /** Post-record hook (budget alerts). Defaults to Discord/log alerts at 80 % / 100 %. */
   afterUsage?: (usage: AiCallUsage) => void;
-  /** Budget check; defaults to the SQLite ledger. */
   assertBudget?: (provider: AiProvider, task: AiTask) => void;
-  /** Settings layer of the model/effort selection; defaults to a live DB read per call. */
   aiSettings?: () => AiModelSettings;
 }
 
 export function createAi(config: Config, deps: CreateAiDeps = {}): AiPort {
   const provider = resolveAiProvider(config);
-  // Settings > env > default, read on every call so a Settings change applies
-  // to every feature at its next call. `config` carries the env layer only.
   const readSettings = deps.aiSettings ?? readAiModelSettings;
   const selectionFor = (task: AiTask): AiSelection =>
     resolveAiSelection(config, readSettings(), provider, AI_TASKS[task].tier);
@@ -101,7 +88,6 @@ export function createAi(config: Config, deps: CreateAiDeps = {}): AiPort {
     try {
       (deps.recordUsage ?? recordAiUsage)(usage);
     } catch (err) {
-      // Accounting must never break a business call.
       logger.warn('AI usage not recorded', {
         error: err instanceof Error ? err.message : String(err),
       });

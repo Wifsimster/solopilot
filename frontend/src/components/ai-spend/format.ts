@@ -1,12 +1,8 @@
-// Display formatting for the « Dépenses IA » page. Amounts arrive at full
-// precision; rounding happens here only.
-
 const usd2 = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const usdSmall = new Intl.NumberFormat('fr-FR', { maximumSignificantDigits: 2 });
 const int = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const compact = new Intl.NumberFormat('fr-FR', { notation: 'compact', maximumFractionDigits: 1 });
 
-/** `4,12 $`; sub-cent amounts keep two significant digits (`0,0042 $`). */
 export function usd(value: number): string {
   const abs = Math.abs(value);
   if (abs > 0 && abs < 0.01) return `${usdSmall.format(value)}\u00a0$`;
@@ -16,7 +12,6 @@ export function usd(value: number): string {
 const usdAxisSmall = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 const usdAxis = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 
-/** Axis ticks (values come from `niceScale`, so they are already round). */
 export function usdTick(value: number): string {
   if (value === 0) return '0\u00a0$';
   if (Math.abs(value) < 1) return `${usdAxisSmall.format(value)}\u00a0$`;
@@ -24,7 +19,6 @@ export function usdTick(value: number): string {
   return `${compact.format(value)}\u00a0$`;
 }
 
-/** Round axis: 0 to a clean top, step in 1 / 2 / 2.5 / 5 x 10^k. */
 export function niceScale(max: number, count = 4): { domain: [number, number]; ticks: number[] } {
   if (!(max > 0)) return { domain: [0, 1], ticks: [0, 1] };
   const raw = max / count;
@@ -73,17 +67,14 @@ function bucketDate(bucket: string): Date {
   return new Date(Date.UTC(y, m - 1, d || 1));
 }
 
-/** Axis label of a bucket: `3 oct.` (day) or `oct. 26` (month). */
 export function bucketShort(bucket: string): string {
   return bucket.length === 7 ? monthShort.format(bucketDate(bucket)) : dayShort.format(bucketDate(bucket));
 }
 
-/** Tooltip / table label of a bucket. */
 export function bucketLong(bucket: string): string {
   return bucket.length === 7 ? monthLong.format(bucketDate(bucket)) : dayLong.format(bucketDate(bucket));
 }
 
-/** Call timestamp in Paris time: `10/10 14:32`. */
 export function parisDateTime(epochMs: number): string {
   return parisTime.format(new Date(epochMs));
 }

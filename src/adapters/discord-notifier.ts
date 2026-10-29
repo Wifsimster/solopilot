@@ -3,11 +3,6 @@ import { logger } from '../logger.js';
 const DISCORD_MAX_CONTENT = 2000;
 const DISCORD_MAX_EMBED_DESC = 4096;
 
-/**
- * Discord webhook limits (https://discord.com/developers/docs/resources/message#embed-object-embed-limits).
- * `totalEmbedChars` is the combined title/description/footer/... budget across
- * every embed of ONE message.
- */
 export const DISCORD_LIMITS = {
   content: DISCORD_MAX_CONTENT,
   embedsPerMessage: 10,
@@ -26,7 +21,6 @@ export interface DiscordEmbed {
   timestamp?: string;
 }
 
-/** A webhook message: optional plain content plus up to 10 embeds. */
 export interface DiscordMessage {
   content?: string;
   embeds: DiscordEmbed[];
@@ -43,10 +37,6 @@ export interface NotifyResult {
   error?: string;
 }
 
-/**
- * Sanitize text to prevent Discord mention injection (@everyone, @here, role/user mentions).
- * Idempotent, so callers may pre-sanitize (e.g. to measure lengths) safely.
- */
 export function sanitize(text: string): string {
   return text
     .replace(/@everyone/gi, '@\u200Beveryone')
@@ -54,17 +44,11 @@ export function sanitize(text: string): string {
     .replace(/<@[!&]?\d+>/g, '[mention]');
 }
 
-/**
- * Truncate text to a maximum length, adding an ellipsis marker if truncated.
- */
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   return text.slice(0, max - 3) + '...';
 }
 
-/**
- * Format a run summary as a Discord embed payload.
- */
 function formatDiscordPayload(summary: string, runId: number): DiscordPayload {
   const safe = sanitize(summary);
 
@@ -73,7 +57,7 @@ function formatDiscordPayload(summary: string, runId: number): DiscordPayload {
       {
         title: 'Veille IA & Tech quotidienne',
         description: truncate(safe, DISCORD_MAX_EMBED_DESC),
-        color: 0x1d9bf0, // X/Twitter blue
+        color: 0x1d9bf0,
         footer: { text: `Run #${runId}` },
         timestamp: new Date().toISOString(),
       },
@@ -82,10 +66,6 @@ function formatDiscordPayload(summary: string, runId: number): DiscordPayload {
   };
 }
 
-/**
- * POST a payload to a Discord webhook.
- * Retries once on HTTP 429 (rate limit) using the Retry-After header.
- */
 async function postDiscordPayload(webhookUrl: string, payload: DiscordPayload): Promise<NotifyResult> {
   const doSend = async (): Promise<Response> => {
     return fetch(webhookUrl, {
@@ -98,10 +78,9 @@ async function postDiscordPayload(webhookUrl: string, payload: DiscordPayload): 
   try {
     let response = await doSend();
 
-    // Retry once on rate limit
     if (response.status === 429) {
       const retryAfter = Number(response.headers.get('Retry-After') || '5');
-      const waitMs = Math.min(retryAfter * 1000, 30_000); // Cap at 30s
+      const waitMs = Math.min(retryAfter * 1000, 30_000);
       logger.warn('Discord rate limited, retrying', { retryAfterMs: waitMs });
       await new Promise((resolve) => setTimeout(resolve, waitMs));
       response = await doSend();
@@ -122,9 +101,6 @@ async function postDiscordPayload(webhookUrl: string, payload: DiscordPayload): 
   }
 }
 
-/**
- * Send a notification to a Discord webhook.
- */
 export async function sendDiscordNotification(
   webhookUrl: string,
   summary: string,
@@ -137,10 +113,6 @@ export async function sendDiscordNotification(
   return result;
 }
 
-/**
- * Send raw embeds to a Discord webhook (max 10 per message — Discord's limit;
- * callers must batch). Text fields are sanitized against mention injection.
- */
 export async function sendDiscordEmbeds(
   webhookUrl: string,
   embeds: DiscordEmbed[],
@@ -153,11 +125,6 @@ export async function sendDiscordEmbeds(
   return postDiscordPayload(webhookUrl, { embeds: safeEmbeds, allowed_mentions: { parse: [] } });
 }
 
-/**
- * Send one pre-built message (content + embeds). Callers are expected to have
- * respected Discord's limits already (see modules/veille/consolidated-digest);
- * sanitizing and truncating here is only a defensive last line.
- */
 export async function sendDiscordMessage(
   webhookUrl: string,
   message: DiscordMessage,
@@ -176,9 +143,6 @@ export async function sendDiscordMessage(
   });
 }
 
-/**
- * Send a test message to verify webhook configuration.
- */
 export async function testDiscordWebhook(webhookUrl: string): Promise<NotifyResult> {
   const payload: DiscordPayload = {
     content: truncate(

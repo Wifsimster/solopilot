@@ -1,4 +1,3 @@
-// Unit tests for the veille delivery resolver (runs against dist/).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 

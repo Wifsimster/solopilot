@@ -1,10 +1,3 @@
-/**
- * `cockpit.aggregate` step.
- *
- * Builds the daily briefing for the activity and renders it to French markdown,
- * exposing `content` so a downstream `notify.*` step can publish it directly.
- * Read-only aggregation — no external calls, fully deterministic.
- */
 import { buildBriefing, renderBriefingText, type Briefing } from '../modules/cockpit/briefing.js';
 import type { Step } from '../workflow/types.js';
 

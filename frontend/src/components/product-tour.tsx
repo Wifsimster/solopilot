@@ -29,11 +29,9 @@ function markTourCompleted(): void {
   try {
     window.localStorage.setItem(TOUR_STORAGE_KEY, 'true');
   } catch {
-    /* ignore */
   }
 }
 
-/** Locate the target element, retrying across a few frames while the route renders. */
 function useTargetRect(step: TourStep | undefined, active: boolean): Rect | null {
   const [rect, setRect] = useState<Rect | null>(null);
 
@@ -61,12 +59,11 @@ function useTargetRect(step: TourStep | undefined, active: boolean): Rect | null
           return;
         }
       }
-      // Element not ready (route still mounting, or hidden on this viewport).
       if (attempts < 30) {
         attempts += 1;
         frame = requestAnimationFrame(measure);
       } else {
-        setRect(null); // give up → centered fallback
+        setRect(null);
       }
     };
 
@@ -94,7 +91,6 @@ function useTargetRect(step: TourStep | undefined, active: boolean): Rect | null
 }
 
 function cardPosition(rect: Rect | null, placement: TourStep['placement']) {
-  // Centered card when there is no target to anchor to.
   if (!rect) {
     return {
       top: '50%',
@@ -129,12 +125,10 @@ function cardPosition(rect: Rect | null, placement: TourStep['placement']) {
     left = centerX;
     top = rect.top - CARD_GAP - estHeight;
   } else {
-    // Below the target as a last resort.
     left = centerX;
     top = rect.top + rect.height + CARD_GAP;
   }
 
-  // Clamp inside the viewport.
   left = Math.max(8, Math.min(left, vw - CARD_WIDTH - 8));
   top = Math.max(8, Math.min(top, vh - estHeight - 8));
 
@@ -161,7 +155,6 @@ export function ProductTour() {
     markTourCompleted();
   }, []);
 
-  // Auto-start on first visit, once, after the shell has rendered.
   useEffect(() => {
     if (startedRef.current) return;
     if (hasCompletedTour()) return;
@@ -170,7 +163,6 @@ export function ProductTour() {
     return () => window.clearTimeout(t);
   }, [start]);
 
-  // Allow manual (re)launch via a window event.
   useEffect(() => {
     const handler = () => {
       startedRef.current = true;
@@ -180,7 +172,6 @@ export function ProductTour() {
     return () => window.removeEventListener(TOUR_START_EVENT, handler);
   }, [start]);
 
-  // Navigate to the step's route when needed.
   useEffect(() => {
     if (!active || !step?.route) return;
     if (location.pathname !== step.route) {
@@ -188,7 +179,6 @@ export function ProductTour() {
     }
   }, [active, step, location.pathname, navigate]);
 
-  // Keyboard controls.
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
@@ -211,13 +201,11 @@ export function ProductTour() {
 
   return createPortal(
     <div className="fixed inset-0 z-[200]" role="dialog" aria-modal="true" aria-label="Visite guidée">
-      {/* Backdrop — dark when no target, transparent click-catcher when spotlighting. */}
       <div
         className={cn('absolute inset-0', !rect && 'bg-foreground/50 backdrop-blur-[1px]')}
         onClick={finish}
       />
 
-      {/* Spotlight cut-out via an oversized box-shadow ring. */}
       {rect && (
         <div
           className="pointer-events-none absolute rounded-lg ring-2 ring-primary transition-all duration-200"
@@ -231,7 +219,6 @@ export function ProductTour() {
         />
       )}
 
-      {/* Explanation card. */}
       <div
         className="absolute w-[320px] max-w-[calc(100vw-16px)] rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-xl transition-all duration-200"
         style={pos}
@@ -249,7 +236,6 @@ export function ProductTour() {
         <h3 className="pr-6 text-sm font-semibold tracking-tight">{step.title}</h3>
         <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
 
-        {/* Meta row: progress + skip */}
         <div className="mt-4 flex items-center justify-between">
           <span className="text-xs tabular-nums text-muted-foreground">
             {index + 1} / {TOUR_STEPS.length}
@@ -265,7 +251,6 @@ export function ProductTour() {
           )}
         </div>
 
-        {/* Navigation row */}
         <div className="mt-3 flex items-center gap-2">
           {!isFirst && (
             <Button variant="outline" size="sm" onClick={prev} className="flex-1">
@@ -284,7 +269,6 @@ export function ProductTour() {
   );
 }
 
-/** Imperatively (re)launch the guided tour from anywhere in the app. */
 export function startProductTour() {
   window.dispatchEvent(new Event(TOUR_START_EVENT));
 }

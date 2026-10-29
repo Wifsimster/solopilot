@@ -1,13 +1,3 @@
-/**
- * Radar produit — orchestration (ADR-0026).
- *
- * Hourly sweep: triaged news items are scored against every product that has a
- * GitHub repo; each (item, product) pair at or above the threshold gets a French
- * marketing report, delivered as a GitHub issue in the product's repo — or, in
- * dry-run (default, and forced when GITHUB_ISSUES_TOKEN is missing), stored and
- * reported without touching GitHub. Dedup, daily caps and a feature toggle
- * bound what it can do.
- */
 import type { Config } from '../../config.js';
 import { isAiConfigured, AiError } from '../../ai/index.js';
 import { assertWithinBudget } from '../../ai/usage.js';
@@ -68,7 +58,6 @@ export interface RadarProposalSummary {
 export interface RadarResult {
   skipped?: RadarSkipReason;
   dryRun: boolean;
-  /** Why dry-run is on: the setting, or the missing token. */
   dryRunReason?: 'setting' | 'no_token';
   scanned: number;
   matches: number;
@@ -78,7 +67,6 @@ export interface RadarResult {
 export interface RadarDeps {
   ai?: RadarAi;
   github?: GithubIssuesConnector;
-  /** Effective settings override (tests); defaults to process.env + DB settings. */
   settings?: RadarSettings;
   now?: number;
 }
@@ -89,7 +77,6 @@ export function isRadarRunning(): boolean {
   return running;
 }
 
-/** Effective radar settings (DB overrides env), read at call time. */
 export function getRadarSettings(): RadarSettings {
   const settings = resolveRadarSettings(
     process.env as RadarSettingsLayer,
@@ -106,7 +93,6 @@ interface RepoProduct extends RadarProductInput {
   repo: string;
 }
 
-/** Active products whose product_url is a GitHub repository. */
 export function listRepoProducts(): RepoProduct[] {
   return listProducts(false).flatMap((record) => {
     const target = record.product_url ? parseGithubRepoUrl(record.product_url) : null;
@@ -150,7 +136,6 @@ export async function runProductRadar(config: Config, deps: RadarDeps = {}): Pro
     return { ...base, skipped: 'no_ai_key' };
   }
   if (!deps.ai) {
-    // Non-essential (ADR-0027): skip cleanly once the monthly budget is spent.
     try {
       assertWithinBudget(config, resolveAiProvider(config), 'radar.score');
     } catch (err) {
@@ -175,7 +160,6 @@ export async function runProductRadar(config: Config, deps: RadarDeps = {}): Pro
     if (candidates.length === 0) return { ...base, skipped: 'no_candidates' };
 
     const ai = deps.ai ?? createRadarAi(config);
-    // Throws on AI failure: items stay unscanned and are retried next sweep.
     const matches = await ai.score(candidates.map(toItemInput), products);
     markRadarScanned(
       candidates.map((c) => c.id),
@@ -224,7 +208,6 @@ export async function runProductRadar(config: Config, deps: RadarDeps = {}): Pro
         continue;
       }
 
-      // Claim first: the UNIQUE pair makes a second issue impossible.
       const id = claimProposal({
         itemId: item.id,
         productId: product.id,
@@ -253,7 +236,6 @@ export async function runProductRadar(config: Config, deps: RadarDeps = {}): Pro
       let title: string;
       let body: string;
       try {
-        // Sequential by design: caps are enforced pair by pair.
         const report = await ai.report(toItemInput(item), product, reason);
         title = renderIssueTitle(report);
         body = renderIssueBody({
@@ -330,7 +312,6 @@ export async function runProductRadar(config: Config, deps: RadarDeps = {}): Pro
   }
 }
 
-/** Manual "Créer l'issue" on a dry_run/failed proposal: bypasses dry-run and caps. */
 export async function createIssueForProposal(
   config: Config,
   proposalId: number,
@@ -381,7 +362,6 @@ const STATUS_LABELS: Record<RadarProposalSummary['status'], string> = {
   capped: 'Plafond journalier atteint (non générée)',
 };
 
-/** One best-effort Discord message: veille webhook if set, else the global one. */
 async function notifyRadar(config: Config, result: RadarResult): Promise<void> {
   const notable = result.proposals.filter((p) => p.status !== 'capped');
   if (notable.length === 0) return;

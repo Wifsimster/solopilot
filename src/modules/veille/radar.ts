@@ -1,14 +1,4 @@
-/**
- * Radar produit — pure helpers (ADR-0026).
- *
- * Settings resolution, untrusted-text sanitising and issue-body rendering. No
- * DB, no network: everything here is deterministic and unit-tested directly.
- */
 import { z } from 'zod';
-
-// ---------------------------------------------------------------------------
-// Settings
-// ---------------------------------------------------------------------------
 
 export const RADAR_SETTING_KEYS = [
   'RADAR_ENABLED',
@@ -26,7 +16,6 @@ export interface RadarSettings {
   scoreThreshold: number;
   maxPerProductPerDay: number;
   maxPerDay: number;
-  /** Reasons for ignored values (never contain secrets). */
   warnings: string[];
 }
 
@@ -38,8 +27,6 @@ export const RADAR_DEFAULTS = {
   maxPerDay: 3,
 } as const;
 
-// String-in schemas (settings are stored as strings). Explicit regexes instead
-// of z.coerce so an empty string can never silently become 0.
 const boolSchema = z
   .string()
   .trim()
@@ -57,7 +44,6 @@ const capSchema = z
   .transform(Number)
   .refine((n) => n <= 50);
 
-/** Validators shared with the settings API so the UI gets the same rules. */
 export const RADAR_SETTING_VALIDATORS: Record<RadarSettingKey, z.ZodType<unknown, z.ZodTypeDef, string>> = {
   RADAR_ENABLED: boolSchema,
   RADAR_DRY_RUN: boolSchema,
@@ -77,7 +63,6 @@ function pick<T>(
   fallback: T,
   warnings: string[],
 ): T {
-  // DB setting first (overrides env), then env; invalid values fall through.
   for (const [layer, source] of [
     [settings, 'settings'],
     [env, 'env'],
@@ -91,7 +76,6 @@ function pick<T>(
   return fallback;
 }
 
-/** Effective radar settings. Never throws: a typo degrades to the safe default. */
 export function resolveRadarSettings(
   env: RadarSettingsLayer,
   settings: RadarSettingsLayer,
@@ -119,10 +103,6 @@ export function resolveRadarSettings(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Selection: threshold + caps (pure)
-// ---------------------------------------------------------------------------
-
 export interface RadarMatch {
   itemId: string;
   productId: string;
@@ -130,7 +110,6 @@ export interface RadarMatch {
   reason: string;
 }
 
-/** Pairs at or above the threshold, best first. */
 export function selectMatches(matches: RadarMatch[], threshold: number): RadarMatch[] {
   return matches.filter((m) => m.score >= threshold).toSorted((a, b) => b.score - a.score);
 }
@@ -140,7 +119,6 @@ export interface CapState {
   total: number;
 }
 
-/** Whether one more proposal for `productId` fits today's caps. */
 export function withinCaps(
   state: CapState,
   productId: string,
@@ -155,30 +133,15 @@ export function consumeCap(state: CapState, productId: string): void {
   state.perProduct.set(productId, (state.perProduct.get(productId) ?? 0) + 1);
 }
 
-// ---------------------------------------------------------------------------
-// Sanitising untrusted text (model output derived from public news)
-// ---------------------------------------------------------------------------
-
 const ZWSP = '​';
 
-/**
- * Makes a model/news string safe to embed in a GitHub issue body:
- * - no @mentions (user or team): `@` + zero-width space;
- * - no cross-references (`#12`, `owner/repo#12`, `GH-12`): zero-width space;
- * - no closing keywords bound to a reference or issue URL (`fixes #12`);
- * - no images, raw HTML or Markdown links (link text kept);
- * Idempotent.
- */
 export function sanitizeUntrusted(text: string): string {
   return (
     text
-      // Drop HTML comments and tags (tracking pixels, <details> injection...).
       .replace(/<!--[\s\S]*?-->/g, '')
       .replace(/<\/?[A-Za-z][^>]*>/g, '')
-      // Images go entirely; links keep their text only.
       .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
       .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-      // Break closing keywords followed by a reference or an issue/PR URL.
       .replace(
         /\b(clos)(e[sd]?)\b(?=\s*:?\s+(?:[\w.-]+\/[\w.-]+)?#\d|\s*:?\s+https?:\/\/\S+\/(?:issues|pull)\/\d)/gi,
         `$1${ZWSP}$2`,
@@ -191,21 +154,17 @@ export function sanitizeUntrusted(text: string): string {
         /\b(resol)(ve[sd]?)\b(?=\s*:?\s+(?:[\w.-]+\/[\w.-]+)?#\d|\s*:?\s+https?:\/\/\S+\/(?:issues|pull)\/\d)/gi,
         `$1${ZWSP}$2`,
       )
-      // References: #12, owner/repo#12, GH-12.
       .replace(/#(?=\d)/g, `#${ZWSP}`)
       .replace(/\bGH-(?=\d)/gi, (m) => `${m}${ZWSP}`)
-      // Mentions: @user, @org/team.
       .replace(/@(?=[A-Za-z0-9])/g, `@${ZWSP}`)
   );
 }
 
-/** Single-line variant: sanitised, whitespace collapsed, bounded. */
 export function sanitizeInline(text: string, max = 300): string {
   const flat = sanitizeUntrusted(text).replace(/\s+/g, ' ').trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
-/** Only http(s) URLs survive; anything else (javascript:, data:...) is dropped. */
 export function safeSourceUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
@@ -216,10 +175,6 @@ export function safeSourceUrl(url: string | null | undefined): string | null {
     return null;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Report (model output contract) + rendering
-// ---------------------------------------------------------------------------
 
 export const radarIdeaSchema = z.object({
   titre: z.string().min(1).max(200),
@@ -266,10 +221,6 @@ function bullets(lines: string[]): string {
   return lines.map((l) => `  - ${sanitizeInline(l, 400)}`).join('\n');
 }
 
-/**
- * Renders the French marketing report. The source block comes from the DB
- * (trusted shape), every model string goes through sanitizeUntrusted.
- */
 export function renderIssueBody(input: {
   report: RadarReport;
   item: RadarSourceItem;

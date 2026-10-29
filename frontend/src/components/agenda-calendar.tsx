@@ -17,11 +17,6 @@ export interface SxEvent {
   end: string;
 }
 
-/**
- * Schedule-X calendar wrapper — see ADR-0021. Schedule-X was chosen over
- * FullCalendar for its MIT licence and Tailwind-friendly theming. Remount this
- * component (via a `key`) to switch light/dark, which is set at creation time.
- */
 export function AgendaCalendar({ events, isDark }: { events: SxEvent[]; isDark: boolean }) {
   const eventsService = useMemo(() => createEventsServicePlugin(), []);
   const monthAgenda = useMemo(() => createViewMonthAgenda(), []);

@@ -40,11 +40,6 @@ const POLL_INTERVAL_MS = 4_000;
 const URGENT_FETCH_LIMIT = 50;
 const URGENT_PREVIEW_COUNT = 3;
 
-/**
- * "À traiter" widget: urgent, still-untriaged mentions surfaced on the
- * dashboard so critical signals don't wait for a visit to the Mentions page.
- * Renders nothing when there is nothing urgent (or triage is not enabled).
- */
 function UrgentMentionsCard({ productId }: { productId: string }) {
   const { data: items } = useApi<VeilleItem[]>(
     `/api/veille/items?status=new&minUrgency=${URGENT_THRESHOLD}&sort=urgency&limit=${URGENT_FETCH_LIMIT}`,
@@ -348,7 +343,6 @@ export function DashboardPage() {
         </Card>
       )}
 
-      {/* Mobile FAB — primary action stays reachable */}
       <ConfirmDialog
         trigger={
           <Button

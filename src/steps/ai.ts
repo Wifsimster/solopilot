@@ -1,16 +1,3 @@
-/**
- * `ai.summarize` step.
- *
- * Delegates to the existing summarizer (`createAIFilter`, via the AI port). It
- * summarizes the items passed in the input (`items`), or — when none are given —
- * reads the activity's unpublished items from the store, mirroring today's
- * publish path. Returns the French digest, or a null summary when the model
- * finds no relevant news (NO_TECH_NEWS_FOUND).
- *
- * Note: unlike the legacy publish run, this step does NOT mark items as used or
- * write to the `runs` table — consumption/tracking is the runner's concern via
- * `workflow_runs`. Splitting summarize from persistence keeps the step pure.
- */
 import { createAIFilter } from '../ai-filter.js';
 import { getUnpublishedTweets } from '../tweet-store.js';
 import type { Item } from '../ports.js';

@@ -11,11 +11,6 @@ import { useSelectedProduct } from '@/lib/product-context-hooks';
 import { CardFlash, type Flash } from './shared';
 import type { ProductRecord } from '@/types';
 
-/**
- * Field definitions for the per-product settings record.
- * Backend stores arbitrary string key/value pairs in `product_settings`;
- * these are the well-known keys the UI exposes.
- */
 interface FieldDef {
   key: string;
   label: string;
@@ -66,7 +61,6 @@ export function ProductSettingsCard() {
   const { selectedProductId } = useSelectedProduct();
   const productPath = `/api/products/${encodeURIComponent(selectedProductId)}`;
 
-  // Re-fetch each time the selected product changes
   const {
     data: product,
     loading: loadingProduct,
@@ -86,8 +80,6 @@ export function ProductSettingsCard() {
   const [values, setValues] = useState<Record<string, string>>({});
   const lastSyncedRef = useRef<string>('');
 
-  // Merge product columns + product_settings into a single editable map.
-  // Precedence: settings record value wins over the corresponding product column.
   const initialValues = useMemo(() => {
     const v: Record<string, string> = {};
     if (product) {
@@ -104,7 +96,6 @@ export function ProductSettingsCard() {
     return v;
   }, [product, settings]);
 
-  // Reset local edits when the source changes (e.g. product switch or refetch)
   useEffect(() => {
     const signature = `${selectedProductId}:${JSON.stringify(initialValues)}`;
     if (signature !== lastSyncedRef.current) {

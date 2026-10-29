@@ -3,23 +3,12 @@ import { getPublisher, buildSession } from './publish-service.js';
 import type { PublishTarget } from './ports.js';
 import { logger } from './logger.js';
 
-// Closes the feedback loop: scrape public engagement counts from published
-// posts and aggregate angle performance, so the founder learns which angles
-// actually get kept, published, and engaged with.
-
-// Single-flight guard — metrics scraping launches a browser; don't run two at
-// once. Independent of the publish guard and cheap.
 let metricsRefreshing = false;
 
 export function isMetricsRefreshing(): boolean {
   return metricsRefreshing;
 }
 
-/**
- * Refresh engagement metrics for every published draft that has a live URL and
- * a publisher exposing fetchMetrics (only X today). Best-effort: failures per
- * draft are skipped. Returns how many were checked vs updated.
- */
 export async function refreshPublishedMetrics(
   productId?: string,
 ): Promise<{ checked: number; updated: number }> {
@@ -93,16 +82,9 @@ export interface AnglePerformance {
   published: number;
   used: number;
   discarded: number;
-  /** Avg (likes+comments+reposts) across published drafts that have scraped
-   *  metrics; null when none of the angle's posts have been scraped yet. */
   avg_engagement: number | null;
 }
 
-/**
- * Aggregate the draft lifecycle by angle. published/used are the "kept" signal,
- * discarded the "rejected" signal — a reliable, scrape-free proxy for what
- * works — enriched with average engagement where metrics exist.
- */
 export function getAnglePerformance(productId: string): AnglePerformance[] {
   const db = getDb();
   const rows = db

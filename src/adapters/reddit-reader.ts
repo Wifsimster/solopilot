@@ -2,10 +2,6 @@ import { z } from 'zod';
 import type { Item, SourceOpts, SourceReader } from '../ports.js';
 import { logger } from '../logger.js';
 
-// Reddit asks for a unique, descriptive User-Agent in the form
-// `<platform>:<app id>:<version> (by /u/<username>)` and actively blocks terse
-// library-default agents — a generic UA is a common cause of HTTP 403 on the
-// unauthenticated *.json endpoints.
 const USER_AGENT = 'web:solopilot:1.0 (by /u/solopilot)';
 const FETCH_TIMEOUT_MS = 30_000;
 const SUBREDDIT_PATTERN = /^[A-Za-z0-9_]{2,21}$/;
@@ -37,8 +33,6 @@ const subredditSearchChildSchema = z.object({
     title: z.string().optional().default(''),
     public_description: z.string().optional().default(''),
     subscribers: z.number().nullable().optional(),
-    // Reddit is inconsistent across endpoints: subreddit listings expose `over18`
-    // while the typeahead endpoint uses `over_18`. Accept both.
     over18: z.boolean().optional(),
     over_18: z.boolean().optional(),
     icon_img: z.string().optional().default(''),
@@ -64,12 +58,6 @@ export interface SubredditSearchResult {
 
 type SubredditSearchChild = z.infer<typeof subredditSearchChildSchema>;
 
-/**
- * Fetch and parse a Reddit subreddit listing, returning the raw children.
- * Returns `[]` on rate limiting (HTTP 429) or unparseable bodies so the caller
- * can fall back to another endpoint; throws on other non-2xx responses so a hard
- * block (e.g. HTTP 403) surfaces as an error rather than a silent empty result.
- */
 async function fetchSubredditChildren(
   url: string,
   userAgent: string,
@@ -104,7 +92,6 @@ async function fetchSubredditChildren(
   return parsed.data.data.children;
 }
 
-/** Map raw subreddit children into deduped, public/restricted-only results. */
 function mapSubredditResults(children: SubredditSearchChild[]): SubredditSearchResult[] {
   const results: SubredditSearchResult[] = [];
   const seen = new Set<string>();
@@ -148,9 +135,6 @@ export async function searchSubreddits(
   const userAgent = options.userAgent ?? USER_AGENT;
   const includeNsfw = options.includeNsfw ?? false;
 
-  // The typeahead endpoint is what reddit.com's own search box uses and is the
-  // most permissive for unauthenticated prefix queries; the classic search
-  // endpoint is the fallback when typeahead is unavailable or yields nothing.
   const autocompleteParams = new URLSearchParams({
     query: trimmed,
     limit: String(limit),
@@ -172,7 +156,6 @@ export async function searchSubreddits(
   let lastError: Error | null = null;
   for (const url of candidateUrls) {
     try {
-      // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: only hit the fallback endpoint when the primary fails
       const children = await fetchSubredditChildren(url, userAgent, trimmed);
       const mapped = mapSubredditResults(children);
       if (mapped.length > 0) return mapped;
@@ -186,8 +169,6 @@ export async function searchSubreddits(
     }
   }
 
-  // Every endpoint errored (e.g. a hard block): surface it so the API returns a
-  // proper error instead of masquerading as "no matches".
   if (lastError) throw lastError;
   return [];
 }
@@ -200,14 +181,6 @@ const subredditAboutSchema = z.object({
   }),
 });
 
-/**
- * Verify which of the given subreddit names actually exist as public or
- * restricted communities, returning their canonical display names (correct
- * casing). Names are checked sequentially against `/r/<name>/about.json` to
- * avoid Reddit's HTTP 429 under concurrent load. A 404/403 (unknown, private or
- * banned) drops the name; transient failures (429, network/parse errors) keep it
- * (fail-open) so an outage doesn't silently empty the suggestion.
- */
 export async function verifySubredditsExist(
   names: string[],
   options: { userAgent?: string; includeNsfw?: boolean } = {},
@@ -226,18 +199,17 @@ export async function verifySubredditsExist(
 
     const url = `https://www.reddit.com/r/${encodeURIComponent(name)}/about.json`;
     try {
-      // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: paced per-subreddit calls; Reddit returns HTTP 429 under concurrent load
       const response = await fetch(url, {
         headers: { 'User-Agent': userAgent, accept: 'application/json' },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (response.status === 429) {
         logger.warn('Reddit: about lookup rate limited (HTTP 429)', { subreddit: name });
-        verified.push(name); // fail-open on rate limit
+        verified.push(name);
         continue;
       }
       if (response.status === 404 || response.status === 403) {
-        continue; // unknown, private or banned — drop
+        continue;
       }
       if (!response.ok) continue;
 
@@ -259,7 +231,7 @@ export async function verifySubredditsExist(
         subreddit: name,
         error: err instanceof Error ? err.message : String(err),
       });
-      verified.push(name); // fail-open on network/parse error
+      verified.push(name);
     }
   }
   return verified;
@@ -280,7 +252,6 @@ function mapRedditChildren(
 
     const selftext = (post.selftext ?? '').trim();
     const text = selftext ? `${post.title}\n\n${selftext}` : post.title;
-    // react-doctor-disable-next-line react-doctor/js-set-map-lookups -- String.includes() substring test on a URL, not an array membership lookup
     const externalUrl = post.url && !post.url.includes('reddit.com') ? post.url : undefined;
 
     items.push({
@@ -298,11 +269,6 @@ function mapRedditChildren(
   return items;
 }
 
-/**
- * Sitewide Reddit post search for one keyword (brand-mention pass) — catches
- * posts mentioning a product anywhere on Reddit, not just watched subreddits.
- * Quoted phrase search, newest first. Returns [] on rate limit or parse issues.
- */
 export async function searchRedditPosts(
   keyword: string,
   productId: string,
@@ -352,9 +318,7 @@ export async function searchRedditPosts(
 }
 
 export interface RedditReaderOptions {
-  /** Subreddit names (without the r/ prefix). Validated against SUBREDDIT_PATTERN. */
   subreddits: string[];
-  /** Override the default User-Agent string. */
   userAgent?: string;
 }
 
@@ -387,7 +351,6 @@ export function createRedditReader(options: RedditReaderOptions): SourceReader {
 
     for (const subreddit of validSubreddits) {
       try {
-        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: paced per-subreddit calls; Reddit returns HTTP 429 under concurrent load
         const items = await fetchSubreddit(subreddit, productId, sinceTs, fetchedAt);
         for (const item of items) {
           if (!dedup.has(item.id)) dedup.set(item.id, item);

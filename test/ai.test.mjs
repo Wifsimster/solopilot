@@ -1,7 +1,3 @@
-// AI port (ADR-0027): adapter selection, structured outputs, refusal, error
-// mapping + SDK retries, usage ledger, budget guard. Throwaway SQLite DB; the
-// Anthropic client is either a fake object or the real SDK on a mocked fetch.
-// No network call is ever made.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
@@ -31,7 +27,7 @@ const { createAi, AiError, isAiConfigured, createAnthropicClient } = ai;
 const ANTHROPIC = { ANTHROPIC_API_KEY: 'sk-ant-test', AI_MONTHLY_BUDGET_USD: 200, AI_BASE_URL: 'https://ai.test/v1' };
 const GITHUB = { GITHUB_TOKEN: 'ghp-test', AI_MONTHLY_BUDGET_USD: 200, AI_BASE_URL: 'https://ai.test/v1' };
 const SCHEMA = obj({ label: str({ minLength: 1 }), score: int(0, 100) });
-const NOW = Date.UTC(2031, 0, 15, 12); // 2031-01: a month no other test writes to
+const NOW = Date.UTC(2031, 0, 15, 12);
 
 function message(overrides = {}) {
   return {
@@ -76,10 +72,6 @@ const req = (task, extra = {}) => ({
   ...extra,
 });
 
-// ---------------------------------------------------------------------------
-// Adapter selection + model resolution
-// ---------------------------------------------------------------------------
-
 test('provider: AI_PROVIDER wins, else anthropic iff ANTHROPIC_API_KEY', () => {
   assert.equal(models.resolveAiProvider({}), 'github-models');
   assert.equal(models.resolveAiProvider({ ANTHROPIC_API_KEY: 'k' }), 'anthropic');
@@ -103,12 +95,9 @@ test('models: Haiku 5.5 default for both classes, foreign-family ids ignored', (
   assert.equal(models.DEFAULT_ANTHROPIC_MODEL, 'claude-haiku-5-5');
   assert.equal(models.resolveAiModel({}, 'anthropic'), 'claude-haiku-5-5');
   assert.equal(models.resolveAiModel({}, 'anthropic', 'fast'), 'claude-haiku-5-5');
-  // Classes are independent on Anthropic: a pricier main model does not move triage.
   assert.equal(models.resolveAiModel({ AI_MODEL: 'claude-sonnet-5-5' }, 'anthropic', 'fast'), 'claude-haiku-5-5');
   assert.equal(models.resolveAiModel({ AI_MODEL_FAST: 'claude-haiku-4-5' }, 'anthropic', 'fast'), 'claude-haiku-4-5');
-  // GitHub Models keeps the historical fast -> main fallback.
   assert.equal(models.resolveAiModel({ AI_MODEL: 'openai/gpt-4o' }, 'github-models', 'fast'), 'openai/gpt-4o');
-  // A stored GitHub Models id must not reach the Anthropic API (and vice versa).
   assert.equal(models.resolveAiModel({ AI_MODEL: 'openai/gpt-4.1' }, 'anthropic'), 'claude-haiku-5-5');
   assert.equal(models.resolveAiModel({ AI_MODEL: 'claude-haiku-5-5' }, 'github-models'), 'openai/gpt-4.1');
   const port = createAi({ ...ANTHROPIC, AI_MODEL_FAST: 'claude-haiku-4-5' }, { anthropicClient: fakeAnthropic(message()), aiSettings: () => ({}) });
@@ -129,7 +118,6 @@ test('resolution order: Settings > env > default, per class, model and effort', 
     effortSource: 'settings',
   });
   assert.equal(sel({ AI_EFFORT_FAST: 'high' }, 'fast').effort, 'high');
-  // A foreign or invalid Settings value falls through to the next layer.
   assert.equal(sel({ AI_MODEL: 'openai/gpt-4.1' }, 'default').model, 'claude-sonnet-5-5');
   assert.equal(sel({ AI_EFFORT_FAST: 'turbo' }, 'fast').effort, 'medium');
   assert.equal(models.resolveAiSelection({}, { AI_MODEL: 'openai/gpt-4.1' }, 'anthropic').model, 'claude-haiku-5-5');
@@ -137,10 +125,9 @@ test('resolution order: Settings > env > default, per class, model and effort', 
 
 test('every call reads the Settings layer live (no restart, same resolution for every task)', async () => {
   const client = fakeAnthropic(message());
-  // Default deps: the Settings layer comes from the SQLite settings table.
   const port = createAi({ ...ANTHROPIC, AI_MODEL: 'claude-sonnet-5-5' }, { anthropicClient: client, ...recorder() });
   try {
-    assert.equal(port.modelFor('content.generate'), 'claude-sonnet-5-5'); // env
+    assert.equal(port.modelFor('content.generate'), 'claude-sonnet-5-5');
     setSetting('AI_MODEL', 'claude-opus-5-5');
     setSetting('AI_EFFORT', 'low');
     setSetting('AI_MODEL_FAST', 'claude-haiku-4-5');
@@ -151,13 +138,13 @@ test('every call reads the Settings layer live (no restart, same resolution for 
 
     await port.text(req('veille.digest'));
     assert.equal(client.calls[0].params.model, 'claude-opus-5-5');
-    assert.equal(client.calls[0].params.output_config.effort, 'low'); // class effort overrides the report's high
+    assert.equal(client.calls[0].params.output_config.effort, 'low');
     await port.json(req('veille.triage', { schema: SCHEMA }));
     assert.equal(client.calls[1].params.model, 'claude-haiku-4-5');
-    assert.equal(client.calls[1].params.output_config.effort, undefined); // Haiku 4.5: no effort
+    assert.equal(client.calls[1].params.output_config.effort, undefined);
 
     deleteSetting('AI_MODEL');
-    assert.equal(port.modelFor('content.generate'), 'claude-sonnet-5-5'); // back to env
+    assert.equal(port.modelFor('content.generate'), 'claude-sonnet-5-5');
   } finally {
     for (const k of ['AI_MODEL', 'AI_MODEL_FAST', 'AI_EFFORT', 'AI_EFFORT_FAST']) deleteSetting(k);
   }
@@ -180,10 +167,6 @@ test('config: DB overrides never carry AI model/effort (env layer only in Config
   }
 });
 
-// ---------------------------------------------------------------------------
-// Request shape (skill rules) + structured outputs
-// ---------------------------------------------------------------------------
-
 test('params: Opus 5 classification = low effort, cached system, json_schema, default fallbacks', () => {
   const p = buildAnthropicParams('claude-opus-5', req('veille.triage', { cacheSystem: true }), {
     type: 'json_schema',
@@ -191,13 +174,13 @@ test('params: Opus 5 classification = low effort, cached system, json_schema, de
   });
   assert.equal(p.model, 'claude-opus-5');
   assert.deepEqual(p.system, [{ type: 'text', text: 'SYSTEM', cache_control: { type: 'ephemeral' } }]);
-  assert.deepEqual(p.messages, [{ role: 'user', content: 'USER' }]); // no assistant prefill
+  assert.deepEqual(p.messages, [{ role: 'user', content: 'USER' }]);
   assert.equal(p.output_config.effort, 'low');
   assert.equal(p.output_config.format.type, 'json_schema');
-  assert.equal(p.thinking, undefined); // no explicit thinking for classification
+  assert.equal(p.thinking, undefined);
   assert.equal(p.fallbacks, 'default');
   assert.deepEqual(p.betas, ['server-side-fallback-2026-07-01']);
-  assert.ok(p.max_tokens > 500); // thinking headroom
+  assert.ok(p.max_tokens > 500);
   for (const forbidden of ['temperature', 'top_p', 'top_k']) assert.equal(p[forbidden], undefined);
   assert.equal(JSON.stringify(p).includes('budget_tokens'), false);
 });
@@ -208,12 +191,12 @@ test('params: Haiku 5.5 (default) = low effort for triage, no explicit thinking,
     schema: SCHEMA,
   });
   assert.equal(p.output_config.effort, 'low');
-  assert.equal(p.output_config.format.type, 'json_schema'); // structured outputs on Haiku 5.5
-  assert.equal(p.thinking, undefined); // adaptive by default on Haiku 5.5, kept short by low effort
-  assert.equal(p.fallbacks, undefined); // Haiku 5.5 has no server-side fallback
+  assert.equal(p.output_config.format.type, 'json_schema');
+  assert.equal(p.thinking, undefined);
+  assert.equal(p.fallbacks, undefined);
   assert.equal(p.betas, undefined);
-  assert.equal(p.max_tokens, 500 + 2048); // thinking tokens count against max_tokens
-  assert.deepEqual(p.system[0].cache_control, { type: 'ephemeral' }); // 512-token minimum on Haiku 5.5
+  assert.equal(p.max_tokens, 500 + 2048);
+  assert.deepEqual(p.system[0].cache_control, { type: 'ephemeral' });
   for (const forbidden of ['temperature', 'top_p', 'top_k']) assert.equal(p[forbidden], undefined);
 
   const report = buildAnthropicParams('claude-haiku-5-5', req('veille.digest'));
@@ -239,18 +222,15 @@ test('params: fallbacks only where server-side fallback exists; effort gated per
     assert.equal(buildAnthropicParams(model, req('intent.analyze')).fallbacks, undefined, model);
   }
 
-  // Haiku 4.5: no effort, no adaptive thinking, no headroom.
   const haiku45 = buildAnthropicParams('claude-haiku-4-5-20251001', req('veille.digest'));
   assert.equal(haiku45.output_config, undefined);
   assert.equal(haiku45.thinking, undefined);
   assert.equal(haiku45.max_tokens, 500);
 
-  // Class effort override: applied when the model accepts it, else the task default.
   assert.equal(buildAnthropicParams('claude-haiku-5-5', req('veille.triage'), undefined, 'xhigh').output_config.effort, 'xhigh');
   assert.equal(buildAnthropicParams('claude-opus-4-6', req('veille.triage'), undefined, 'xhigh').output_config.effort, 'low');
   assert.equal(buildAnthropicParams('claude-haiku-4-5', req('veille.triage'), undefined, 'high').output_config, undefined);
 
-  // Custom id outside the catalogue: conservative request (model defaults).
   const custom = buildAnthropicParams('claude-haiku-6', req('veille.digest'), undefined, 'high');
   assert.equal(custom.output_config, undefined);
   assert.equal(custom.thinking, undefined);
@@ -285,10 +265,6 @@ test('text(): text blocks joined, thinking blocks ignored', async () => {
   assert.equal(await port.text(req('veille.digest')), 'Digest');
 });
 
-// ---------------------------------------------------------------------------
-// Refusal / truncation
-// ---------------------------------------------------------------------------
-
 test('refusal: AiError("refusal") with category, usage still recorded', async () => {
   const rec = recorder();
   const client = fakeAnthropic(
@@ -310,10 +286,6 @@ test('max_tokens on structured output: AiError("truncated")', async () => {
   const port = createAi(ANTHROPIC, { anthropicClient: client, ...recorder() });
   await assert.rejects(port.json(req('veille.triage', { schema: SCHEMA })), { code: 'truncated' });
 });
-
-// ---------------------------------------------------------------------------
-// Error mapping + SDK retries
-// ---------------------------------------------------------------------------
 
 const apiErr = (Cls, status, type) =>
   new Cls(status, { type: 'error', error: { type, message: type } }, type, new Headers());
@@ -381,7 +353,7 @@ test('SDK: a fallback-capable model from Settings sends fallbacks + beta header'
   assert.equal(seen[0].body.model, 'claude-sonnet-5-5');
   assert.match(seen[0].headers.get('anthropic-beta'), /server-side-fallback-2026-07-01/);
   assert.equal(seen[0].body.fallbacks, 'default');
-  assert.equal(seen[0].body.betas, undefined); // sent as a header, not in the body
+  assert.equal(seen[0].body.betas, undefined);
 });
 
 test('SDK retries exhausted on 529: AiError("overloaded"), 1 + 2 attempts', async () => {
@@ -394,39 +366,28 @@ test('SDK retries exhausted on 529: AiError("overloaded"), 1 + 2 attempts', asyn
   assert.equal(seen.length, 3);
 });
 
-// ---------------------------------------------------------------------------
-// Usage ledger + cost
-// ---------------------------------------------------------------------------
-
 test('cost: price table, dated ids, unknown ids priced by family', () => {
   const tok = (input, output, write = 0, read = 0) => ({ inputTokens: input, outputTokens: output, cacheCreationInputTokens: write, cacheReadInputTokens: read });
   const mtok = tok(1_000_000, 1_000_000, 1_000_000, 1_000_000);
-  // Prices per MTok (input + output + 5m write + cache read), pricing page 2026-10-10.
   assert.equal(models.estimateCostUsd('claude-sonnet-5-5', mtok), 2 + 10 + 2.5 + 0.1);
   assert.equal(models.estimateCostUsd('claude-opus-5-5', mtok), 4 + 20 + 5 + 0.2);
   assert.equal(models.estimateCostUsd('claude-fable-5-1', mtok), 10 + 50 + 12.5 + 0.25);
   assert.equal(models.estimateCostUsd('claude-opus-5', mtok), 5 + 25 + 6.25 + 0.5);
   assert.equal(models.estimateCostUsd('claude-sonnet-5', mtok), 2 + 10 + 2.5 + 0.2);
   assert.equal(models.estimateCostUsd('claude-haiku-4-5-20251001', mtok), 1 + 5 + 1.25 + 0.1);
-  // Unknown ids: same-family current model, Fable 5.1 when the family is unknown.
   assert.equal(models.priceForModel('claude-unknown-9').known, false);
   assert.equal(models.estimateCostUsd('claude-unknown-9', tok(1_000_000, 1_000_000)), 60);
-  assert.equal(models.estimateCostUsd('claude-haiku-6', tok(10_000, 0)), 0.001); // Haiku 5.5 base tier
-  // A snapshot suffix must be a date: claude-opus-5-7 is not claude-opus-5.
+  assert.equal(models.estimateCostUsd('claude-haiku-6', tok(10_000, 0)), 0.001);
   assert.equal(models.priceForModel('claude-opus-5-7').known, false);
 });
 
 test('cost: Claude Haiku 5.5 prompt-length tiers (<= 100k vs > 100k prompt tokens)', () => {
   const tok = (input, output, write = 0, read = 0) => ({ inputTokens: input, outputTokens: output, cacheCreationInputTokens: write, cacheReadInputTokens: read });
   const cost = (u) => models.estimateCostUsd('claude-haiku-5-5', u);
-  // Triage-sized call: base tier ($0.10 in / $0.50 out / $0.125 write / $0.01 read).
   assert.equal(cost(tok(8_000, 2_000)), (8_000 * 0.1 + 2_000 * 0.5) / 1e6);
   assert.equal(cost(tok(1_000, 500, 700, 700)), (1_000 * 0.1 + 500 * 0.5 + 700 * 0.125 + 700 * 0.01) / 1e6);
-  // Exactly 100,000 prompt tokens stays on the base tier.
   assert.equal(cost(tok(100_000, 1_000)), (100_000 * 0.1 + 1_000 * 0.5) / 1e6);
-  // Over 100,000: every category, output included, switches ($0.50 / $2.50 / $0.625 / $0.05).
   assert.equal(cost(tok(100_001, 1_000)), (100_001 * 0.5 + 1_000 * 2.5) / 1e6);
-  // Cache reads and writes count toward the prompt length.
   assert.equal(cost(tok(10_000, 1_000, 10_000, 90_000)), (10_000 * 0.5 + 1_000 * 2.5 + 10_000 * 0.625 + 90_000 * 0.05) / 1e6);
   assert.equal(models.priceForModel('claude-haiku-5-5').known, true);
 });
@@ -436,7 +397,6 @@ test('usage is recorded in SQLite with tokens, model, task and cost', async () =
   const client = fakeAnthropic(
     message({ usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 800 } }),
   );
-  // Default recorder (SQLite); budget hooks neutralised.
   const port = createAi(ANTHROPIC, { anthropicClient: client, afterUsage: () => {}, assertBudget: () => {} });
   await port.json(req('veille.triage', { schema: SCHEMA }));
   const row = getDb().prepare('SELECT * FROM ai_usage ORDER BY id DESC LIMIT 1').get();
@@ -474,10 +434,6 @@ test('GitHub Models adapter: JSON mode, fenced JSON tolerated, usage at cost 0',
   assert.equal(rec.rows[0].provider, 'github-models');
 });
 
-// ---------------------------------------------------------------------------
-// Budget guard
-// ---------------------------------------------------------------------------
-
 function spend(costUsd, task = 'veille.digest') {
   usage.recordAiUsage(
     {
@@ -504,14 +460,14 @@ test('budget: warning once at 80 %, stop once at 100 %, essential tasks keep run
   assert.equal(await usage.checkBudgetAlerts(cfg, deps), null);
   assert.doesNotThrow(() => usage.assertWithinBudget(cfg, 'anthropic', 'radar.score', NOW));
 
-  spend(61); // 161 / 200 = 80.5 %
+  spend(61);
   assert.equal(await usage.checkBudgetAlerts(cfg, deps), 'warning');
-  assert.equal(await usage.checkBudgetAlerts(cfg, deps), null); // once per month
+  assert.equal(await usage.checkBudgetAlerts(cfg, deps), null);
   assert.equal(notified.length, 1);
   assert.match(notified[0].title, /80 %/);
   assert.doesNotThrow(() => usage.assertWithinBudget(cfg, 'anthropic', 'content.generate', NOW));
 
-  spend(40); // 201 / 200
+  spend(40);
   assert.equal(await usage.checkBudgetAlerts(cfg, deps), 'exceeded');
   assert.equal(notified.length, 2);
   assert.match(notified[1].description, /Radar produit/);
@@ -522,10 +478,8 @@ test('budget: warning once at 80 %, stop once at 100 %, essential tasks keep run
   for (const task of ['veille.digest', 'veille.triage']) {
     assert.doesNotThrow(() => usage.assertWithinBudget(cfg, 'anthropic', task, NOW), task);
   }
-  // GitHub Models is free: never blocked.
   assert.doesNotThrow(() => usage.assertWithinBudget(cfg, 'github-models', 'radar.score', NOW));
 
-  // Through the port: a blocked task never reaches the API.
   const client = fakeAnthropic(message());
   const port = createAi(cfg, {
     anthropicClient: client,
@@ -549,10 +503,6 @@ test('budget: warning once at 80 %, stop once at 100 %, essential tasks keep run
   assert.equal(JSON.stringify(status).includes('sk-ant-test'), false);
 });
 
-// ---------------------------------------------------------------------------
-// Settings: validation + view
-// ---------------------------------------------------------------------------
-
 test('settings validation: model id pattern, effort enum, effort supported by the class model', () => {
   const v = (body, current = {}, env = {}) => aiSettings.validateAiSettingsUpdate(body, env, current);
 
@@ -561,19 +511,17 @@ test('settings validation: model id pattern, effort enum, effort supported by th
     updates: { AI_MODEL: 'claude-sonnet-5-5', AI_EFFORT: 'high' },
   });
   assert.deepEqual(v({ AI_MODEL_FAST: ' claude-haiku-5-5 ', AI_EFFORT_FAST: '' }).updates, { AI_MODEL_FAST: 'claude-haiku-5-5', AI_EFFORT_FAST: '' });
-  // Free "autre ID" accepted when it matches ^claude-[a-z0-9-]+$.
   assert.equal(v({ AI_MODEL: 'claude-haiku-5-5-20261007' }).ok, true);
   for (const bad of ['openai/gpt-4.1', 'Claude-Haiku', 'claude-haiku-5.5', 'claude_haiku', 'claude-', 'claude-x y']) {
     assert.equal(v({ AI_MODEL: bad }).ok, false, bad);
   }
   assert.equal(v({ AI_MODEL: 42 }).ok, false);
   assert.equal(v({ AI_EFFORT: 'turbo' }).ok, false);
-  // Effort vs the model the class runs on after the update.
   assert.equal(v({ AI_MODEL: 'claude-opus-4-6', AI_EFFORT: 'xhigh' }).ok, false);
   assert.equal(v({ AI_EFFORT: 'xhigh' }, { AI_MODEL: 'claude-opus-4-6' }).ok, false);
-  assert.equal(v({ AI_EFFORT_FAST: 'low' }, {}, { AI_MODEL_FAST: 'claude-haiku-4-5' }).ok, false); // env model, no effort
-  assert.equal(v({ AI_MODEL: 'claude-haiku-6', AI_EFFORT: 'low' }).ok, false); // custom id: effort unknown
-  assert.equal(v({ AI_EFFORT_FAST: 'max' }).ok, true); // default Haiku 5.5 accepts all five levels
+  assert.equal(v({ AI_EFFORT_FAST: 'low' }, {}, { AI_MODEL_FAST: 'claude-haiku-4-5' }).ok, false);
+  assert.equal(v({ AI_MODEL: 'claude-haiku-6', AI_EFFORT: 'low' }).ok, false);
+  assert.equal(v({ AI_EFFORT_FAST: 'max' }).ok, true);
   const err = v({ AI_MODEL: 'claude-opus-4-6', AI_EFFORT: 'xhigh' });
   assert.match(err.message, /Modèle principal/);
 });

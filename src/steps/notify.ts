@@ -1,11 +1,3 @@
-/**
- * `notify.discord` step.
- *
- * Sends a message through the Discord connector. The webhook is taken from the
- * step input or the activity config; the content from the input (`content` or
- * `summary`). Degradable: a missing webhook or a failed send is recorded as a
- * skipped step, never failing the whole run (ADR-0013, graceful degradation).
- */
 import type { Step } from '../workflow/types.js';
 
 interface NotifyInput {

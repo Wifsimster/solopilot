@@ -1,7 +1,3 @@
-// « Dépenses IA » report: Paris-day bucketing across DST (insert path and the
-// backfill migration), periods, projection, cache rate and savings, insights,
-// API validation and the weekly Discord recap. Throwaway SQLite DB; no network
-// call and no AI call.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
@@ -17,13 +13,11 @@ globalThis.fetch = async (url) => {
   throw new Error(`Unexpected network call in test: ${url}`);
 };
 
-// A ledger written before the `day` column existed: the migration must
-// backfill the Paris date, DST included (2026-03-29: 02:00 CET -> 03:00 CEST).
 const legacy = [
-  ['2026-03-28T22:59:00Z', 0.01], // 28 Mar 23:59 CET
-  ['2026-03-28T23:00:00Z', 0.02], // 29 Mar 00:00 CET
-  ['2026-03-29T21:59:00Z', 0.04], // 29 Mar 23:59 CEST
-  ['2026-03-29T22:00:00Z', 0.08], // 30 Mar 00:00 CEST
+  ['2026-03-28T22:59:00Z', 0.01],
+  ['2026-03-28T23:00:00Z', 0.02],
+  ['2026-03-29T21:59:00Z', 0.04],
+  ['2026-03-29T22:00:00Z', 0.08],
 ];
 {
   const raw = new Database(dbPath);
@@ -69,7 +63,6 @@ function record(iso, { task = 'veille.triage', model = 'claude-haiku-5-5', cost 
   );
 }
 
-// Formatted amounts use no-break spaces (`0,77\u00a0$`); compare with plain spaces.
 const plain = (text) => text.replace(/\u00a0/g, ' ');
 const close = (a, b, eps = 1e-12) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
 
@@ -84,10 +77,10 @@ test('migration: day column backfilled in Paris time across the March DST switch
 });
 
 test('insert path: Paris day stored, October DST end (25 h day) buckets correctly', () => {
-  record('2026-10-24T21:59:00Z', { cost: 0.001 }); // 24 Oct 23:59 CEST
-  record('2026-10-24T22:30:00Z', { cost: 0.002 }); // 25 Oct 00:30 CEST
-  record('2026-10-25T22:30:00Z', { cost: 0.004 }); // 25 Oct 23:30 CET
-  record('2026-10-25T23:30:00Z', { cost: 0.008 }); // 26 Oct 00:30 CET
+  record('2026-10-24T21:59:00Z', { cost: 0.001 });
+  record('2026-10-24T22:30:00Z', { cost: 0.002 });
+  record('2026-10-25T22:30:00Z', { cost: 0.004 });
+  record('2026-10-25T23:30:00Z', { cost: 0.008 });
   const now = Date.parse('2026-10-31T12:00:00Z');
   const r = report.buildUsageReport(CFG, report.resolveUsageRange('month', now), { now });
   const by = Object.fromEntries(r.series.map((p) => [p.bucket, p.costUsd]));
@@ -95,7 +88,6 @@ test('insert path: Paris day stored, October DST end (25 h day) buckets correctl
   close(by['2026-10-24'], 0.001);
   close(by['2026-10-25'], 0.006);
   close(by['2026-10-26'], 0.008);
-  // March report (prev-month seen from April) uses the backfilled days.
   const april = Date.parse('2026-04-02T10:00:00Z');
   const m = report.buildUsageReport(CFG, report.resolveUsageRange('prev-month', april), { now: april });
   const mar = Object.fromEntries(m.series.map((p) => [p.bucket, p.costUsd]));
@@ -106,7 +98,6 @@ test('insert path: Paris day stored, October DST end (25 h day) buckets correctl
 });
 
 test('periods: Paris calendar ranges and their comparison ranges', () => {
-  // 10 Oct 2026 00:30 Paris = 9 Oct 22:30 UTC: "today" is the Paris date.
   const now = Date.parse('2026-10-09T22:30:00Z');
   const r7 = report.resolveUsageRange('7d', now);
   assert.deepEqual([r7.from, r7.to, r7.days, r7.bucket], ['2026-10-04', '2026-10-10', 7, 'day']);
@@ -123,10 +114,8 @@ test('periods: Paris calendar ranges and their comparison ranges', () => {
   ]);
   const y = report.resolveUsageRange('12m', now);
   assert.deepEqual([y.from, y.to, y.bucket, y.previous.from], ['2025-11-01', '2026-10-10', 'month', '2024-11-01']);
-  // 31 March: the previous month has 28/29 days, clamped.
   const endMarch = Date.parse('2027-03-31T10:00:00Z');
   assert.equal(report.resolveUsageRange('month', endMarch).previous.to, '2027-02-28');
-  // Weekly recap: Monday 12 Oct 09:00 Paris -> Mon 5 .. Sun 11 Oct.
   const w = report.previousWeekRange(Date.parse('2026-10-12T07:00:00Z'));
   assert.deepEqual([w.from, w.to, w.previous.from], ['2026-10-05', '2026-10-11', '2026-09-28']);
 });
@@ -145,7 +134,6 @@ test('projection: linear on days elapsed (today included)', () => {
   close(m.points[30].projectedUsd, 12.4);
   assert.equal(m.points[8].projectedUsd, null);
   assert.equal(m.level, 'ok');
-  // Budget states: >= 80 % warning, >= 100 % exceeded (projected too).
   const hot = report.buildMonthBlock('2026-10', '2026-10-10', new Map([['2026-10-02', 70]]), 200);
   assert.equal(hot.level, 'ok');
   assert.equal(hot.projectedLevel, 'exceeded');
@@ -155,7 +143,6 @@ test('projection: linear on days elapsed (today included)', () => {
 test('cache rate and net cache savings (Haiku 5.5 prices, long-context tier, GitHub Models)', () => {
   assert.equal(report.cacheRate({ inputTokens: 300, cacheWriteTokens: 100, cacheReadTokens: 600, outputTokens: 50 }), 0.6);
   assert.equal(report.cacheRate({ inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 5 }), null);
-  // 1 MTok read saves 0.10 - 0.01; 1 MTok written costs 0.125 - 0.10 extra.
   close(report.cacheSavingsUsd('anthropic', 'claude-haiku-5-5', { cacheReadTokens: 1e6, cacheWriteTokens: 0 }), 0.09);
   close(report.cacheSavingsUsd('anthropic', 'claude-haiku-5-5', { cacheReadTokens: 0, cacheWriteTokens: 1e6 }), -0.025);
   close(report.cacheSavingsUsd('anthropic', 'claude-haiku-5-5', { cacheReadTokens: 1e6, cacheWriteTokens: 0 }, true), 0.45);
@@ -164,12 +151,11 @@ test('cache rate and net cache savings (Haiku 5.5 prices, long-context tier, Git
 });
 
 test('report: totals, KPIs, breakdowns, top calls (no content), savings', () => {
-  // 2027-02: a month no other test writes to. Now = 10 Feb.
   record('2027-02-02T09:00:00Z', { task: 'veille.triage', cost: 0.30, input: 1000, cr: 3000, cw: 500, output: 200 });
   record('2027-02-03T09:00:00Z', { task: 'veille.triage', cost: 0.30, input: 1000, cr: 3000, output: 200 });
   record('2027-02-04T09:00:00Z', { task: 'veille.digest', cost: 0.20, input: 5000, output: 900 });
   record('2027-02-05T09:00:00Z', { task: 'content.thread', cost: 0.20, model: 'claude-sonnet-5-5', input: 800, output: 400 });
-  record('2027-01-05T09:00:00Z', { task: 'veille.triage', cost: 0.50 }); // previous period
+  record('2027-01-05T09:00:00Z', { task: 'veille.triage', cost: 0.50 });
   const now = Date.parse('2027-02-10T11:00:00Z');
   const r = report.buildUsageReport(CFG, report.resolveUsageRange('month', now), { now, webhookConfigured: true });
 
@@ -306,12 +292,11 @@ test('API: period validated with zod, default = current month, recap toggle vali
 });
 
 test('weekly recap: embed content, sent once per week, toggle, webhook, provider', async () => {
-  // Week Mon 2027-03-08 .. Sun 2027-03-14; previous week has one call.
   record('2027-03-03T10:00:00Z', { task: 'veille.digest', cost: 0.10 });
   record('2027-03-09T10:00:00Z', { task: 'veille.triage', cost: 0.12, input: 500, cr: 1500 });
   record('2027-03-10T10:00:00Z', { task: 'veille.triage', cost: 0.12, input: 500, cr: 1500 });
   record('2027-03-12T10:00:00Z', { task: 'veille.digest', cost: 0.06 });
-  const monday = Date.parse('2027-03-15T08:00:00Z'); // 09:00 Paris
+  const monday = Date.parse('2027-03-15T08:00:00Z');
   const r = report.buildUsageReport(CFG, report.previousWeekRange(monday), { now: monday });
   const embed = recap.buildWeeklyRecapEmbed(r);
   assert.equal(embed.title, '📊 Dépenses IA — semaine du 8 mars au 14 mars');
@@ -337,7 +322,6 @@ test('weekly recap: embed content, sent once per week, toggle, webhook, provider
   assert.equal(sent.length, 1);
   assert.equal(sent[0].url, WEBHOOK);
   assert.equal(getDb().prepare("SELECT status FROM ai_usage_recaps WHERE week = '2027-03-08'").get().status, 'sent');
-  // A quiet week sends nothing.
   assert.equal(await recap.sendWeeklyRecap(cfg, { ...deps, now: Date.parse('2031-06-16T07:00:00Z') }), 'no_usage');
   assert.equal(recap.WEEKLY_RECAP_CRON, '0 9 * * 1');
 });

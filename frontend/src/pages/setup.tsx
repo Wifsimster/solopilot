@@ -8,9 +8,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Settings as SettingsIcon, ArrowRight, CheckCircle2, XCircle, Terminal, BookOpen } from "lucide-react";
 import type { SetupResponse } from "@/types";
 
-// Inline tags allowed in the trusted `howToFind` help strings (defined in the
-// backend constant REQUIRED_CREDENTIALS). Rendered as React elements rather than
-// injected as raw HTML, so no dangerouslySetInnerHTML is needed.
 const ALLOWED_INLINE_TAGS = new Set(["a", "code", "strong", "kbd", "em", "b"]);
 
 function nodeToReact(node: Node, key: number): ReactNode {
@@ -20,7 +17,6 @@ function nodeToReact(node: Node, key: number): ReactNode {
   const tag = el.tagName.toLowerCase();
   const children = Array.from(el.childNodes).map((child, i) => nodeToReact(child, i));
   if (!ALLOWED_INLINE_TAGS.has(tag)) {
-    // Drop unknown tags but keep their text content.
     return createElement(Fragment, { key }, ...children);
   }
   if (tag === "a") {
@@ -78,7 +74,6 @@ export function SetupPage() {
     <div className="flex min-h-screen flex-col items-center justify-center bg-muted/30 px-4 py-12">
       <div className="w-full max-w-lg space-y-6">
 
-        {/* Brand mark + heading */}
         <div className="flex flex-col items-center gap-4 text-center">
           <div
             className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20"
@@ -101,7 +96,6 @@ export function SetupPage() {
           </div>
         </div>
 
-        {/* Progress bar */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>Progression</span>
@@ -120,7 +114,6 @@ export function SetupPage() {
           </div>
         </div>
 
-        {/* Credentials list */}
         <Card>
           <CardHeader className="pb-4">
             <CardTitle className="text-base">Variables d'environnement</CardTitle>
@@ -157,7 +150,6 @@ export function SetupPage() {
           </CardContent>
         </Card>
 
-        {/* .env template — only shown if not fully configured */}
         {!configured && (
           <Card>
             <CardHeader className="pb-4">
@@ -186,7 +178,6 @@ export function SetupPage() {
           </Card>
         )}
 
-        {/* How to configure steps */}
         <Card>
           <CardHeader className="pb-4">
             <div className="flex items-center gap-2">
@@ -215,7 +206,6 @@ export function SetupPage() {
           </CardContent>
         </Card>
 
-        {/* CTA */}
         {configured ? (
           <Button asChild className="w-full" size="lg">
             <Link to="/">

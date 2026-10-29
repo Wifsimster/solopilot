@@ -8,11 +8,6 @@ export interface StoreItemsResult {
   insertedIds: string[];
 }
 
-/**
- * Stores items with deduplication via INSERT OR IGNORE on item ID (source-prefixed).
- * Returns the count and IDs of newly inserted items (duplicates excluded).
- * An item found by both passes keeps its first origin (topic pass runs first).
- */
 export function storeItems(
   items: Item[],
   collectionDate: string,
@@ -78,14 +73,6 @@ interface ItemRow {
   origin: string;
 }
 
-/**
- * Returns all items for a product that haven't been used in a publish run yet.
- * Optionally restrict by collection date or source.
- *
- * When no collectionDate is provided, returns every unused item across all dates.
- * This ensures tweets stored between yesterday's publish and today's publish are
- * not stranded by the daily date boundary.
- */
 export function getUnpublishedTweets(
   productId: string = DEFAULT_PRODUCT_ID,
   options: ItemQueryOptions = {},
@@ -112,9 +99,6 @@ export function getUnpublishedTweets(
   return rows.map((row) => mapRowToItem(row, productId));
 }
 
-/**
- * Marks items as consumed by a publish run.
- */
 export function markTweetsAsUsed(itemIds: string[], runId: number): void {
   const db = getDb();
   const update = db.prepare('UPDATE tweets SET used_in_run_id = ? WHERE id = ?');
@@ -126,17 +110,11 @@ export function markTweetsAsUsed(itemIds: string[], runId: number): void {
   updateMany(itemIds);
 }
 
-/**
- * Releases items associated with a run, making them available for re-processing.
- */
 export function releaseTweetsForRun(runId: number): void {
   const db = getDb();
   db.prepare('UPDATE tweets SET used_in_run_id = NULL WHERE used_in_run_id = ?').run(runId);
 }
 
-/**
- * Returns the collection date for items linked to a given run.
- */
 export function getCollectionDateForRun(runId: number): string | undefined {
   const db = getDb();
   const row = db
@@ -145,9 +123,6 @@ export function getCollectionDateForRun(runId: number): string | undefined {
   return row?.collection_date;
 }
 
-/**
- * Returns the count of items collected today that are not yet used.
- */
 export function countUnpublishedTweets(
   collectionDate: string,
   productId: string = DEFAULT_PRODUCT_ID,
@@ -166,9 +141,6 @@ export function countUnpublishedTweets(
   return row.count;
 }
 
-/**
- * Returns items used in a specific publish run.
- */
 export function getTweetsByRunId(
   runId: number,
   limit = 50,
@@ -194,9 +166,6 @@ export function getTweetsByRunId(
   };
 }
 
-/**
- * Returns the total count of items collected for a given date.
- */
 export function countTweetsForDate(
   collectionDate: string,
   productId: string = DEFAULT_PRODUCT_ID,
@@ -283,11 +252,6 @@ export interface VeilleItemView {
   origin: string;
 }
 
-/**
- * Lists collected items with their per-item AI triage fields, filterable by
- * category / minimum urgency / triage state. Backs the veille items API
- * independently of the daily digest.
- */
 export function listVeilleItems(opts: VeilleItemListOptions = {}): VeilleItemView[] {
   const db = getDb();
   const clauses = ['product_id = ?'];
@@ -339,10 +303,6 @@ export function listVeilleItems(opts: VeilleItemListOptions = {}): VeilleItemVie
     .all(...params) as VeilleItemView[];
 }
 
-/**
- * Updates the owner triage status of one item. Returns the updated view, or
- * undefined when the id is unknown.
- */
 export function updateVeilleItemStatus(
   id: string,
   status: VeilleItemStatus,

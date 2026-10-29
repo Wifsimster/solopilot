@@ -1,10 +1,3 @@
-/**
- * Workflow run persistence.
- *
- * Writes workflow executions to the `workflow_runs` table — the workflow-aware
- * generalization of the legacy `runs` table (ADR-0013). The engine stays pure;
- * the runner uses this store to open a run before execution and close it after.
- */
 import { getDb, DEFAULT_PRODUCT_ID, type WorkflowRunRecord } from '../db.js';
 import type { Trigger, WorkflowRun } from './types.js';
 
@@ -68,7 +61,6 @@ export function listWorkflowRuns(
     .all(...params) as WorkflowRunRecord[];
 }
 
-/** Startup recovery — mark interrupted workflow runs as errored (mirrors runs recovery). */
 export function recoverStaleWorkflowRuns(): number {
   const db = getDb();
   const result = db

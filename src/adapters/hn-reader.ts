@@ -41,10 +41,6 @@ function sanitizeStoryText(input: string): string {
 
 export interface HnReaderOptions {
   userAgent?: string;
-  /**
-   * Explicit keyword list. When set, it is used as-is (e.g. the brand-mention
-   * pass); when omitted, the product's `hn_keywords` are used.
-   */
   keywords?: string[];
 }
 
@@ -80,7 +76,6 @@ export function createHnReader(options: HnReaderOptions = {}): SourceReader {
 
     for (const keyword of keywords) {
       try {
-        // react-doctor-disable-next-line react-doctor/async-await-in-loop -- sequential by design: paced per-keyword calls against the public HN API to stay within rate limits
         const items = await fetchKeyword(keyword, productId, sinceTs, fetchedAt);
         for (const item of items) {
           if (!dedup.has(item.id)) dedup.set(item.id, item);
@@ -154,7 +149,6 @@ export function createHnReader(options: HnReaderOptions = {}): SourceReader {
           ? hit.url
           : `https://news.ycombinator.com/item?id=${hit.objectID}`;
       const externalUrls =
-        // react-doctor-disable-next-line react-doctor/js-set-map-lookups -- String.includes() substring test on a URL, not an array membership lookup
         hit.url && hit.url.length > 0 && !hit.url.includes('news.ycombinator.com')
           ? [hit.url]
           : [];

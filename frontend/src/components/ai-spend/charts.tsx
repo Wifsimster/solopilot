@@ -1,8 +1,3 @@
-// Charts of the « Dépenses IA » page (Recharts via the shadcn ChartContainer,
-// ADR-0021). Mark specs follow the dataviz method: bars <= 24 px with a 4 px
-// rounded data end and a 2 px surface gap between stacked segments, 2 px
-// lines, hairline solid grid, legend for >= 2 series, value-first tooltips,
-// and a data table under every chart (tooltips never gate a value).
 import { useId, type ReactNode } from 'react';
 import {
   Area,
@@ -21,7 +16,6 @@ import { cn } from '@/lib/utils';
 import type { AiSpendReport, AiTaskClassId } from '@/types';
 import { bucketLong, bucketShort, niceScale, num, pct, tokensCompact, usd, usdTick } from './format';
 
-/** Fixed slot per class: colour follows the entity, never its rank. */
 export const CLASS_COLORS: Record<AiTaskClassId, string> = {
   triage: 'var(--series-1)',
   digest: 'var(--series-2)',
@@ -43,14 +37,9 @@ const AXIS_TICK = { fontSize: 11, fill: 'var(--muted-foreground)' };
 const GAP = 2;
 const RADIUS = 4;
 
-// ---------------------------------------------------------------------------
-// Shared pieces
-// ---------------------------------------------------------------------------
-
 interface ChartFigureProps {
   title: string;
   description: string;
-  /** One-sentence reading of the chart for screen readers. */
   summary: string;
   legend?: ReactNode;
   table: ReactNode;
@@ -59,7 +48,6 @@ interface ChartFigureProps {
   dimmed?: boolean;
 }
 
-/** Card-level figure: title, aria summary, legend, chart and its table twin. */
 export function ChartFigure({
   title,
   description,
@@ -222,10 +210,6 @@ function roundedTopPath(x: number, y: number, w: number, h: number, r: number): 
   return `M${x},${y + h} L${x},${y + rr} Q${x},${y} ${x + rr},${y} L${x + w - rr},${y} Q${x + w},${y} ${x + w},${y + rr} L${x + w},${y + h} Z`;
 }
 
-/**
- * One stacked segment: the top segment of a column gets the rounded data end;
- * the others leave a 2 px surface gap above them. Square at the baseline.
- */
 function stackSegment(key: string) {
   return function StackSegment(props: unknown) {
     const { x = 0, y = 0, width = 0, height = 0, fill, payload } = props as ShapeProps;
@@ -327,10 +311,6 @@ function StackedBars({ data, series, format, tick, totalLabel }: StackedBarsProp
   );
 }
 
-// ---------------------------------------------------------------------------
-// (1) Spend per day (or month) stacked by task class
-// ---------------------------------------------------------------------------
-
 export function SpendByClassChart({ report, dimmed }: { report: AiSpendReport; dimmed?: boolean }) {
   const present = report.classes.filter((c) => report.series.some((p) => p.byClass[c.id] > 0));
   const series = present.map((c) => ({ key: c.id, label: c.label, color: CLASS_COLORS[c.id] }));
@@ -365,15 +345,9 @@ export function SpendByClassChart({ report, dimmed }: { report: AiSpendReport; d
   );
 }
 
-// ---------------------------------------------------------------------------
-// (2) Cumulative month spend vs budget, with the linear projection
-// ---------------------------------------------------------------------------
-
 export function CumulativeChart({ report, dimmed }: { report: AiSpendReport; dimmed?: boolean }) {
   const m = report.month;
   const maxValue = Math.max(m.projectedUsd, m.spentUsd);
-  // A 200 $ budget line would flatten a 3 $ month: show it only when the curve
-  // reaches a quarter of it, otherwise say it is off scale.
   const budgetOnScale = report.enforced && maxValue >= m.budgetUsd * 0.25;
   const scale = niceScale(budgetOnScale ? Math.max(m.budgetUsd, maxValue) : maxValue);
   const lastActual = m.points.filter((p) => p.cumulativeUsd !== null).at(-1);
@@ -539,10 +513,6 @@ export function CumulativeChart({ report, dimmed }: { report: AiSpendReport; dim
   );
 }
 
-// ---------------------------------------------------------------------------
-// (3) Spend by model (horizontal bars, one series)
-// ---------------------------------------------------------------------------
-
 export function ModelChart({ report, dimmed }: { report: AiSpendReport; dimmed?: boolean }) {
   const byCost = report.enforced;
   const metric = byCost ? 'costUsd' : 'calls';
@@ -590,7 +560,6 @@ export function ModelChart({ report, dimmed }: { report: AiSpendReport; dimmed?:
             axisLine={{ stroke: 'var(--border)' }}
             width={136}
             tick={(tp: unknown) => {
-              // Plain <text>: Recharts' default tick wraps "Claude Sonnet 5.5".
               const { x, y, payload } = tp as { x: number; y: number; payload: { value: string } };
               return (
                 <text x={x - 6} y={y} dy={4} textAnchor="end" fontSize={11} fill="var(--foreground)">
@@ -632,10 +601,6 @@ export function ModelChart({ report, dimmed }: { report: AiSpendReport; dimmed?:
     </ChartFigure>
   );
 }
-
-// ---------------------------------------------------------------------------
-// (4) Tokens by type over time
-// ---------------------------------------------------------------------------
 
 export function TokensChart({ report, dimmed }: { report: AiSpendReport; dimmed?: boolean }) {
   const present = TOKEN_TYPES.filter((t) => report.totals[t.key] > 0);

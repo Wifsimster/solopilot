@@ -1,16 +1,3 @@
-/**
- * CRM bridge — high-intent mentions become CRM leads (ADR-0018 extension).
- *
- * Where mention-monitoring tools stop at an alert email, Solopilot routes the
- * signal into its own CRM: a triaged item flagged `triage_high_intent` creates
- * a contact (status lead, source 'veille') for its author, plus an interaction
- * carrying the excerpt and permalink. Author+product dedup: a returning author
- * gets a new interaction on the existing contact, never a duplicate lead.
- *
- * Idempotent via `crm_bridged_at`: each item is consumed exactly once, so the
- * inline collect path and the safety-net workflow can both run. Opt-in per
- * product (`crm_leads_enabled`); requires triage to have flagged the items.
- */
 import type { Config } from '../../config.js';
 import { getDb, type ContactRecord } from '../../db.js';
 import { getProduct, toProductView } from '../../product-service.js';
@@ -103,7 +90,6 @@ export async function createLeadsFromMentions(
       interactions++;
       markBridged.run(Date.now(), row.id);
     } catch (err) {
-      // Leave crm_bridged_at NULL — the item is retried on the next run.
       logger.warn('CRM lead bridge failed for item', {
         productId,
         itemId: row.id,
@@ -129,12 +115,11 @@ export async function createLeadsFromMentions(
               excerpt(row.text),
               ...(row.url ? ['', `[Voir le post](${row.url})`] : []),
             ].join('\n'),
-            color: 0x57f287, // Discord green
+            color: 0x57f287,
             timestamp: new Date().toISOString(),
           })),
         );
         if (!result.success) {
-          // Leads are already in the CRM; the notification is best-effort.
           logger.warn('CRM lead notification failed', {
             productId,
             leads: batch.length,

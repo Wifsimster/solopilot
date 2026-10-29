@@ -30,10 +30,6 @@ const STATUS_OPTIONS: { value: Status; label: string }[] = [
   { value: 'void', label: 'Annulée' },
 ];
 
-/**
- * Manual invoice creation dialog (ADR-0016). Posts to /api/facturation/invoices.
- * The amount is entered in euros and converted to cents for the API.
- */
 export function FacturationInvoiceDialog({
   productId,
   onCreated,

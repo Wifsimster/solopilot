@@ -1,11 +1,3 @@
-/**
- * Facturation module — workflow definitions.
- *
- * `facturation.relance-impayes` drafts reminders for overdue invoices and pushes
- * a summary for validation. `facturation.sync-stripe` keeps the local ledger in
- * sync with Stripe (no-op when Stripe is not configured). Both ship
- * `enabled: false` (ADR-0016).
- */
 import type { Workflow } from '../../workflow/types.js';
 
 export const facturationRelanceImpayes: Workflow = {

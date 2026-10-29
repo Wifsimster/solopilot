@@ -1,7 +1,3 @@
-// Verification scaffolding: fills the throwaway SQLite DB (DB_PATH) with fake
-// veille items through the app's own store (dist/tweet-store.js), then sets
-// their triage fields the way the AI triage step would. Run by
-// `control-solopilot launch` after `npm run build`; never point DB_PATH at data/.
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -15,7 +11,6 @@ const { storeItems } = await import(pathToFileURL(path.join(repo, 'dist', 'tweet
 
 const today = new Date().toISOString().slice(0, 10);
 const now = Date.now();
-// [id, source, author, text, category, urgency, status]
 const ITEMS = [
   ['verify-1', 'x', 'fake_user_a', 'Votre outil de facturation plante quand je change de mois, une idée ?', 'bug', 85, 'new'],
   ['verify-2', 'reddit', 'fake_user_b', 'Quelqu’un connaît un back-office pour auto-entrepreneur qui gère l’URSSAF ?', 'question', 72, 'new'],

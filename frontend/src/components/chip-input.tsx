@@ -2,52 +2,26 @@ import { useImperativeHandle, useRef, useState, type KeyboardEvent, type Ref } f
 import { Badge } from '@/components/ui/badge';
 import { X as XIcon } from 'lucide-react';
 
-/**
- * Result of parsing/validating a raw input string for a chip field. When valid,
- * `tokens` holds the normalized values to merge into the committed list; when
- * invalid, `error` holds the user-facing (French) message.
- */
 export type ChipParseResult = { ok: true; tokens: string[] } | { ok: false; error: string };
 
 export interface ChipInputHandle {
-  /**
-   * Flush any pending text in the input into the committed list. Mirrors the
-   * blur behavior so a parent can force-commit before submitting a form.
-   * Returns the resulting array on success (after dedup + cap), or `null` when
-   * the pending text is invalid (an error message is shown inline).
-   */
   flush: () => string[] | null;
 }
 
 interface ChipInputProps {
-  /** Committed chip values owned by the parent. */
   value: string[];
-  /** Called with the next committed array whenever it changes. */
   onChange: (next: string[]) => void;
-  /**
-   * Parse + validate a raw input string into normalized tokens. Pure: it must
-   * not depend on the current committed list (capping/dedup happen here).
-   */
   parse: (raw: string) => ChipParseResult;
-  /** Maximum number of committed values (used for dedup-aware capping). */
   max: number;
-  /** Message shown when the cap is exceeded while committing. */
   maxError: string;
   id: string;
   ariaLabel: string;
   removeLabel: (chip: string) => string;
   placeholder: string;
   disabled?: boolean;
-  /** React 19 ref-as-prop exposing the imperative flush handle. */
   ref?: Ref<ChipInputHandle>;
 }
 
-/**
- * A reusable chip/tag input. Owns its transient `input` + `error` state so the
- * parent only deals with the committed `value: string[]`. Adding chips merges
- * deduped tokens (case-insensitive) into `value`, capping at `max`; Backspace
- * on an empty input removes the last chip.
- */
 export function ChipInput({
   value,
   onChange,
@@ -63,8 +37,6 @@ export function ChipInput({
 }: ChipInputProps) {
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
-  // Keep the latest committed value reachable from the imperative flush
-  // without stale closures.
   const valueRef = useRef(value);
   valueRef.current = value;
 

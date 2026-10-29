@@ -1,12 +1,3 @@
-/**
- * Cockpit briefing aggregation.
- *
- * Builds the single daily picture of the company-of-one by reading existing
- * stores read-only: the latest veille digest and pending items, hot acquisition
- * leads, and workflow health. Modules not yet built (facturation, compta,
- * agenda) report a `planned` status so the cockpit shows the full roadmap
- * without faking data. See ADR-0015.
- */
 import { getLastDigest } from '../../run-service.js';
 import { getUnpublishedTweets } from '../../tweet-store.js';
 import { listIntentSignals } from '../../intent-service.js';
@@ -119,11 +110,6 @@ export function buildBriefing(activityId: string = DEFAULT_PRODUCT_ID): Briefing
   };
 }
 
-/**
- * Deterministic French markdown rendering of the briefing — no AI call, so the
- * daily brief is cheap and reproducible. An AI-composed variant can land later
- * behind a separate step.
- */
 export function renderBriefingText(b: Briefing): string {
   const lines: string[] = [`📋 **BRIEF DU JOUR — ${b.date}**`, ''];
 

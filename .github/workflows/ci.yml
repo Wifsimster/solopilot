@@ -1,7 +1,5 @@
 name: CI
 
-# Runs on every pull request, so a PR is only merged on a real green check.
-# Release only lints and builds after the merge, and only for feat/fix commits.
 on:
   pull_request:
     branches:

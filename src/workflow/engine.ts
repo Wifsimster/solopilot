@@ -1,14 +1,3 @@
-/**
- * Workflow engine — sequential, in-process executor.
- *
- * Runs a workflow's steps in order, threading each step's output into the next,
- * and records a per-step trace on the run. A `degradable` step that throws is
- * skipped (a dead connector must not fail the whole run — ADR-0013); a
- * non-degradable failure aborts the run with an error.
- *
- * Persistence of the run to `workflow_runs` is intentionally left to the runner
- * (migration plan, Phase 1) — this module is the pure orchestration core.
- */
 import { getStep } from './registry.js';
 import type { StepContext, Trigger, Workflow, WorkflowRun } from './types.js';
 
@@ -47,7 +36,6 @@ export async function runWorkflow(
 
     const input = { ...def.with, ...toObject(data) };
     try {
-      // Steps run sequentially by design: each consumes the previous step's output.
       data = await step.run(ctx, input);
       run.trace.push({ step: def.use, status: 'ok' });
     } catch (err) {

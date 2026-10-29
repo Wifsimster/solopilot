@@ -11,53 +11,35 @@ import {
 } from '../ports.js';
 import { logger } from '../logger.js';
 
-// ---------------------------------------------------------------------------
-// We drive OLD Reddit (old.reddit.com): a stable, plain HTML submit form that
-// is far less brittle than the new SPA. This is THE ONE PLACE to fix selectors
-// when publishing breaks. The submit form lives at /r/<sub>/submit?selftext=true.
-// The only French in this file lives in matched UI strings (rare on Reddit).
-// ---------------------------------------------------------------------------
 const SELECTORS = {
-  // The self/text post tab on the submit page (preselected by ?selftext=true,
-  // but we try to click it defensively in case the link tab is active).
   selfTextTabFallbacks: [
     'a.choice[href*="selftext=true"]',
     '.formtabs-content a.choice',
     'li.text-button a',
   ],
-  // The title field on the self-post form.
   titleFallbacks: ['textarea[name="title"]', 'input[name="title"]'],
-  // The body field (selftext) on the self-post form.
   bodyFallbacks: ['textarea[name="text"]', 'div.usertext-edit textarea'],
-  // The submit button at the bottom of the form.
   submitFallbacks: [
     'button[type="submit"]',
     '.submit-page button[type="submit"]',
     'button.btn[type="submit"]',
   ],
-  // Login form markers (unauthenticated submit redirects/falls back to login).
   loginFallbacks: ['#login_login-main', 'a.login-required', 'form#login_login-main'],
-  // Logged-in markers on old.reddit (username link / logout form in the header).
   loggedInFallbacks: ['#header-bottom-right .user a', 'form.logout', '#header-bottom-right .logout'],
-  // Captcha markers — we detect but never solve these.
   captchaFallbacks: ['.g-recaptcha', 'iframe[src*="recaptcha"]'],
-  // Inline form error / status containers shown when a submit is rejected.
   errorFallbacks: ['.error', '.status'],
 } as const;
 
-// Explicit timeouts (ms). Kept generous because the form + redirect can be slow.
 const NAV_TIMEOUT = 30_000;
 const ACTION_TIMEOUT = 15_000;
 const PUBLISH_CONFIRM_TIMEOUT = 30_000;
 
-// Realistic desktop Chrome UA so the fingerprint stays consistent with a human.
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 const OLD_REDDIT = 'https://old.reddit.com';
 
-/** Minimal structural type for the chromium runtime we dynamically import. */
 interface ChromiumLike {
   launch(options: {
     headless: boolean;
@@ -93,7 +75,6 @@ export class RedditPublisher implements Publisher {
       }
       return 'expired';
     } catch (error) {
-      // checkSession must never throw; treat any failure as "needs re-auth".
       logger.warn('Reddit checkSession failed', { error: errMsg(error) });
       return 'expired';
     } finally {
@@ -102,8 +83,6 @@ export class RedditPublisher implements Publisher {
   }
 
   async publish(input: PublishInput): Promise<PublishResult> {
-    // A Reddit post requires a target subreddit + a title; validate before we
-    // pay the cost of launching a browser.
     const subreddit = this.readSubreddit(input);
     const title = this.readTitle(input);
     if (!subreddit || !title) {
@@ -123,7 +102,6 @@ export class RedditPublisher implements Publisher {
       await page.goto(submitUrl, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT });
       await this.sleep(this.jitter(600, 1500));
 
-      // Detect login/checkpoint state before touching the form.
       if (await this.isCaptchaVisible(page)) {
         throw new PublishError(
           'CHECKPOINT',
@@ -137,7 +115,6 @@ export class RedditPublisher implements Publisher {
         throw new PublishError('RATE_LIMITED', 'Reddit says you are doing that too much.');
       }
 
-      // ?selftext=true usually preselects the text tab; click it defensively.
       await this.selectSelfTextTab(page);
 
       const titleField = await this.getTitleField(page);
@@ -174,13 +151,7 @@ export class RedditPublisher implements Publisher {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Browser lifecycle
-  // -------------------------------------------------------------------------
-
   private async launch(): Promise<{ browser: Browser; context: BrowserContext }> {
-    // Dynamic import so the module can load in environments without playwright
-    // and so we never pay the cost at module init.
     const mod = (await import('playwright-core')) as unknown as { chromium: ChromiumLike };
     const chromium = mod.chromium;
 
@@ -207,7 +178,6 @@ export class RedditPublisher implements Publisher {
     context.setDefaultTimeout(ACTION_TIMEOUT);
     context.setDefaultNavigationTimeout(NAV_TIMEOUT);
 
-    // Mask the automation flag so navigator.webdriver reads as undefined.
     await context.addInitScript(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
     });
@@ -217,8 +187,6 @@ export class RedditPublisher implements Publisher {
 
   private async seedSession(context: BrowserContext, session: PlatformSession): Promise<void> {
     if (!session.cookies || session.cookies.length === 0) return;
-    // old.reddit.com shares the .reddit.com session cookie, so a single seed
-    // covers both the www and old hosts.
     const cookies = session.cookies.map((c: SessionCookie) => ({
       name: c.name,
       value: c.value,
@@ -237,12 +205,7 @@ export class RedditPublisher implements Publisher {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Submit-form flow
-  // -------------------------------------------------------------------------
-
   private async selectSelfTextTab(page: Page): Promise<void> {
-    // Best-effort: if the body field is already present we are on the text tab.
     const bodyAlready = await this.firstVisible(
       page,
       SELECTORS.bodyFallbacks.map((sel) => page.locator(sel)),
@@ -294,8 +257,6 @@ export class RedditPublisher implements Publisher {
     if (!button) {
       throw new PublishError('SELECTOR_DRIFT', 'Could not find the "submit" button.');
     }
-    // Some subreddits keep the button disabled until a flair is chosen or rules
-    // are acknowledged. We never guess flairs — surface a clear, actionable error.
     const deadline = Date.now() + ACTION_TIMEOUT;
     let enabled = false;
     while (Date.now() < deadline) {
@@ -314,11 +275,6 @@ export class RedditPublisher implements Publisher {
     await button.click({ timeout: ACTION_TIMEOUT });
   }
 
-  /**
-   * Confirms the post went live. Old reddit redirects a successful self-post to
-   * the new permalink (/r/<sub>/comments/<id>/...). We wait for that URL; if a
-   * form error surfaces instead we classify and throw.
-   */
   private async confirmPublished(page: Page): Promise<PublishResult> {
     const navigated = page
       .waitForURL(/\/comments\//, { timeout: PUBLISH_CONFIRM_TIMEOUT })
@@ -334,7 +290,6 @@ export class RedditPublisher implements Publisher {
 
     if (outcome === 'errored') {
       const text = await this.readFormError(page);
-      // Let toPublishError classify the message (rate-limit/login/captcha/etc).
       throw new PublishError('UNKNOWN', text || 'Reddit rejected the submission.');
     }
     if (outcome !== 'navigated' || !/\/comments\//.test(page.url())) {
@@ -346,7 +301,6 @@ export class RedditPublisher implements Publisher {
 
     const finalUrl = page.url();
     const externalId = this.parseCommentId(finalUrl);
-    // Return a canonical www.reddit.com permalink; keep externalId as the id.
     const url = this.toCanonicalUrl(finalUrl);
     return externalId ? { url, externalId } : { url };
   }
@@ -359,11 +313,8 @@ export class RedditPublisher implements Publisher {
         const text = (await loc.textContent().catch(() => ''))?.trim() ?? '';
         if (text) return;
       } catch {
-        // This selector never showed an error — try the next one.
       }
     }
-    // No form error appeared within the window; block forever so the caller's
-    // Promise.race resolves on the navigation/timeout branch instead.
     await new Promise<void>(() => {});
   }
 
@@ -378,13 +329,11 @@ export class RedditPublisher implements Publisher {
     return '';
   }
 
-  /** Extracts the post id from an old/new reddit permalink (/comments/<id>/). */
   private parseCommentId(url: string): string | undefined {
     const match = url.match(/\/comments\/([0-9a-z]+)/i);
     return match ? match[1] : undefined;
   }
 
-  /** Rewrites an old.reddit.com permalink to the canonical www.reddit.com host. */
   private toCanonicalUrl(url: string): string {
     try {
       const parsed = new URL(url);
@@ -395,11 +344,6 @@ export class RedditPublisher implements Publisher {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Meta parsing
-  // -------------------------------------------------------------------------
-
-  /** Reads + normalizes the target subreddit (strips an optional "r/" prefix). */
   private readSubreddit(input: PublishInput): string | undefined {
     const raw = input.meta?.subreddit;
     if (typeof raw !== 'string') return undefined;
@@ -413,10 +357,6 @@ export class RedditPublisher implements Publisher {
     const trimmed = raw.trim();
     return trimmed.length > 0 ? trimmed : undefined;
   }
-
-  // -------------------------------------------------------------------------
-  // State detection
-  // -------------------------------------------------------------------------
 
   private isLoginUrl(url: string): boolean {
     return /\/login|\/register/i.test(url);
@@ -450,11 +390,6 @@ export class RedditPublisher implements Publisher {
     return false;
   }
 
-  // -------------------------------------------------------------------------
-  // Human-paced helpers
-  // -------------------------------------------------------------------------
-
-  /** Types text char-by-char with jittered delays and occasional pauses. */
   private async humanType(page: Page, locator: Locator, text: string): Promise<void> {
     await locator.click({ timeout: ACTION_TIMEOUT });
     await this.sleep(this.jitter(150, 500));
@@ -467,14 +402,12 @@ export class RedditPublisher implements Publisher {
       } else {
         await page.keyboard.type(char, { delay });
       }
-      // Occasional longer human pause (e.g. thinking / after punctuation).
       if (Math.random() < 0.04 || char === '.' || char === '\n') {
         await this.sleep(this.jitter(250, 800));
       }
     }
   }
 
-  /** Returns the first locator that becomes visible, or undefined. */
   private async firstVisible(
     _page: Page,
     locators: Locator[],
@@ -498,10 +431,6 @@ export class RedditPublisher implements Publisher {
   private jitter(min: number, max: number): number {
     return Math.floor(min + Math.random() * (max - min));
   }
-
-  // -------------------------------------------------------------------------
-  // Error classification
-  // -------------------------------------------------------------------------
 
   private toPublishError(error: unknown): PublishError {
     if (error instanceof PublishError) return error;

@@ -30,11 +30,6 @@ function resolveDiscordWebhook(config: Config, productId: string): string | unde
   return getSetting('DISCORD_WEBHOOK_URL') ?? config.DISCORD_WEBHOOK_URL;
 }
 
-/**
- * Effective veille delivery (mode + consolidated webhook) from env + global DB
- * settings. Read on every call so a change in Settings applies to the next run
- * without a restart. Product-level settings are intentionally not consulted.
- */
 export function getVeilleDelivery(): VeilleDelivery {
   const delivery = resolveVeilleDelivery(process.env, getSettingsMap());
   for (const warning of delivery.warnings) {
@@ -43,10 +38,6 @@ export function getVeilleDelivery(): VeilleDelivery {
   return delivery;
 }
 
-/**
- * Hourly tweet collection — lightweight, no AI, no Discord.
- * Uses a separate concurrency guard per product so it doesn't block publish runs.
- */
 export async function triggerCollect(
   config: Config,
   productId: string = DEFAULT_PRODUCT_ID,
@@ -123,9 +114,6 @@ export async function triggerRun(
 
     const finalRun = db.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as RunRecord;
     if (status === 'success' && finalRun.summary) {
-      // Consolidated mode: the per-product digest is kept (runs.summary) but not
-      // posted here. It stays 'pending' until the consolidated digest
-      // (veille.digest-consolidated) writes its real outcome (sent/failed/skipped).
       const consolidated = getVeilleDelivery().mode === 'consolidated';
       const webhookUrl = consolidated ? undefined : resolveDiscordWebhook(config, productId);
       if (consolidated) {
@@ -211,10 +199,6 @@ export function countRuns(
   return row.count;
 }
 
-/**
- * On startup, mark any runs stuck in 'running' status as 'error'.
- * This handles the case where the process was killed mid-run.
- */
 export function recoverStaleRuns(): number {
   const db = getDb();
   const result = db
@@ -235,12 +219,6 @@ export function getLastRun(productId: string = DEFAULT_PRODUCT_ID): RunRecord | 
     .get(productId) as RunRecord | undefined;
 }
 
-/**
- * Returns the most recent run that actually produced a digest (non-null summary).
- * Unlike getLastRun, this skips interleaved collect / no-news runs, so the cockpit's
- * "Veille" card keeps showing the last real digest instead of blanking out every
- * time an hourly collect run (summary NULL) becomes the newest row.
- */
 export function getLastDigest(productId: string = DEFAULT_PRODUCT_ID): RunRecord | undefined {
   const db = getDb();
   return db
@@ -251,10 +229,6 @@ export function getLastDigest(productId: string = DEFAULT_PRODUCT_ID): RunRecord
     .get(productId) as RunRecord | undefined;
 }
 
-/**
- * Soft-deletes a summary: nulls the summary, sets status to 'deleted',
- * releases associated tweets, and cascades to monthly summaries.
- */
 export function deleteSummary(runId: number): { success: boolean; message: string } {
   const db = getDb();
   const targetRun = db.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as
@@ -280,10 +254,6 @@ export function deleteSummary(runId: number): { success: boolean; message: strin
   return { success: true, message: 'Resume supprime avec succes.' };
 }
 
-/**
- * Re-runs the AI summary for a given run's collection date.
- * Soft-deletes the old run, creates a new run, and processes the freed tweets.
- */
 export async function triggerRerun(
   config: Config,
   originalRunId: number,
@@ -360,7 +330,7 @@ export async function triggerRerun(
 }
 
 export interface SummaryFilters {
-  month?: string; // YYYY-MM format
+  month?: string;
   search?: string;
 }
 

@@ -1,11 +1,3 @@
-/**
- * Workflow & step registry.
- *
- * Single source of truth for the engine, the scheduler, and the dashboard:
- * which workflows exist, which are enabled, and which steps are available to
- * compose them. In-process and in-memory, matching the single-process SQLite
- * posture of the rest of the app (ADR-0013).
- */
 import type { Step, Workflow } from './types.js';
 
 const workflows = new Map<string, Workflow>();
@@ -38,7 +30,6 @@ export function listWorkflows(opts?: { enabledOnly?: boolean }): Workflow[] {
   return opts?.enabledOnly ? all.filter((w) => w.enabled) : all;
 }
 
-/** Test/boot helper — clears the registry. */
 export function resetRegistry(): void {
   workflows.clear();
   steps.clear();

@@ -1,5 +1,3 @@
-// Integration test for urgent mention alerts vs VEILLE_DIGEST_MODE: throwaway
-// SQLite DB, mocked fetch (no network).
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
@@ -7,7 +5,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 process.env.DB_PATH = path.join(mkdtempSync(path.join(tmpdir(), 'solopilot-alert-test-')), 'test.db');
-// Isolate from the caller's environment: only DB settings drive these tests.
 for (const k of ['VEILLE_DIGEST_MODE', 'VEILLE_DISCORD_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL']) delete process.env[k];
 
 const { getDb } = await import('../dist/db.js');
@@ -84,7 +81,7 @@ test('consolidated mode: veille webhook (not product/global), product name in th
 
 test('consolidated mode without veille webhook: skipped, no fetch, alerted_at stays NULL', async () => {
   setSetting('VEILLE_DIGEST_MODE', 'consolidated');
-  setSetting('DISCORD_WEBHOOK_URL', GLOBAL); // must NOT be used as a fallback
+  setSetting('DISCORD_WEBHOOK_URL', GLOBAL);
   const res = await sendPendingAlerts({ DISCORD_WEBHOOK_URL: GLOBAL }, PRODUCT_ID);
   assert.deepEqual(res, { alerted: 0, channel: 'consolidated', skipped: 'no_webhook' });
   assert.equal(posts.length, 0);

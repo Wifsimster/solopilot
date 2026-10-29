@@ -1,21 +1,3 @@
-/**
- * Scoped API tokens (ADR-0029).
- *
- * A token lets an external agent (e.g. the household budget agent) reach a
- * narrow slice of the API without the admin password. Design:
- * - secret = `sp_` + 32 random bytes (base64url), shown once at creation;
- *   only its SHA-256 is stored (the secret is high-entropy, so a fast hash is
- *   enough and lookup by hash avoids timing comparisons);
- * - the full-access scope `*` reaches every route, method and product, like
- *   the admin password (decision of 2026-10-10: OpenClaw gets full access);
- * - other scopes map to an explicit allow-list of (method, path) rules;
- *   anything else is 403 for those tokens (default deny), including token
- *   management;
- * - optional product restriction (scoped tokens only), checked on the same
- *   `productId` the route handlers read;
- * - failed token attempts are rate-limited per client and every
- *   token-authenticated request is audited (no bodies).
- */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Context, MiddlewareHandler } from 'hono';
 import { getConnInfo } from '@hono/node-server/conninfo';
@@ -23,9 +5,6 @@ import { z } from 'zod';
 import { getDb, DEFAULT_PRODUCT_ID, type ApiTokenAuditRecord, type ApiTokenRecord } from './db.js';
 import { logger } from './logger.js';
 
-// --- Scopes & route rules ---
-
-/** Full-access scope: every route and method, every product, like the admin. */
 export const FULL_ACCESS_SCOPE = '*';
 
 export const API_TOKEN_SCOPES = {
@@ -46,12 +25,9 @@ interface RouteRule {
   method: string;
   path: RegExp;
   scope: ApiTokenScope;
-  /** Route acts on `?productId`: the token's product restriction applies. */
   productScoped: boolean;
 }
 
-// The only routes a scoped token can reach (a full-access token skips these
-// rules). Add a scope = add rules here + a label above.
 const ROUTE_RULES: readonly RouteRule[] = [
   { method: 'GET', path: /^\/api\/comptabilite$/, scope: 'comptabilite:read', productScoped: true },
   {
@@ -66,8 +42,6 @@ const ROUTE_RULES: readonly RouteRule[] = [
     scope: 'comptabilite:write',
     productScoped: true,
   },
-  // The handler returns a minimal projection (id, name) filtered by the
-  // token's product restriction.
   { method: 'GET', path: /^\/api\/products$/, scope: 'products:read', productScoped: false },
 ];
 
@@ -75,12 +49,9 @@ export function findRouteRule(method: string, path: string): RouteRule | undefin
   return ROUTE_RULES.find((r) => r.method === method && r.path.test(path));
 }
 
-/** Same resolution as the module route handlers (`productId`, alias `activity`). */
 export function requestProductId(c: Context): string {
   return c.req.query('productId') || c.req.query('activity') || DEFAULT_PRODUCT_ID;
 }
-
-// --- Token store ---
 
 export interface ApiTokenView {
   id: string;
@@ -106,7 +77,6 @@ export const apiTokenCreateSchema = z
   .object({
     name: z.string().trim().min(1).max(80),
     scopes: z.array(z.enum(API_TOKEN_SCOPE_IDS)).min(1),
-    // null / omitted = every product.
     productIds: z.array(z.string().min(1)).min(1).nullable().optional(),
   })
   .superRefine((data, ctx) => {
@@ -165,7 +135,6 @@ export function toApiTokenView(r: ApiTokenRecord): ApiTokenView {
   };
 }
 
-/** Create a token. The secret is returned once and never stored. */
 export function createApiToken(input: ApiTokenCreateInput): {
   token: ApiTokenView;
   secret: string;
@@ -208,7 +177,6 @@ export function listApiTokens(): ApiTokenView[] {
   ).map(toApiTokenView);
 }
 
-/** Revoke (soft): the row stays for the audit trail. False if unknown/already revoked. */
 export function revokeApiToken(id: string): boolean {
   const res = getDb()
     .prepare('UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL')
@@ -243,8 +211,6 @@ export function tokenAllowsProduct(token: AuthenticatedToken, productId: string)
   if (isFullAccess(token)) return true;
   return token.productIds === null || token.productIds.includes(productId);
 }
-
-// --- Audit ---
 
 const AUDIT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 let lastAuditPrune = 0;
@@ -282,8 +248,6 @@ export function listAudit(opts: { tokenId?: string; limit?: number } = {}): ApiT
     .prepare('SELECT * FROM api_token_audit ORDER BY at DESC, id DESC LIMIT ?')
     .all(limit) as ApiTokenAuditRecord[];
 }
-
-// --- Failure rate limiting (in memory, per client) ---
 
 export const AUTH_FAILURE_LIMIT = 10;
 const FAILURE_WINDOW_MS = 10 * 60 * 1000;
@@ -325,24 +289,17 @@ function recordFailure(client: string, now: number): void {
   }
 }
 
-/**
- * Client key for rate limiting: socket address plus the right-most
- * X-Forwarded-For hop (the one appended by our own reverse proxy). Left-most
- * hops are client-controlled and would let an attacker rotate keys.
- */
 function clientKey(c: Context): string {
   let remote = 'unknown';
   try {
     remote = getConnInfo(c).remote.address ?? 'unknown';
   } catch {
-    // Not running on the Node adapter (tests use app.request()).
   }
   const xff = c.req.header('x-forwarded-for');
   const lastHop = xff ? xff.split(',').at(-1)?.trim() : undefined;
   return lastHop ? `${remote}|${lastHop}` : remote;
 }
 
-/** Token secret from `Authorization: Bearer sp_…` or `X-Api-Token: sp_…`. */
 export function extractTokenSecret(c: Context): string | undefined {
   const header = c.req.header('x-api-token')?.trim();
   if (header) return header;
@@ -351,13 +308,6 @@ export function extractTokenSecret(c: Context): string | undefined {
   return m ? m[1] : undefined;
 }
 
-/**
- * Token authentication + authorization. Runs before Basic auth:
- * - no token header → `next()` untouched (Basic auth / open mode as before);
- * - token header → the request is token-authenticated only: invalid → 401,
- *   locked-out client → 429; a full-access token then reaches every route like
- *   the admin; a scoped token gets 403 outside its scopes or products.
- */
 export function apiTokenAuth(): MiddlewareHandler<{ Variables: ApiAuthVariables }> {
   return async (c, next) => {
     const secret = extractTokenSecret(c);

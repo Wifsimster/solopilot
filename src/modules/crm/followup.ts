@@ -1,9 +1,3 @@
-/**
- * Deterministic French follow-up drafting for stale deals.
- *
- * Staged for validation, never sent. No AI call. An AI-composed variant can
- * land later behind `ai.compose`. See ADR-0018.
- */
 import type { StaleDeal } from './store.js';
 
 export interface FollowupDraft {

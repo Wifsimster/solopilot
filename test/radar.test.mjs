@@ -1,5 +1,3 @@
-// Radar produit (ADR-0026): throwaway SQLite DB, injected AI, mocked fetch.
-// No real network: every fetch goes through the mock below.
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
@@ -31,9 +29,6 @@ const { runProductRadar, createIssueForProposal, getRadarSettings } = await impo
 const { createGithubIssuesConnector } = await import('../dist/connectors/github-issues.js');
 const { createRadarAi } = await import('../dist/modules/veille/radar-ai.js');
 
-// ---------------------------------------------------------------------------
-// fetch mock: routes by URL; records every call. Unknown URLs fail loudly.
-// ---------------------------------------------------------------------------
 const calls = [];
 let routes = {};
 globalThis.fetch = async (url, init = {}) => {
@@ -53,9 +48,6 @@ globalThis.fetch = async (url, init = {}) => {
 const json = (status, data) =>
   new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
 const db = getDb();
 const insertProduct = db.prepare(
   `INSERT INTO products (id, name, created_at, x_enabled, product_url, product_description)
@@ -148,9 +140,6 @@ beforeEach(() => {
   deleteSetting('VEILLE_DISCORD_WEBHOOK_URL');
 });
 
-// ---------------------------------------------------------------------------
-// Pure helpers
-// ---------------------------------------------------------------------------
 test('settings: safe defaults, DB overrides env, invalid values ignored', () => {
   const d = radar.resolveRadarSettings({}, {});
   assert.equal(d.enabled, false);
@@ -238,9 +227,6 @@ test('issue body: French sections, DB source block, sanitised model text', () =>
   assert.equal(radar.renderIssueTitle(REPORT), 'Veille : Reprendre le simulateur de charges');
 });
 
-// ---------------------------------------------------------------------------
-// Orchestration
-// ---------------------------------------------------------------------------
 test('disabled: nothing scanned, no AI call, no network', async () => {
   const ai = fakeAi([]);
   const res = await runProductRadar({}, { ai, github: WITH_TOKEN() });
@@ -337,7 +323,7 @@ test('dedup: the same item x product never yields a second issue', async () => {
   githubOk();
   const matches = [{ itemId: 'n1', productId: 'alpha', score: 0.9, reason: '' }];
   await runProductRadar({}, { ai: fakeAi(matches), github: WITH_TOKEN(), settings: SETTINGS });
-  db.prepare('UPDATE tweets SET radar_scanned_at = NULL').run(); // force a re-score
+  db.prepare('UPDATE tweets SET radar_scanned_at = NULL').run();
   const ai = fakeAi(matches);
   const res = await runProductRadar({}, {
     ai,
@@ -368,7 +354,6 @@ test('caps: per product per day, then global per day; capped pairs cost no repor
   assert.equal(byStatus('capped').length, 2);
   assert.equal(ai.reportCalls, 2);
 
-  // Global cap: a fresh day budget of 1 total.
   db.prepare('DELETE FROM radar_proposals').run();
   db.prepare('UPDATE tweets SET radar_scanned_at = NULL').run();
   const ai2 = fakeAi([
@@ -399,7 +384,6 @@ test('GitHub failure: proposal kept as failed with body; manual create succeeds 
   assert.ok(row.body);
   assert.match(row.error, /Issues: write/);
 
-  // Manual action without token: refused, row untouched.
   const refused = await createIssueForProposal({}, row.id, { github: NO_TOKEN });
   assert.equal(refused.ok, false);
   assert.equal(refused.status, 400);
@@ -408,7 +392,6 @@ test('GitHub failure: proposal kept as failed with body; manual create succeeds 
   const ok = await createIssueForProposal({}, row.id, { github: WITH_TOKEN() });
   assert.equal(ok.ok, true);
   assert.equal(proposals()[0].status, 'created');
-  // Already created: a second click is refused (no duplicate).
   const again = await createIssueForProposal({}, row.id, { github: WITH_TOKEN() });
   assert.equal(again.status, 409);
 });

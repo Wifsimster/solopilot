@@ -117,7 +117,6 @@ function truncate(value: string | null, max = 60): string {
 
 function formatCreatedAt(ts: number): string {
   if (!ts) return '—';
-  // Backend timestamps are in seconds (unix). Detect ms vs s heuristically.
   const ms = ts > 1e12 ? ts : ts * 1000;
   return formatDateFr(new Date(ms).toISOString());
 }

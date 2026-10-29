@@ -227,8 +227,3 @@ jobs:
           body_path: ${{ steps.changelog.outputs.changelog_file }}
           draft: false
           prerelease: false
-
-  # Deployment to the homelab is handled by the dedicated `deploy.yml`
-  # workflow, which fires on this workflow's completion (workflow_run).
-  # Keeping it separate makes deploys independently dispatchable and keeps
-  # the publish job free of any self-hosted-runner dependency.

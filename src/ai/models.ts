@@ -1,23 +1,8 @@
-/**
- * AI provider + model resolution, the Anthropic model catalogue (capabilities
- * and prices) and cost estimation (ADR-0027). Pure functions: no I/O, no SDK
- * import.
- *
- * Sources (read 2026-10-10):
- * - https://platform.claude.com/docs/en/models/overview
- * - https://platform.claude.com/docs/en/models/haiku-5-5/overview
- * - https://platform.claude.com/docs/en/about-claude/pricing
- * - https://platform.claude.com/docs/en/build-with-claude/effort
- * - https://platform.claude.com/docs/en/build-with-claude/thinking
- * - https://platform.claude.com/docs/en/build-with-claude/refusals-and-fallback
- * - https://platform.claude.com/docs/en/build-with-claude/prompt-caching
- */
 import type { AiProviderSetting, Config } from '../config.js';
 import { logger } from '../logger.js';
 
 export type AiProvider = AiProviderSetting;
 
-/** Model tier of a task: `fast` = high-volume classification (AI_MODEL_FAST). */
 export type AiTier = 'default' | 'fast';
 
 export const AI_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -27,7 +12,6 @@ export function isAiEffort(value: unknown): value is AiEffort {
   return typeof value === 'string' && (AI_EFFORT_LEVELS as readonly string[]).includes(value);
 }
 
-/** Owner decision (2026-10-10): Claude Haiku 5.5 for every AI task by default. */
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-haiku-5-5';
 
 export const DEFAULT_MODELS: Record<AiProvider, string> = {
@@ -35,7 +19,6 @@ export const DEFAULT_MODELS: Record<AiProvider, string> = {
   'github-models': 'openai/gpt-4.1',
 };
 
-/** USD per million tokens. */
 export interface ModelPrice {
   input: number;
   cacheWrite5m: number;
@@ -50,34 +33,17 @@ const BASIC_EFFORTS = ['low', 'medium', 'high'] as const;
 export interface AnthropicModelSpec {
   id: string;
   label: string;
-  /** Shown in the Settings dropdown (current lineup); older ids stay priced. */
   current: boolean;
   price: ModelPrice;
-  /**
-   * Prompt-length pricing (Claude Haiku 5.5): a request whose prompt (input +
-   * cache writes + cache reads) is over `thresholdTokens` pays `price` for every
-   * token category, output included.
-   */
   longContext?: { thresholdTokens: number; price: ModelPrice };
-  /** Accepted `output_config.effort` values; empty = parameter not sent. */
   effortLevels: readonly AiEffort[];
-  /** API default when `effort` is omitted (informational, for the UI). */
   defaultEffort?: AiEffort;
-  /** `thinking: {type: "adaptive"}` accepted. */
   adaptiveThinking: boolean;
-  /** Adaptive thinking runs even when `thinking` is omitted. */
   thinkingOnByDefault: boolean;
-  /** Server-side `fallbacks: "default"` (beta server-side-fallback-2026-07-01). */
   serverSideFallback: boolean;
-  /** Minimum cacheable prompt length (tokens). */
   minCacheTokens: number;
 }
 
-/**
- * The single model catalogue: Settings dropdown, request parameters and the
- * cost table all read it. Prices: pricing page, 2026-10-10 (5-minute cache
- * writes; cache reads 0.1x input, 0.05x on Opus/Sonnet 5.5, 0.025x on Fable 5.1).
- */
 export const ANTHROPIC_MODELS: readonly AnthropicModelSpec[] = [
   {
     id: 'claude-haiku-5-5',
@@ -92,8 +58,6 @@ export const ANTHROPIC_MODELS: readonly AnthropicModelSpec[] = [
     defaultEffort: 'medium',
     adaptiveThinking: true,
     thinkingOnByDefault: true,
-    // No server-side fallback: `fallbacks: "default"` would be a no-op and an
-    // explicit list is a 400.
     serverSideFallback: false,
     minCacheTokens: 512,
   },
@@ -133,7 +97,6 @@ export const ANTHROPIC_MODELS: readonly AnthropicModelSpec[] = [
     serverSideFallback: true,
     minCacheTokens: 512,
   },
-  // Legacy models, still available: priced and parameterised, not in the dropdown.
   {
     id: 'claude-fable-5',
     label: 'Claude Fable 5',
@@ -254,13 +217,8 @@ export const ANTHROPIC_MODELS: readonly AnthropicModelSpec[] = [
   },
 ];
 
-/** Settings validation for a free-text model id (dropdown "autre ID"). */
 export const ANTHROPIC_MODEL_ID_PATTERN = /^claude-[a-z0-9-]+$/;
 
-/**
- * Catalogue entry for a model id: exact id, or the id plus a date snapshot
- * suffix (`claude-haiku-4-5-20251001`). Anything else is unknown.
- */
 export function findAnthropicModel(model: string): AnthropicModelSpec | undefined {
   return ANTHROPIC_MODELS.find(
     (m) =>
@@ -269,11 +227,6 @@ export function findAnthropicModel(model: string): AnthropicModelSpec | undefine
   );
 }
 
-/**
- * Effective provider. `AI_PROVIDER` wins; otherwise Anthropic as soon as
- * `ANTHROPIC_API_KEY` is set, else the historical GitHub Models path. Flipping
- * `AI_PROVIDER=github-models` is the rollback (no code change).
- */
 export function resolveAiProvider(
   config: Pick<Config, 'AI_PROVIDER' | 'ANTHROPIC_API_KEY'>,
 ): AiProvider {
@@ -281,12 +234,10 @@ export function resolveAiProvider(
   return config.ANTHROPIC_API_KEY ? 'anthropic' : 'github-models';
 }
 
-/** Native Anthropic model ids look like `claude-haiku-5-5` (no vendor prefix). */
 export function isAnthropicModelId(model: string): boolean {
   return /^claude-[a-z0-9.-]+$/.test(model);
 }
 
-/** AI model/effort values stored in Settings (DB). Each one overrides its env twin. */
 export interface AiModelSettings {
   AI_MODEL?: string;
   AI_MODEL_FAST?: string;
@@ -299,7 +250,6 @@ export type AiSettingSource = 'settings' | 'env' | 'default';
 export interface AiSelection {
   model: string;
   modelSource: AiSettingSource;
-  /** Effort override for the class; undefined = per-task default (low/medium/high). */
   effort?: AiEffort;
   effortSource: AiSettingSource;
 }
@@ -316,17 +266,6 @@ function warnOnce(key: string, message: string, meta: Record<string, unknown>): 
   logger.warn(message, meta);
 }
 
-/**
- * Model + effort for a provider and tier. Order: Settings > env > code default,
- * per class (`default` = AI_MODEL / AI_EFFORT, `fast` = AI_MODEL_FAST /
- * AI_EFFORT_FAST). On Anthropic both classes default to Claude Haiku 5.5. On
- * GitHub Models the fast class keeps its historical fallback to the main model.
- *
- * A model id from the OTHER provider's family (e.g. a stored `openai/gpt-4.1`
- * after switching to Anthropic, or `claude-haiku-5-5` after rolling back) is
- * skipped with a warning, so flipping AI_PROVIDER alone is always a valid
- * rollback. An unknown effort value is skipped the same way.
- */
 export function resolveAiSelection(
   config: AiEnvConfig,
   settings: AiModelSettings,
@@ -392,7 +331,6 @@ export function resolveAiSelection(
   return { model, modelSource, effort, effortSource };
 }
 
-/** Model for a provider + tier (see `resolveAiSelection`). */
 export function resolveAiModel(
   config: AiEnvConfig,
   provider: AiProvider,
@@ -403,19 +341,11 @@ export function resolveAiModel(
 }
 
 export interface AnthropicModelCapabilities {
-  /** Accepted `output_config.effort` values (empty = not sent). */
   effortLevels: readonly AiEffort[];
-  /** `thinking: {type: 'adaptive'}` accepted. */
   adaptiveThinking: boolean;
-  /** Server-side `fallbacks: "default"` (beta server-side-fallback-2026-07-01). */
   defaultFallbacks: boolean;
 }
 
-/**
- * Request capabilities from the catalogue. An id outside the catalogue (free
- * "autre ID") gets the conservative set: no effort, no explicit thinking, no
- * fallbacks. The request then runs on the model's own defaults.
- */
 export function anthropicCapabilities(model: string): AnthropicModelCapabilities {
   const spec = findAnthropicModel(model);
   if (!spec) return { effortLevels: [], adaptiveThinking: false, defaultFallbacks: false };
@@ -426,12 +356,6 @@ export function anthropicCapabilities(model: string): AnthropicModelCapabilities
   };
 }
 
-/**
- * Price of an id outside the catalogue: a current model of the same family,
- * Claude Opus 5 for Opus (the dearest current Opus price) and Claude Fable 5.1
- * when the family is unknown. A budget guard should over- rather than
- * under-estimate.
- */
 function fallbackSpec(model: string): AnthropicModelSpec {
   const family = /^claude-(haiku|sonnet|opus|fable|mythos)/.exec(model)?.[1] ?? '';
   const byFamily: Record<string, string> = {
@@ -461,12 +385,6 @@ export interface TokenUsage {
   cacheReadInputTokens: number;
 }
 
-/**
- * Estimated USD cost of one Anthropic call (5-minute cache writes only). For
- * prompt-length pricing (Haiku 5.5) the prompt counts every input token, cache
- * reads and writes included; strictly over the threshold switches every
- * category, output included, to the higher prices.
- */
 export function estimateCostUsd(model: string, usage: TokenUsage): number {
   const { price: base, longContext } = priceForModel(model);
   const promptTokens =
@@ -479,6 +397,5 @@ export function estimateCostUsd(model: string, usage: TokenUsage): number {
       usage.cacheReadInputTokens * price.cacheRead +
       usage.outputTokens * price.output) /
     1_000_000;
-  // Nano-dollar precision: Haiku 5.5 calls cost fractions of a cent.
   return Math.round(cost * 1e9) / 1e9;
 }

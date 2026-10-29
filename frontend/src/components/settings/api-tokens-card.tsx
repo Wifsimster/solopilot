@@ -56,14 +56,12 @@ function errorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-/** Scoped API tokens (ADR-0029): create (secret shown once), list, revoke. */
 export function ApiTokensCard() {
   const { data, loading, error, refetch } = useApi<TokensResponse>('/api/tokens');
   const { data: products } = useApi<ProductLite[]>('/api/products');
   const [flash, setFlash] = useState<Flash>(null);
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
-  // Full access is the default (decision of 2026-10-10); scoped access stays available.
   const [fullAccess, setFullAccess] = useState(true);
   const [scopes, setScopes] = useState<string[]>([]);
   const [allProducts, setAllProducts] = useState(true);
