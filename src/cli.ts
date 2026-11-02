@@ -534,6 +534,7 @@ function checkApiPath(method: string, path: unknown): string | null {
   if (decoded.split('/').some((segment) => segment === '.' || segment === '..')) {
     return 'path must not contain dot segments';
   }
+  if (decoded.includes('//')) return 'path must not contain empty segments (//)';
   const normalized = decoded.replace(/\/+$/, '').toLowerCase();
   if (PATH_DENYLIST.some((rule) => rule.test(normalized)))
     return `${normalized} is not exposed over MCP (credentials, tokens, settings, config, publication and webhooks are refused)`;
@@ -725,7 +726,7 @@ const MCP_TOOLS: McpTool[] = [
     name: 'solopilot_veille_collect',
     title: 'Collect veille items',
     description:
-      'Start a veille collection now: gathers new items from the configured sources and publishes nothing. / Lance une collecte de veille, sans publication.',
+      'Start a veille collection now: gathers new items from the configured sources, runs AI triage (spends AI budget), may send Discord urgency alerts and create CRM leads from mentions, like the hourly scheduled collection; publishes nothing on social networks. / Lance une collecte de veille, sans publication.',
     inputSchema: withProduct({}),
     annotations: { ...WRITE, idempotentHint: true, openWorldHint: true },
     run: async (input, api) =>
@@ -987,7 +988,7 @@ async function handleMcpMessage(
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'solopilot', title: 'Solopilot', version: serverVersion() },
         instructions:
-          'Drive the Solopilot back-office (cockpit, veille, invoices, comptabilite, CRM, agenda, workflows). Prefer typed tools; solopilot_request covers every other /api/ endpoint.',
+          'Read the Solopilot back-office (cockpit, veille, invoices, comptabilite, CRM, agenda, workflows) and trigger veille collection. Prefer typed tools; solopilot_request performs other GET reads under /api/. Publication, other writes, credentials, tokens and settings are refused.',
       });
     }
     case 'ping':

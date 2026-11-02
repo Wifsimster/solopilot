@@ -203,6 +203,13 @@ test('paths outside /api/ and credential endpoints are refused without any HTTP 
     ['GET', '/api/products/x/settings'],
     ['GET', '/api/publish/connections'],
     ['GET', '/api/content-drafts/c1/publish-jobs'],
+    ['GET', '/api//settings'],
+    ['GET', '/api//tokens'],
+    ['GET', '/api//config'],
+    ['GET', '/api//credentials'],
+    ['GET', '/api/products/default//settings'],
+    ['GET', '/api/%2Fsettings'],
+    ['POST', '/api//trigger'],
   ]) {
     const result = await server.call('solopilot_request', { method, path });
     assert.equal(result.isError, true, `${method} ${path}`);
