@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs';
+import { createInterface } from 'node:readline';
 import process from 'node:process';
 
 const DEFAULT_URL = 'http://localhost:3000';
@@ -192,11 +194,12 @@ Convenience commands:
   cockpit status health version setup products runs summaries
   invoices comptabilite deals contacts agenda workflows
   trigger collect
+  mcp         serve the API as an MCP server over stdio (for AI agents)
   endpoints   print the embedded endpoint catalog (no HTTP call)
   help        print this usage
 
 Flags (may appear anywhere):
-  --url <u>        base URL (env SOLOPILOT_API_URL, default ${DEFAULT_URL})
+  --url <u>        base URL (env SOLOPILOT_URL or SOLOPILOT_API_URL, default ${DEFAULT_URL})
   --password <p>   admin password (env SOLOPILOT_ADMIN_PASSWORD or ADMIN_PASSWORD)
                    (env SOLOPILOT_TOKEN=sp_… uses an API token instead)
   env SOLOPILOT_PROXY_BASIC=user:pass  forward-auth proxy credentials: sent as
@@ -302,15 +305,11 @@ function buildUrl(base: string, path: string, args: ParsedArgs): string {
   return target.toString();
 }
 
-async function request(
-  method: string,
-  path: string,
-  body: string | undefined,
-  args: ParsedArgs,
-): Promise<never> {
-  const base = args.url ?? process.env.SOLOPILOT_API_URL ?? DEFAULT_URL;
-  const url = buildUrl(base, path, args);
+function resolveBase(args: ParsedArgs): string {
+  return args.url ?? process.env.SOLOPILOT_URL ?? process.env.SOLOPILOT_API_URL ?? DEFAULT_URL;
+}
 
+function authHeaders(args: ParsedArgs): Record<string, string> {
   const headers: Record<string, string> = {};
   const password =
     args.password ?? process.env.SOLOPILOT_ADMIN_PASSWORD ?? process.env.ADMIN_PASSWORD;
@@ -324,6 +323,18 @@ async function request(
   } else if (password) {
     headers.Authorization = `Basic ${Buffer.from(`admin:${password}`).toString('base64')}`;
   }
+  return headers;
+}
+
+async function request(
+  method: string,
+  path: string,
+  body: string | undefined,
+  args: ParsedArgs,
+): Promise<never> {
+  const url = buildUrl(resolveBase(args), path, args);
+
+  const headers = authHeaders(args);
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
   }
@@ -371,6 +382,804 @@ function printEndpoints(): void {
   }
 }
 
+const MCP_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
+const MCP_MAX_OUTPUT = 200_000;
+const MCP_TIMEOUT_MS = 60_000;
+
+type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+type Input = Record<string, unknown>;
+
+interface PropSchema {
+  type: 'string' | 'integer' | 'number' | 'boolean' | 'object';
+  description?: string;
+  enum?: string[];
+  minimum?: number;
+  maximum?: number;
+  additionalProperties?: boolean | { type: string };
+}
+
+interface InputSchema {
+  type: 'object';
+  properties: Record<string, PropSchema>;
+  required?: string[];
+  additionalProperties: false;
+}
+
+interface ToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint: boolean;
+}
+
+interface ApiResult {
+  status: number;
+  ok: boolean;
+  text: string;
+  contentType: string | null;
+}
+
+interface ToolOutcome {
+  text: string;
+  isError: boolean;
+}
+
+interface McpTool {
+  name: string;
+  title: string;
+  description: string;
+  inputSchema: InputSchema;
+  annotations: ToolAnnotations;
+  run: (input: Input, api: ApiCaller) => Promise<ToolOutcome>;
+}
+
+type ApiCaller = (
+  method: string,
+  path: string,
+  query: [string, string][],
+  body?: unknown,
+  productId?: string,
+) => Promise<ApiResult>;
+
+interface JsonRpcMessage {
+  jsonrpc?: string;
+  id?: string | number | null;
+  method?: string;
+  result?: unknown;
+  error?: unknown;
+  params?: Record<string, unknown>;
+}
+
+const PRODUCT_PROP: PropSchema = {
+  type: 'string',
+  description:
+    'Product/activity id (optional; defaults to SOLOPILOT_PRODUCT_ID or the server default)',
+};
+
+const READ_ONLY: ToolAnnotations = { readOnlyHint: true, openWorldHint: false };
+const WRITE: ToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+};
+const WRITE_IDEMPOTENT: ToolAnnotations = { ...WRITE, idempotentHint: true };
+
+const WRITE_ALLOWLIST: { method: string; pattern: RegExp }[] = [
+  { method: 'POST', pattern: /^\/api\/facturation\/invoices$/ },
+  { method: 'POST', pattern: /^\/api\/facturation\/invoices\/[^/]+\/(paid|checkout)$/ },
+  { method: 'POST', pattern: /^\/api\/facturation\/sync$/ },
+  { method: 'POST', pattern: /^\/api\/comptabilite\/(config|ledger)$/ },
+  { method: 'POST', pattern: /^\/api\/crm\/(contacts|deals|interactions)$/ },
+  { method: 'POST', pattern: /^\/api\/crm\/deals\/[^/]+\/stage$/ },
+  { method: 'POST', pattern: /^\/api\/agenda\/events$/ },
+  { method: 'POST', pattern: /^\/api\/(trigger|trigger-collect)$/ },
+];
+const SECRET_KEY = /key|token|secret|password|session|cookie|webhook|authorization/i;
+
+function schema(properties: Record<string, PropSchema>, required: string[] = []): InputSchema {
+  return { type: 'object', properties, required, additionalProperties: false };
+}
+
+function withProduct(properties: Record<string, PropSchema>, required: string[] = []): InputSchema {
+  return schema({ ...properties, productId: PRODUCT_PROP }, required);
+}
+
+function validateInput(def: InputSchema, input: Input): string | null {
+  for (const key of def.required ?? []) {
+    if (input[key] === undefined || input[key] === null)
+      return `Missing required argument "${key}"`;
+  }
+  for (const [key, value] of Object.entries(input)) {
+    const prop = def.properties[key];
+    if (!prop) return `Unknown argument "${key}"`;
+    if (value === undefined || value === null) continue;
+    if (prop.type === 'integer') {
+      if (!Number.isInteger(value)) return `Argument "${key}" must be an integer`;
+    } else if (prop.type === 'object') {
+      if (typeof value !== 'object' || Array.isArray(value))
+        return `Argument "${key}" must be an object`;
+    } else if (typeof value !== prop.type) {
+      return `Argument "${key}" must be a ${prop.type}`;
+    }
+    if (typeof value === 'number') {
+      if (prop.minimum !== undefined && value < prop.minimum)
+        return `Argument "${key}" must be >= ${prop.minimum}`;
+      if (prop.maximum !== undefined && value > prop.maximum)
+        return `Argument "${key}" must be <= ${prop.maximum}`;
+    }
+    if (prop.enum && !prop.enum.includes(String(value))) {
+      return `Argument "${key}" must be one of: ${prop.enum.join(', ')}`;
+    }
+  }
+  return null;
+}
+
+function checkApiPath(method: string, path: unknown): string | null {
+  if (typeof path !== 'string' || path.length === 0 || path.length > 512)
+    return 'path must be a non-empty string';
+  if (!path.startsWith('/api/'))
+    return 'path must start with /api/ (only the Solopilot API is reachable)';
+  if (/[?#\\\s]/.test(path) || path.split('').some((ch) => ch.charCodeAt(0) < 32))
+    return 'path must not contain query strings, fragments, backslashes or whitespace (use the query argument)';
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    return 'path is not a valid URI path';
+  }
+  if (!decoded.startsWith('/api/') || /[?#\\]/.test(decoded)) return 'path must stay under /api/';
+  if (decoded.split('/').some((segment) => segment === '.' || segment === '..')) {
+    return 'path must not contain dot segments';
+  }
+  const normalized = decoded.replace(/\/+$/, '').toLowerCase();
+  if (normalized === '/api/credentials' || normalized.startsWith('/api/credentials/'))
+    return 'credential endpoints are not exposed over MCP';
+  if (normalized.includes('webhook')) return 'webhook endpoints are not exposed over MCP';
+  if (method === 'GET') return null;
+  const allowed = WRITE_ALLOWLIST.some(
+    (rule) => rule.method === method && rule.pattern.test(normalized),
+  );
+  if (!allowed) {
+    return `${method} ${normalized} is not in the MCP write allowlist (invoices, comptabilite, crm, agenda, veille triggers); settings, tokens, credentials and webhooks are never writable`;
+  }
+  return null;
+}
+
+function redact(value: Json): Json {
+  if (Array.isArray(value)) return value.map(redact);
+  if (value !== null && typeof value === 'object') {
+    const out: { [key: string]: Json } = {};
+    for (const [key, inner] of Object.entries(value)) {
+      out[key] = SECRET_KEY.test(key) ? '[redacted]' : redact(inner);
+    }
+    return out;
+  }
+  return value;
+}
+
+function truncate(text: string): string {
+  if (text.length <= MCP_MAX_OUTPUT) return text;
+  return `${text.slice(0, MCP_MAX_OUTPUT)}\n[truncated: ${text.length - MCP_MAX_OUTPUT} more characters]`;
+}
+
+function describeResult(result: ApiResult): ToolOutcome {
+  if (result.status === 401) {
+    return {
+      isError: true,
+      text: 'HTTP 401: not authenticated. Check SOLOPILOT_TOKEN (sp_… API token, possibly revoked or malformed), SOLOPILOT_PROXY_BASIC, or the admin password configured for this MCP server.',
+    };
+  }
+  if (result.status === 403) {
+    return {
+      isError: true,
+      text: 'HTTP 403: forbidden. The API token lacks the scope (or product access) required for this route; use a token with the needed scope or full access (*).',
+    };
+  }
+  let body = result.text;
+  if (result.contentType?.includes('application/json')) {
+    try {
+      body = JSON.stringify(redact(JSON.parse(result.text) as Json), null, 2);
+    } catch {
+      body = result.text;
+    }
+  }
+  if (!result.ok) return { isError: true, text: truncate(`HTTP ${result.status}\n${body}`) };
+  return {
+    isError: false,
+    text: truncate(body.length > 0 ? body : `HTTP ${result.status} (empty body)`),
+  };
+}
+
+function pick(input: Input, keys: string[]): [string, string][] {
+  const pairs: [string, string][] = [];
+  for (const key of keys) {
+    const value = input[key];
+    if (value !== undefined && value !== null) pairs.push([key, String(value)]);
+  }
+  return pairs;
+}
+
+function without(input: Input, ...keys: string[]): Input {
+  const copy: Input = { ...input };
+  for (const key of keys) delete copy[key];
+  return copy;
+}
+
+function productOf(input: Input): string | undefined {
+  return typeof input.productId === 'string' ? input.productId : undefined;
+}
+
+function readTool(
+  name: string,
+  title: string,
+  description: string,
+  path: string,
+  properties: Record<string, PropSchema> = {},
+  queryKeys: string[] = [],
+): McpTool {
+  return {
+    name,
+    title,
+    description,
+    inputSchema: withProduct(properties),
+    annotations: READ_ONLY,
+    run: async (input, api) =>
+      describeResult(await api('GET', path, pick(input, queryKeys), undefined, productOf(input))),
+  };
+}
+
+function getByIdTool(
+  name: string,
+  title: string,
+  description: string,
+  listPath: string,
+  idLabel: string,
+): McpTool {
+  return {
+    name,
+    title,
+    description,
+    inputSchema: withProduct({ id: { type: 'string', description: idLabel } }, ['id']),
+    annotations: READ_ONLY,
+    run: async (input, api) => {
+      const result = await api('GET', listPath, [], undefined, productOf(input));
+      if (!result.ok) return describeResult(result);
+      let parsed: Json;
+      try {
+        parsed = JSON.parse(result.text) as Json;
+      } catch {
+        return { isError: true, text: 'Unexpected non-JSON response from the list endpoint' };
+      }
+      const rows = Array.isArray(parsed)
+        ? parsed
+        : parsed !== null && typeof parsed === 'object'
+          ? (Object.values(parsed).find((value): value is Json[] => Array.isArray(value)) ?? [])
+          : [];
+      const wanted = String(input.id);
+      const match = rows.find(
+        (row) =>
+          row !== null &&
+          typeof row === 'object' &&
+          !Array.isArray(row) &&
+          String(row.id) === wanted,
+      );
+      if (match === undefined)
+        return { isError: true, text: `Not found: no entry with id "${wanted}"` };
+      return { isError: false, text: JSON.stringify(redact(match), null, 2) };
+    },
+  };
+}
+
+function createTool(
+  name: string,
+  title: string,
+  description: string,
+  path: string,
+  properties: Record<string, PropSchema>,
+  required: string[],
+  forced: Input = {},
+): McpTool {
+  return {
+    name,
+    title,
+    description,
+    inputSchema: withProduct(properties, required),
+    annotations: WRITE,
+    run: async (input, api) =>
+      describeResult(
+        await api(
+          'POST',
+          path,
+          [],
+          { ...without(input, 'productId'), ...forced },
+          productOf(input),
+        ),
+      ),
+  };
+}
+
+const INVOICE_PROPS: Record<string, PropSchema> = {
+  client_name: { type: 'string', description: 'Client name' },
+  client_email: { type: 'string', description: 'Client email' },
+  amount_cents: {
+    type: 'integer',
+    minimum: 1,
+    description: 'Amount in cents (e.g. 120000 = 1200,00)',
+  },
+  currency: { type: 'string', description: '3-letter currency code, default eur' },
+  issued_on: { type: 'string', description: 'Issue date YYYY-MM-DD' },
+  due_on: { type: 'string', description: 'Due date YYYY-MM-DD' },
+};
+
+const DEAL_STAGES = ['nouveau', 'qualifie', 'proposition', 'gagne', 'perdu'];
+
+const MCP_TOOLS: McpTool[] = [
+  readTool(
+    'solopilot_cockpit',
+    'Cockpit brief',
+    "Daily briefing of the activity (Cockpit): what needs attention today across veille, invoices, CRM and agenda. / Brief quotidien de l'activite.",
+    '/api/cockpit',
+  ),
+  readTool(
+    'solopilot_veille_status',
+    'Veille status',
+    'Veille run status (collection and publication state). / Statut des runs de veille.',
+    '/api/status',
+  ),
+  readTool(
+    'solopilot_veille_items',
+    'Veille items',
+    'List triaged veille items (X/Reddit/HN) with optional filters. / Liste les elements de veille tries.',
+    '/api/veille/items',
+    {
+      source: { type: 'string', description: 'Source filter (x, reddit, hn)' },
+      category: { type: 'string', description: 'Triage category' },
+      minUrgency: { type: 'integer', description: 'Minimum urgency' },
+      triaged: { type: 'string', description: 'true or false' },
+      status: { type: 'string', description: 'Item status' },
+      origin: { type: 'string', description: 'Item origin' },
+      sort: { type: 'string', description: 'Sort order' },
+      limit: { type: 'integer', minimum: 1, description: 'Max items' },
+    },
+    ['source', 'category', 'minUrgency', 'triaged', 'status', 'origin', 'sort', 'limit'],
+  ),
+  readTool(
+    'solopilot_veille_runs',
+    'Veille runs',
+    'Run history of the veille pipeline. / Historique des runs de veille.',
+    '/api/runs',
+    {
+      limit: { type: 'integer', minimum: 1, description: 'Page size (default 20)' },
+      offset: { type: 'integer', minimum: 0, description: 'Offset' },
+      type: { type: 'string', description: 'Run type (collect or publish)' },
+    },
+    ['limit', 'offset', 'type'],
+  ),
+  readTool(
+    'solopilot_veille_summaries',
+    'Veille summaries',
+    'List AI run summaries (digests). / Liste les resumes IA (digests).',
+    '/api/summaries',
+    {
+      limit: { type: 'integer', minimum: 1, description: 'Page size' },
+      offset: { type: 'integer', minimum: 0, description: 'Offset' },
+      month: { type: 'string', description: 'Month YYYY-MM' },
+      search: { type: 'string', description: 'Full-text search' },
+    },
+    ['limit', 'offset', 'month', 'search'],
+  ),
+  {
+    name: 'solopilot_veille_trigger',
+    title: 'Trigger a veille run',
+    description:
+      'Start a veille run now: "collect" gathers items, "publish" builds and sends the AI digest (may post to Discord and spend AI budget). / Declenche un run de veille.',
+    inputSchema: withProduct(
+      { kind: { type: 'string', enum: ['collect', 'publish'], description: 'collect or publish' } },
+      ['kind'],
+    ),
+    annotations: { ...WRITE, openWorldHint: true },
+    run: async (input, api) =>
+      describeResult(
+        await api(
+          'POST',
+          input.kind === 'collect' ? '/api/trigger-collect' : '/api/trigger',
+          [],
+          undefined,
+          productOf(input),
+        ),
+      ),
+  },
+  readTool(
+    'solopilot_invoices_list',
+    'List invoices',
+    'List invoices, optionally by status. / Liste les factures.',
+    '/api/facturation/invoices',
+    {
+      status: {
+        type: 'string',
+        enum: ['draft', 'sent', 'paid', 'void'],
+        description: 'Invoice status',
+      },
+    },
+    ['status'],
+  ),
+  getByIdTool(
+    'solopilot_invoices_get',
+    'Get invoice',
+    "Get one invoice by id. / Detail d'une facture.",
+    '/api/facturation/invoices',
+    'Invoice id',
+  ),
+  createTool(
+    'solopilot_invoices_create_draft',
+    'Create draft invoice',
+    'Create an invoice in draft status (never sent). Amounts in cents. / Cree une facture brouillon (montants en centimes).',
+    '/api/facturation/invoices',
+    INVOICE_PROPS,
+    ['client_name', 'amount_cents', 'due_on'],
+    { status: 'draft' },
+  ),
+  readTool(
+    'solopilot_comptabilite_summary',
+    'Comptabilite / URSSAF summary',
+    'Turnover status and URSSAF contribution estimate with the accounting config. / CA et estimation URSSAF.',
+    '/api/comptabilite',
+  ),
+  readTool(
+    'solopilot_crm_deals_list',
+    'List CRM deals',
+    'List CRM deals (pipeline). / Liste les opportunites.',
+    '/api/crm/deals',
+  ),
+  getByIdTool(
+    'solopilot_crm_deals_get',
+    'Get CRM deal',
+    "Get one CRM deal by id. / Detail d'une opportunite.",
+    '/api/crm/deals',
+    'Deal id',
+  ),
+  createTool(
+    'solopilot_crm_deals_create',
+    'Create CRM deal',
+    'Create a CRM deal for an existing contact. / Cree une opportunite.',
+    '/api/crm/deals',
+    {
+      contact_id: { type: 'string', description: 'Contact id' },
+      title: { type: 'string', description: 'Deal title' },
+      stage: { type: 'string', enum: DEAL_STAGES, description: 'Pipeline stage, default nouveau' },
+      amount_cents: { type: 'integer', minimum: 0, description: 'Amount in cents' },
+    },
+    ['contact_id', 'title'],
+  ),
+  {
+    name: 'solopilot_crm_deals_update_stage',
+    title: 'Update CRM deal stage',
+    description: "Move a CRM deal to another pipeline stage. / Change l'etape d'une opportunite.",
+    inputSchema: schema(
+      {
+        id: { type: 'string', description: 'Deal id' },
+        stage: { type: 'string', enum: DEAL_STAGES, description: 'New stage' },
+      },
+      ['id', 'stage'],
+    ),
+    annotations: WRITE_IDEMPOTENT,
+    run: async (input, api) =>
+      describeResult(
+        await api('POST', `/api/crm/deals/${encodeURIComponent(String(input.id))}/stage`, [], {
+          stage: input.stage,
+        }),
+      ),
+  },
+  readTool(
+    'solopilot_crm_contacts_list',
+    'List CRM contacts',
+    'List CRM contacts. / Liste les contacts.',
+    '/api/crm/contacts',
+  ),
+  getByIdTool(
+    'solopilot_crm_contacts_get',
+    'Get CRM contact',
+    "Get one CRM contact by id. / Detail d'un contact.",
+    '/api/crm/contacts',
+    'Contact id',
+  ),
+  createTool(
+    'solopilot_crm_contacts_create',
+    'Create CRM contact',
+    'Create a CRM contact. / Cree un contact.',
+    '/api/crm/contacts',
+    {
+      name: { type: 'string', description: 'Contact name' },
+      email: { type: 'string', description: 'Email' },
+      company: { type: 'string', description: 'Company' },
+      phone: { type: 'string', description: 'Phone' },
+      status: {
+        type: 'string',
+        enum: ['lead', 'active', 'inactive'],
+        description: 'Status, default lead',
+      },
+      source: { type: 'string', description: 'Source, default manual' },
+      notes: { type: 'string', description: 'Notes' },
+    },
+    ['name'],
+  ),
+  readTool(
+    'solopilot_agenda_list',
+    'List agenda',
+    "Agenda summary with today and upcoming events. / Agenda: aujourd'hui et a venir.",
+    '/api/agenda',
+  ),
+  createTool(
+    'solopilot_agenda_create',
+    'Create agenda event',
+    'Create an agenda event. Datetimes are ISO 8601 with offset. / Cree un evenement.',
+    '/api/agenda/events',
+    {
+      title: { type: 'string', description: 'Event title' },
+      starts_at: { type: 'string', description: 'ISO 8601 start, e.g. 2026-06-10T14:00:00+02:00' },
+      ends_at: { type: 'string', description: 'ISO 8601 end' },
+      location: { type: 'string', description: 'Location' },
+    },
+    ['title', 'starts_at'],
+  ),
+  readTool(
+    'solopilot_workflows_list',
+    'List workflows',
+    'List workflows with their last run. The API has no endpoint to start an arbitrary workflow; use solopilot_veille_trigger for veille. / Liste les workflows.',
+    '/api/workflows',
+  ),
+  {
+    name: 'solopilot_workflows_get',
+    title: 'Get workflow',
+    description: "Workflow detail with its 10 latest runs. / Detail d'un workflow.",
+    inputSchema: withProduct({ id: { type: 'string', description: 'Workflow id' } }, ['id']),
+    annotations: READ_ONLY,
+    run: async (input, api) =>
+      describeResult(
+        await api(
+          'GET',
+          `/api/workflows/${encodeURIComponent(String(input.id))}`,
+          [],
+          undefined,
+          productOf(input),
+        ),
+      ),
+  },
+  readTool(
+    'solopilot_workflow_runs',
+    'Workflow runs',
+    'List workflow runs, optionally for one workflow. / Liste les executions de workflow.',
+    '/api/workflow-runs',
+    {
+      workflow: { type: 'string', description: 'Workflow id filter' },
+      limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Page size (default 20)' },
+      offset: { type: 'integer', minimum: 0, description: 'Offset' },
+    },
+    ['workflow', 'limit', 'offset'],
+  ),
+  {
+    name: 'solopilot_request',
+    title: 'Raw API request',
+    description:
+      "Generic call to any Solopilot endpoint under /api/ (see docs/api.md). Prefer the typed tools; use this for full coverage. Credential and token-management endpoints are refused. / Appel generique de l'API.",
+    inputSchema: schema(
+      {
+        method: {
+          type: 'string',
+          enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+          description: 'HTTP method',
+        },
+        path: { type: 'string', description: 'Absolute path starting with /api/, no query string' },
+        query: {
+          type: 'object',
+          additionalProperties: true,
+          description: 'Query parameters (string, number or boolean values)',
+        },
+        body: {
+          type: 'object',
+          additionalProperties: true,
+          description: 'JSON body for POST/PUT/PATCH',
+        },
+        productId: PRODUCT_PROP,
+      },
+      ['method', 'path'],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+    run: async (input, api) => {
+      const method = String(input.method);
+      const refusal = checkApiPath(method, input.path);
+      if (refusal) return { isError: true, text: `Refused: ${refusal}` };
+      const query: [string, string][] = [];
+      if (input.query && typeof input.query === 'object') {
+        for (const [key, value] of Object.entries(input.query)) {
+          if (
+            typeof value === 'string' ||
+            typeof value === 'number' ||
+            typeof value === 'boolean'
+          ) {
+            query.push([key, String(value)]);
+          } else {
+            return {
+              isError: true,
+              text: `Query parameter "${key}" must be a string, number or boolean`,
+            };
+          }
+        }
+      }
+      const body = method === 'GET' || method === 'DELETE' ? undefined : input.body;
+      return describeResult(await api(method, String(input.path), query, body, productOf(input)));
+    },
+  },
+];
+
+function makeApiCaller(args: ParsedArgs): ApiCaller {
+  return async (method, path, query, body, productId) => {
+    const target = new URL(resolveBase(args));
+    target.pathname = path;
+    for (const [key, value] of query) target.searchParams.append(key, value);
+    const product = productId ?? args.product ?? process.env.SOLOPILOT_PRODUCT_ID;
+    if (product && !target.searchParams.has('productId'))
+      target.searchParams.set('productId', product);
+    const headers = authHeaders(args);
+    let payload: string | undefined;
+    if (body !== undefined && body !== null) {
+      headers['Content-Type'] = 'application/json';
+      payload = JSON.stringify(body);
+    }
+    const response = await fetch(target, {
+      method,
+      headers,
+      body: payload,
+      signal: AbortSignal.timeout(MCP_TIMEOUT_MS),
+    });
+    return {
+      status: response.status,
+      ok: response.ok,
+      text: await response.text(),
+      contentType: response.headers.get('content-type'),
+    };
+  };
+}
+
+function serverVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      name?: string;
+      version?: unknown;
+    };
+    if (pkg.name === 'solopilot' && typeof pkg.version === 'string') return pkg.version;
+  } catch {
+    return 'unknown';
+  }
+  return 'unknown';
+}
+
+function toolDescriptor(tool: McpTool): Record<string, unknown> {
+  return {
+    name: tool.name,
+    title: tool.title,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    annotations: { title: tool.title, ...tool.annotations },
+  };
+}
+
+async function callTool(
+  params: Record<string, unknown> | undefined,
+  api: ApiCaller,
+): Promise<ToolOutcome> {
+  const tool = MCP_TOOLS.find((candidate) => candidate.name === params?.name);
+  if (!tool) return { isError: true, text: `Unknown tool: ${String(params?.name)}` };
+  const input = params?.arguments ?? {};
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return { isError: true, text: 'Tool arguments must be an object' };
+  }
+  const problem = validateInput(tool.inputSchema, input as Input);
+  if (problem) return { isError: true, text: `Invalid arguments: ${problem}` };
+  try {
+    return await tool.run(input as Input, api);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return { isError: true, text: `Request to the Solopilot API failed: ${reason}` };
+  }
+}
+
+async function handleMcpMessage(
+  message: JsonRpcMessage,
+  api: ApiCaller,
+): Promise<Json | undefined> {
+  const hasId = message.id !== undefined && message.id !== null;
+  const reply = (result: Json): Json => ({ jsonrpc: '2.0', id: message.id as Json, result });
+  const fail = (code: number, text: string): Json => ({
+    jsonrpc: '2.0',
+    id: (message.id ?? null) as Json,
+    error: { code, message: text },
+  });
+
+  if (typeof message.method !== 'string') {
+    if ('result' in message || 'error' in message) return undefined;
+    return hasId ? fail(-32600, 'Invalid request') : undefined;
+  }
+  if (!hasId) return undefined;
+
+  switch (message.method) {
+    case 'initialize': {
+      const requested = message.params?.protocolVersion;
+      const protocolVersion =
+        typeof requested === 'string' && MCP_PROTOCOLS.includes(requested)
+          ? requested
+          : MCP_PROTOCOLS[0];
+      return reply({
+        protocolVersion,
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: 'solopilot', title: 'Solopilot', version: serverVersion() },
+        instructions:
+          'Drive the Solopilot back-office (cockpit, veille, invoices, comptabilite, CRM, agenda, workflows). Prefer typed tools; solopilot_request covers every other /api/ endpoint.',
+      });
+    }
+    case 'ping':
+      return reply({});
+    case 'tools/list':
+      return reply({ tools: MCP_TOOLS.map(toolDescriptor) as unknown as Json });
+    case 'tools/call': {
+      const outcome = await callTool(message.params, api);
+      return reply({ content: [{ type: 'text', text: outcome.text }], isError: outcome.isError });
+    }
+    default:
+      return fail(-32601, `Method not found: ${message.method}`);
+  }
+}
+
+async function runMcpServer(args: ParsedArgs): Promise<void> {
+  const api = makeApiCaller(args);
+  const pending = new Set<Promise<void>>();
+
+  const send = (payload: Json): void => {
+    process.stdout.write(`${JSON.stringify(payload)}\n`);
+  };
+
+  const handleLine = async (line: string): Promise<void> => {
+    let message: unknown;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
+      return;
+    }
+    if (message === null || typeof message !== 'object' || Array.isArray(message)) {
+      send({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid request' } });
+      return;
+    }
+    try {
+      const response = await handleMcpMessage(message as JsonRpcMessage, api);
+      if (response !== undefined) send(response);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      send({
+        jsonrpc: '2.0',
+        id: ((message as JsonRpcMessage).id ?? null) as Json,
+        error: { code: -32603, message: 'Internal error' },
+      });
+    }
+  };
+
+  const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  lines.on('line', (line) => {
+    if (line.trim().length === 0) return;
+    const job = handleLine(line).finally(() => pending.delete(job));
+    pending.add(job);
+  });
+
+  await new Promise<void>((resolve) => lines.on('close', resolve));
+  await Promise.all(pending);
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const [command, ...rest] = args.positionals;
@@ -378,6 +1187,11 @@ async function main(): Promise<void> {
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     console.log(USAGE);
     process.exit(0);
+  }
+
+  if (command === 'mcp') {
+    await runMcpServer(args);
+    return;
   }
 
   if (command === 'endpoints') {

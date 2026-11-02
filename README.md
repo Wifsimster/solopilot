@@ -193,6 +193,29 @@ Le CLI s'authentifie en HTTP Basic (`admin:<ADMIN_PASSWORD>`) et propose des rac
 - **Reference complete :** [docs/api.md](docs/api.md) — endpoints, schemas de requete, exemples curl + CLI.
 - **Skill agent :** [`.claude/skills/solopilot/SKILL.md`](.claude/skills/solopilot/SKILL.md) — recettes et contrat du CLI pour un agent.
 
+### MCP (serveur stdio)
+
+`solopilot mcp` sert l'API via le protocole MCP (JSON-RPC 2.0 sur stdio, version `2025-06-18`) : les agents (Claude Code, Claude Desktop, OpenClaw) appellent des outils types au lieu de parser la sortie du CLI. Memes variables d'environnement que le CLI (`SOLOPILOT_URL` ou `SOLOPILOT_API_URL`, `SOLOPILOT_TOKEN`, `SOLOPILOT_PROXY_BASIC`, `SOLOPILOT_PRODUCT_ID`). Les logs vont sur stderr ; les identifiants ne sont jamais affichees ni renvoyes.
+
+```bash
+claude mcp add solopilot -- solopilot mcp
+openclaw mcp add solopilot --command solopilot --arg mcp
+```
+
+Aucune dependance supplementaire : `dist/cli.js` seul suffit. Les erreurs HTTP 401/403 deviennent un resultat `isError` explicite (jeton ou portee). `solopilot_request` refuse tout chemin hors `/api/`, les endpoints d'identifiants (`/api/credentials*`) et tout chemin contenant `webhook`. Les lectures (GET) sont permises ailleurs sous `/api/` ; les ecritures sont limitees a une liste blanche : factures (creation, `paid`, `checkout`, `sync`), comptabilite (`config`, `ledger`), CRM (contacts, deals, interactions, `stage`), agenda (`events`) et declencheurs de veille (`/api/trigger`, `/api/trigger-collect`). `/api/settings`, `/api/products/:id/settings`, `/api/tokens*`, credentials et webhooks ne sont jamais modifiables. Les cles de reponse contenant key, token, secret, password, session, cookie ou webhook sont masquees.
+
+| Outil | Role |
+|-------|------|
+| `solopilot_cockpit` | Brief quotidien (lecture) |
+| `solopilot_veille_status`, `solopilot_veille_items`, `solopilot_veille_runs`, `solopilot_veille_summaries` | Veille (lecture) |
+| `solopilot_veille_trigger` | Declenche une collecte (`collect`) ou une publication (`publish`) |
+| `solopilot_invoices_list`, `solopilot_invoices_get`, `solopilot_invoices_create_draft` | Factures (la creation force le statut `draft`) |
+| `solopilot_comptabilite_summary` | CA + estimation URSSAF |
+| `solopilot_crm_deals_list`/`_get`/`_create`/`_update_stage`, `solopilot_crm_contacts_list`/`_get`/`_create` | CRM |
+| `solopilot_agenda_list`, `solopilot_agenda_create` | Agenda |
+| `solopilot_workflows_list`, `solopilot_workflows_get`, `solopilot_workflow_runs` | Workflows (lecture ; l'API n'expose pas de lancement a la demande) |
+| `solopilot_request` | Appel generique `method` + `path` (sous `/api/`) + `query` + `body` |
+
 ## Documentation complementaire
 
 | Document | Description |
