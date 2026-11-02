@@ -88,20 +88,29 @@ test('initialize, ping and tools/list', async () => {
   assert.deepEqual((await server.rpc('ping')).result, {});
   const list = await server.rpc('tools/list');
   const names = list.result.tools.map((tool) => tool.name);
-  for (const name of [
-    'solopilot_cockpit',
-    'solopilot_veille_trigger',
-    'solopilot_invoices_create_draft',
-    'solopilot_crm_deals_update_stage',
-    'solopilot_request',
-  ]) {
+  for (const name of ['solopilot_cockpit', 'solopilot_veille_collect', 'solopilot_request']) {
     assert.ok(names.includes(name), name);
   }
+  for (const name of [
+    'solopilot_veille_trigger',
+    'solopilot_invoices_create_draft',
+    'solopilot_crm_deals_create',
+    'solopilot_crm_deals_update_stage',
+    'solopilot_crm_contacts_create',
+    'solopilot_agenda_create',
+  ]) {
+    assert.ok(!names.includes(name), name);
+  }
+  const writers = list.result.tools.filter((tool) => tool.annotations.readOnlyHint !== true);
+  assert.deepEqual(writers.map((tool) => tool.name).sort(), [
+    'solopilot_request',
+    'solopilot_veille_collect',
+  ]);
   const cockpit = list.result.tools.find((tool) => tool.name === 'solopilot_cockpit');
   assert.equal(cockpit.annotations.readOnlyHint, true);
   assert.equal(cockpit.inputSchema.type, 'object');
   const request = list.result.tools.find((tool) => tool.name === 'solopilot_request');
-  assert.equal(request.annotations.destructiveHint, true);
+  assert.equal(request.annotations.destructiveHint, false);
   assert.equal((await server.rpc('nope')).error.code, -32601);
   server.close();
 });
@@ -123,43 +132,34 @@ test('read tool sends the token, scopes the product and redacts secrets', async 
   server.close();
 });
 
-test('write tool forces draft status and posts JSON', async () => {
+test('veille collect tool only hits trigger-collect', async () => {
   const server = startServer();
-  const result = await server.call('solopilot_invoices_create_draft', {
-    client_name: 'ACME',
-    amount_cents: 120000,
-    due_on: '2026-07-01',
-    productId: 'toko',
-  });
+  const result = await server.call('solopilot_veille_collect', { productId: 'toko' });
   assert.equal(result.isError, false);
   const seen = calls.at(-1);
   assert.equal(seen.method, 'POST');
-  assert.equal(seen.url, '/api/facturation/invoices?productId=toko');
-  assert.deepEqual(JSON.parse(seen.body), {
-    client_name: 'ACME',
-    amount_cents: 120000,
-    due_on: '2026-07-01',
-    status: 'draft',
-  });
-  const invalid = await server.call('solopilot_invoices_create_draft', { client_name: 'ACME' });
-  assert.equal(invalid.isError, true);
-  assert.match(invalid.content[0].text, /amount_cents/);
+  assert.equal(seen.url, '/api/trigger-collect?productId=toko');
+  const extra = await server.call('solopilot_veille_collect', { kind: 'publish' });
+  assert.equal(extra.isError, true);
   server.close();
 });
 
-test('generic request tool forwards method, query and body', async () => {
+test('generic request tool forwards GET with query and the collect trigger', async () => {
   const server = startServer();
-  const result = await server.call('solopilot_request', {
-    method: 'POST',
-    path: '/api/crm/deals/d1/stage',
-    query: { dryRun: true },
-    body: { stage: 'gagne' },
+  const read = await server.call('solopilot_request', {
+    method: 'GET',
+    path: '/api/crm/deals',
+    query: { stage: 'gagne' },
   });
-  assert.equal(result.isError, false);
-  const seen = calls.at(-1);
-  assert.equal(seen.method, 'POST');
-  assert.equal(seen.url, '/api/crm/deals/d1/stage?dryRun=true');
-  assert.deepEqual(JSON.parse(seen.body), { stage: 'gagne' });
+  assert.equal(read.isError, false);
+  assert.equal(calls.at(-1).url, '/api/crm/deals?stage=gagne');
+  const collect = await server.call('solopilot_request', {
+    method: 'POST',
+    path: '/api/trigger-collect',
+  });
+  assert.equal(collect.isError, false);
+  assert.equal(calls.at(-1).method, 'POST');
+  assert.equal(calls.at(-1).url, '/api/trigger-collect');
   server.close();
 });
 
@@ -181,6 +181,35 @@ test('paths outside /api/ and credential endpoints are refused without any HTTP 
     ['GET', '/api/discord-webhook'],
     ['GET', '/api/credentials'],
     ['DELETE', '/api/tokens/abc'],
+    ['POST', '/api/trigger'],
+    ['POST', '/api/TRIGGER/'],
+    ['POST', '/api/%74rigger'],
+    ['POST', '/api/facturation/invoices'],
+    ['POST', '/api/facturation/invoices/i1/paid'],
+    ['POST', '/api/facturation/invoices/i1/checkout'],
+    ['POST', '/api/facturation/sync'],
+    ['POST', '/api/comptabilite/ledger'],
+    ['POST', '/api/crm/deals'],
+    ['POST', '/api/crm/deals/d1/stage'],
+    ['POST', '/api/agenda/events'],
+    ['POST', '/api/content-drafts/c1/publish'],
+    ['POST', '/api/publish/x'],
+    ['POST', '/api/trigger-collect/extra'],
+    ['PUT', '/api/trigger-collect'],
+    ['GET', '/api/tokens'],
+    ['GET', '/api/tokens/audit'],
+    ['GET', '/api/settings'],
+    ['GET', '/api/config'],
+    ['GET', '/api/products/x/settings'],
+    ['GET', '/api/publish/connections'],
+    ['GET', '/api/content-drafts/c1/publish-jobs'],
+    ['GET', '/api//settings'],
+    ['GET', '/api//tokens'],
+    ['GET', '/api//config'],
+    ['GET', '/api//credentials'],
+    ['GET', '/api/products/default//settings'],
+    ['GET', '/api/%2Fsettings'],
+    ['POST', '/api//trigger'],
   ]) {
     const result = await server.call('solopilot_request', { method, path });
     assert.equal(result.isError, true, `${method} ${path}`);
@@ -224,14 +253,8 @@ test('redaction hides any key containing a secret-like word', async () => {
   server.close();
 });
 
-test('allowlisted writes pass, JSON-RPC responses from the client get no reply', async () => {
+test('JSON-RPC responses from the client get no reply', async () => {
   const server = startServer();
-  const ok = await server.call('solopilot_request', {
-    method: 'POST',
-    path: '/api/agenda/events',
-    body: { title: 'x', starts_at: '2026-06-10T14:00:00+02:00' },
-  });
-  assert.equal(ok.isError, false);
   const lines = [];
   createInterface({ input: server.child.stdout }).on('line', (line) => lines.push(line));
   server.child.stdin.write(
