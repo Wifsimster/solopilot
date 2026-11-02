@@ -463,17 +463,19 @@ const WRITE: ToolAnnotations = {
   idempotentHint: false,
   openWorldHint: false,
 };
-const WRITE_IDEMPOTENT: ToolAnnotations = { ...WRITE, idempotentHint: true };
 
 const WRITE_ALLOWLIST: { method: string; pattern: RegExp }[] = [
-  { method: 'POST', pattern: /^\/api\/facturation\/invoices$/ },
-  { method: 'POST', pattern: /^\/api\/facturation\/invoices\/[^/]+\/(paid|checkout)$/ },
-  { method: 'POST', pattern: /^\/api\/facturation\/sync$/ },
-  { method: 'POST', pattern: /^\/api\/comptabilite\/(config|ledger)$/ },
-  { method: 'POST', pattern: /^\/api\/crm\/(contacts|deals|interactions)$/ },
-  { method: 'POST', pattern: /^\/api\/crm\/deals\/[^/]+\/stage$/ },
-  { method: 'POST', pattern: /^\/api\/agenda\/events$/ },
-  { method: 'POST', pattern: /^\/api\/(trigger|trigger-collect)$/ },
+  { method: 'POST', pattern: /^\/api\/trigger-collect$/ },
+];
+const PATH_DENYLIST: RegExp[] = [
+  /^\/api\/credentials(\/|$)/,
+  /^\/api\/tokens(\/|$)/,
+  /^\/api\/settings(\/|$)/,
+  /^\/api\/config(\/|$)/,
+  /^\/api\/products\/[^/]+\/settings(\/|$)/,
+  /^\/api\/publish(\/|$)/,
+  /publish-jobs/,
+  /webhook/,
 ];
 const SECRET_KEY = /key|token|secret|password|session|cookie|webhook|authorization/i;
 
@@ -533,15 +535,14 @@ function checkApiPath(method: string, path: unknown): string | null {
     return 'path must not contain dot segments';
   }
   const normalized = decoded.replace(/\/+$/, '').toLowerCase();
-  if (normalized === '/api/credentials' || normalized.startsWith('/api/credentials/'))
-    return 'credential endpoints are not exposed over MCP';
-  if (normalized.includes('webhook')) return 'webhook endpoints are not exposed over MCP';
+  if (PATH_DENYLIST.some((rule) => rule.test(normalized)))
+    return `${normalized} is not exposed over MCP (credentials, tokens, settings, config, publication and webhooks are refused)`;
   if (method === 'GET') return null;
   const allowed = WRITE_ALLOWLIST.some(
     (rule) => rule.method === method && rule.pattern.test(normalized),
   );
   if (!allowed) {
-    return `${method} ${normalized} is not in the MCP write allowlist (invoices, comptabilite, crm, agenda, veille triggers); settings, tokens, credentials and webhooks are never writable`;
+    return `${method} ${normalized} is refused: the MCP server only reads, plus POST /api/trigger-collect (veille collection); publication, settings, tokens and credentials are never writable`;
   }
   return null;
 }
@@ -598,12 +599,6 @@ function pick(input: Input, keys: string[]): [string, string][] {
     if (value !== undefined && value !== null) pairs.push([key, String(value)]);
   }
   return pairs;
-}
-
-function without(input: Input, ...keys: string[]): Input {
-  const copy: Input = { ...input };
-  for (const key of keys) delete copy[key];
-  return copy;
 }
 
 function productOf(input: Input): string | undefined {
@@ -671,49 +666,6 @@ function getByIdTool(
   };
 }
 
-function createTool(
-  name: string,
-  title: string,
-  description: string,
-  path: string,
-  properties: Record<string, PropSchema>,
-  required: string[],
-  forced: Input = {},
-): McpTool {
-  return {
-    name,
-    title,
-    description,
-    inputSchema: withProduct(properties, required),
-    annotations: WRITE,
-    run: async (input, api) =>
-      describeResult(
-        await api(
-          'POST',
-          path,
-          [],
-          { ...without(input, 'productId'), ...forced },
-          productOf(input),
-        ),
-      ),
-  };
-}
-
-const INVOICE_PROPS: Record<string, PropSchema> = {
-  client_name: { type: 'string', description: 'Client name' },
-  client_email: { type: 'string', description: 'Client email' },
-  amount_cents: {
-    type: 'integer',
-    minimum: 1,
-    description: 'Amount in cents (e.g. 120000 = 1200,00)',
-  },
-  currency: { type: 'string', description: '3-letter currency code, default eur' },
-  issued_on: { type: 'string', description: 'Issue date YYYY-MM-DD' },
-  due_on: { type: 'string', description: 'Due date YYYY-MM-DD' },
-};
-
-const DEAL_STAGES = ['nouveau', 'qualifie', 'proposition', 'gagne', 'perdu'];
-
 const MCP_TOOLS: McpTool[] = [
   readTool(
     'solopilot_cockpit',
@@ -770,25 +722,14 @@ const MCP_TOOLS: McpTool[] = [
     ['limit', 'offset', 'month', 'search'],
   ),
   {
-    name: 'solopilot_veille_trigger',
-    title: 'Trigger a veille run',
+    name: 'solopilot_veille_collect',
+    title: 'Collect veille items',
     description:
-      'Start a veille run now: "collect" gathers items, "publish" builds and sends the AI digest (may post to Discord and spend AI budget). / Declenche un run de veille.',
-    inputSchema: withProduct(
-      { kind: { type: 'string', enum: ['collect', 'publish'], description: 'collect or publish' } },
-      ['kind'],
-    ),
-    annotations: { ...WRITE, openWorldHint: true },
+      'Start a veille collection now: gathers new items from the configured sources and publishes nothing. / Lance une collecte de veille, sans publication.',
+    inputSchema: withProduct({}),
+    annotations: { ...WRITE, idempotentHint: true, openWorldHint: true },
     run: async (input, api) =>
-      describeResult(
-        await api(
-          'POST',
-          input.kind === 'collect' ? '/api/trigger-collect' : '/api/trigger',
-          [],
-          undefined,
-          productOf(input),
-        ),
-      ),
+      describeResult(await api('POST', '/api/trigger-collect', [], undefined, productOf(input))),
   },
   readTool(
     'solopilot_invoices_list',
@@ -811,15 +752,6 @@ const MCP_TOOLS: McpTool[] = [
     '/api/facturation/invoices',
     'Invoice id',
   ),
-  createTool(
-    'solopilot_invoices_create_draft',
-    'Create draft invoice',
-    'Create an invoice in draft status (never sent). Amounts in cents. / Cree une facture brouillon (montants en centimes).',
-    '/api/facturation/invoices',
-    INVOICE_PROPS,
-    ['client_name', 'amount_cents', 'due_on'],
-    { status: 'draft' },
-  ),
   readTool(
     'solopilot_comptabilite_summary',
     'Comptabilite / URSSAF summary',
@@ -839,38 +771,6 @@ const MCP_TOOLS: McpTool[] = [
     '/api/crm/deals',
     'Deal id',
   ),
-  createTool(
-    'solopilot_crm_deals_create',
-    'Create CRM deal',
-    'Create a CRM deal for an existing contact. / Cree une opportunite.',
-    '/api/crm/deals',
-    {
-      contact_id: { type: 'string', description: 'Contact id' },
-      title: { type: 'string', description: 'Deal title' },
-      stage: { type: 'string', enum: DEAL_STAGES, description: 'Pipeline stage, default nouveau' },
-      amount_cents: { type: 'integer', minimum: 0, description: 'Amount in cents' },
-    },
-    ['contact_id', 'title'],
-  ),
-  {
-    name: 'solopilot_crm_deals_update_stage',
-    title: 'Update CRM deal stage',
-    description: "Move a CRM deal to another pipeline stage. / Change l'etape d'une opportunite.",
-    inputSchema: schema(
-      {
-        id: { type: 'string', description: 'Deal id' },
-        stage: { type: 'string', enum: DEAL_STAGES, description: 'New stage' },
-      },
-      ['id', 'stage'],
-    ),
-    annotations: WRITE_IDEMPOTENT,
-    run: async (input, api) =>
-      describeResult(
-        await api('POST', `/api/crm/deals/${encodeURIComponent(String(input.id))}/stage`, [], {
-          stage: input.stage,
-        }),
-      ),
-  },
   readTool(
     'solopilot_crm_contacts_list',
     'List CRM contacts',
@@ -884,49 +784,16 @@ const MCP_TOOLS: McpTool[] = [
     '/api/crm/contacts',
     'Contact id',
   ),
-  createTool(
-    'solopilot_crm_contacts_create',
-    'Create CRM contact',
-    'Create a CRM contact. / Cree un contact.',
-    '/api/crm/contacts',
-    {
-      name: { type: 'string', description: 'Contact name' },
-      email: { type: 'string', description: 'Email' },
-      company: { type: 'string', description: 'Company' },
-      phone: { type: 'string', description: 'Phone' },
-      status: {
-        type: 'string',
-        enum: ['lead', 'active', 'inactive'],
-        description: 'Status, default lead',
-      },
-      source: { type: 'string', description: 'Source, default manual' },
-      notes: { type: 'string', description: 'Notes' },
-    },
-    ['name'],
-  ),
   readTool(
     'solopilot_agenda_list',
     'List agenda',
     "Agenda summary with today and upcoming events. / Agenda: aujourd'hui et a venir.",
     '/api/agenda',
   ),
-  createTool(
-    'solopilot_agenda_create',
-    'Create agenda event',
-    'Create an agenda event. Datetimes are ISO 8601 with offset. / Cree un evenement.',
-    '/api/agenda/events',
-    {
-      title: { type: 'string', description: 'Event title' },
-      starts_at: { type: 'string', description: 'ISO 8601 start, e.g. 2026-06-10T14:00:00+02:00' },
-      ends_at: { type: 'string', description: 'ISO 8601 end' },
-      location: { type: 'string', description: 'Location' },
-    },
-    ['title', 'starts_at'],
-  ),
   readTool(
     'solopilot_workflows_list',
     'List workflows',
-    'List workflows with their last run. The API has no endpoint to start an arbitrary workflow; use solopilot_veille_trigger for veille. / Liste les workflows.',
+    'List workflows with their last run. The API has no endpoint to start an arbitrary workflow; use solopilot_veille_collect to collect veille items. / Liste les workflows.',
     '/api/workflows',
   ),
   {
@@ -962,7 +829,7 @@ const MCP_TOOLS: McpTool[] = [
     name: 'solopilot_request',
     title: 'Raw API request',
     description:
-      "Generic call to any Solopilot endpoint under /api/ (see docs/api.md). Prefer the typed tools; use this for full coverage. Credential and token-management endpoints are refused. / Appel generique de l'API.",
+      "Generic read call to a Solopilot endpoint under /api/ (see docs/api.md): GET only, plus POST /api/trigger-collect. Credentials, tokens, settings, config and publication endpoints are refused. / Appel generique de l'API en lecture.",
     inputSchema: schema(
       {
         method: {
@@ -979,7 +846,7 @@ const MCP_TOOLS: McpTool[] = [
         body: {
           type: 'object',
           additionalProperties: true,
-          description: 'JSON body for POST/PUT/PATCH',
+          description: 'JSON body (only POST /api/trigger-collect is accepted)',
         },
         productId: PRODUCT_PROP,
       },
@@ -987,7 +854,7 @@ const MCP_TOOLS: McpTool[] = [
     ),
     annotations: {
       readOnlyHint: false,
-      destructiveHint: true,
+      destructiveHint: false,
       idempotentHint: false,
       openWorldHint: false,
     },

@@ -106,19 +106,27 @@ claude mcp add solopilot -- solopilot mcp
 openclaw mcp add solopilot --command solopilot --arg mcp
 ```
 
-Aucune dependance supplementaire : `dist/cli.js` seul suffit. Les erreurs HTTP 401/403 deviennent un resultat `isError` explicite (jeton ou portee). `solopilot_request` refuse tout chemin hors `/api/`, les endpoints d'identifiants (`/api/credentials*`) et tout chemin contenant `webhook`. Les lectures (GET) sont permises ailleurs sous `/api/` ; les ecritures sont limitees a une liste blanche : factures (creation, `paid`, `checkout`, `sync`), comptabilite (`config`, `ledger`), CRM (contacts, deals, interactions, `stage`), agenda (`events`) et declencheurs de veille (`/api/trigger`, `/api/trigger-collect`). `/api/settings`, `/api/products/:id/settings`, `/api/tokens*`, credentials et webhooks ne sont jamais modifiables. Les cles de reponse contenant key, token, secret, password, session, cookie ou webhook sont masquees.
+Aucune dependance supplementaire : `dist/cli.js` seul suffit. Les erreurs HTTP 401/403 deviennent un resultat `isError` explicite (jeton ou portee). Le serveur MCP lit et collecte, rien d'autre : la seule ecriture permise est `POST /api/trigger-collect` (collecte de veille, sans publication). `solopilot_request` refuse tout chemin hors `/api/`, toute autre methode que GET (sauf cette collecte), et meme en lecture `/api/credentials*`, `/api/tokens*`, `/api/settings`, `/api/config`, `/api/products/:id/settings`, `/api/publish*`, `publish-jobs` et tout chemin contenant `webhook`. Publication, factures, CRM, agenda et comptabilite restent modifiables par le CLI et l'interface, pas par un agent MCP. Les cles de reponse contenant key, token, secret, password, session, cookie ou webhook sont masquees.
 
 | Outil | Role |
 |-------|------|
 | `solopilot_cockpit` | Brief quotidien (lecture) |
 | `solopilot_veille_status`, `solopilot_veille_items`, `solopilot_veille_runs`, `solopilot_veille_summaries` | Veille (lecture) |
-| `solopilot_veille_trigger` | Declenche une collecte (`collect`) ou une publication (`publish`) |
-| `solopilot_invoices_list`, `solopilot_invoices_get`, `solopilot_invoices_create_draft` | Factures (la creation force le statut `draft`) |
+| `solopilot_veille_collect` | Lance une collecte de veille (aucune publication) |
+| `solopilot_invoices_list`, `solopilot_invoices_get` | Factures (lecture) |
 | `solopilot_comptabilite_summary` | CA + estimation URSSAF |
-| `solopilot_crm_deals_list`/`_get`/`_create`/`_update_stage`, `solopilot_crm_contacts_list`/`_get`/`_create` | CRM |
-| `solopilot_agenda_list`, `solopilot_agenda_create` | Agenda |
+| `solopilot_crm_deals_list`/`_get`, `solopilot_crm_contacts_list`/`_get` | CRM (lecture) |
+| `solopilot_agenda_list` | Agenda (lecture) |
 | `solopilot_workflows_list`, `solopilot_workflows_get`, `solopilot_workflow_runs` | Workflows (lecture ; l'API n'expose pas de lancement a la demande) |
-| `solopilot_request` | Appel generique `method` + `path` (sous `/api/`) + `query` + `body` |
+| `solopilot_request` | Lecture generique `GET` + `path` (sous `/api/`) + `query` |
+
+Installation OpenClaw sur codedev :
+
+1. `/opt/solopilot-cli/update.sh /root/jarvis-repos/solopilot` reconstruit `dist/cli.js` depuis `main` et l'installe dans `/opt/solopilot-cli/cli.js` (`BUILD-INFO` garde le commit).
+2. Le shim `/usr/local/bin/solopilot` lit `SOLOPILOT_URL` et `SOLOPILOT_TOKEN` (jeton `sp_`, jamais le mot de passe admin) dans `/etc/openclaw/solopilot.env`, root 0600, hors depot.
+3. `openclaw mcp add solopilot --command /usr/local/bin/solopilot --arg mcp` declare le serveur ; `openclaw mcp list` le montre.
+4. Controle : `solopilot_veille_status` repond, `solopilot_request` en `POST /api/trigger` renvoie `Refused`.
+5. Retour arriere : `openclaw mcp unset solopilot`, ou `update.sh` sur un commit anterieur.
 
 ## Reference des endpoints
 
