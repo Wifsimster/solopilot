@@ -25,6 +25,18 @@ before(async () => {
         res.end('{"error":"unauthorized"}');
       } else if (url.pathname === '/api/cockpit') {
         res.end(JSON.stringify({ greeting: 'bonjour', secret: 'hunter2' }));
+      } else if (url.pathname === '/api/redact') {
+        res.end(
+          JSON.stringify({
+            AI_API_KEY: 'k1',
+            REDDIT_SESSION: 's1',
+            LINKEDIN_COOKIE: 'c1',
+            MY_WEBHOOK_URL: 'w1',
+            password: 'p1',
+            name: 'visible',
+            nested: [{ Token: 't1' }],
+          }),
+        );
       } else if (url.pathname === '/api/crm/deals' && req.method === 'GET') {
         res.end(JSON.stringify([{ id: 'd1', title: 'Refonte' }]));
       } else if (url.pathname === '/api/facturation/invoices' && req.method === 'POST') {
@@ -43,7 +55,12 @@ after(() => fake.close());
 
 function startServer(env = {}) {
   const child = spawn(process.execPath, ['dist/cli.js', 'mcp'], {
-    env: { PATH: process.env.PATH, SOLOPILOT_URL: baseUrl, SOLOPILOT_TOKEN: 'sp_test_token', ...env },
+    env: {
+      PATH: process.env.PATH,
+      SOLOPILOT_URL: baseUrl,
+      SOLOPILOT_TOKEN: 'sp_test_token',
+      ...env,
+    },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const pending = new Map();
@@ -157,6 +174,12 @@ test('paths outside /api/ and credential endpoints are refused without any HTTP 
     ['POST', '/api/credentials'],
     ['POST', '/api/discord-webhook'],
     ['POST', '/api/tokens'],
+    ['POST', '/api/settings'],
+    ['PUT', '/api/products/x/settings'],
+    ['DELETE', '/api/products/x'],
+    ['POST', '/api/products/x/settings'],
+    ['GET', '/api/discord-webhook'],
+    ['GET', '/api/credentials'],
     ['DELETE', '/api/tokens/abc'],
   ]) {
     const result = await server.call('solopilot_request', { method, path });
@@ -188,5 +211,33 @@ test('unreachable API yields an isError result, not a crash', async () => {
   const result = await server.call('solopilot_cockpit', {});
   assert.equal(result.isError, true);
   assert.equal((await server.rpc('ping')).result !== undefined, true);
+  server.close();
+});
+
+test('redaction hides any key containing a secret-like word', async () => {
+  const server = startServer();
+  const result = await server.call('solopilot_request', { method: 'GET', path: '/api/redact' });
+  const text = result.content[0].text;
+  for (const leaked of ['k1', 's1', 'c1', 'w1', 'p1', 't1'])
+    assert.doesNotMatch(text, new RegExp(`"${leaked}"`));
+  assert.match(text, /visible/);
+  server.close();
+});
+
+test('allowlisted writes pass, JSON-RPC responses from the client get no reply', async () => {
+  const server = startServer();
+  const ok = await server.call('solopilot_request', {
+    method: 'POST',
+    path: '/api/agenda/events',
+    body: { title: 'x', starts_at: '2026-06-10T14:00:00+02:00' },
+  });
+  assert.equal(ok.isError, false);
+  const lines = [];
+  createInterface({ input: server.child.stdout }).on('line', (line) => lines.push(line));
+  server.child.stdin.write(
+    '{"jsonrpc":"2.0","id":99,"result":{}}\n{"jsonrpc":"2.0","id":100,"error":{"code":-1,"message":"x"}}\n',
+  );
+  await server.rpc('ping');
+  assert.ok(lines.every((line) => ![99, 100].includes(JSON.parse(line).id)));
   server.close();
 });

@@ -445,6 +445,8 @@ interface JsonRpcMessage {
   jsonrpc?: string;
   id?: string | number | null;
   method?: string;
+  result?: unknown;
+  error?: unknown;
   params?: Record<string, unknown>;
 }
 
@@ -463,13 +465,17 @@ const WRITE: ToolAnnotations = {
 };
 const WRITE_IDEMPOTENT: ToolAnnotations = { ...WRITE, idempotentHint: true };
 
-const BLOCKED_ALL = new Set([
-  '/api/credentials',
-  '/api/discord-webhook',
-  '/api/veille-discord-webhook',
-]);
-const SECRET_KEY =
-  /^(secret|token_?hash|password|api_?key|authorization|discord_webhook_url|veille_discord_webhook_url|x_session_.*)$/i;
+const WRITE_ALLOWLIST: { method: string; pattern: RegExp }[] = [
+  { method: 'POST', pattern: /^\/api\/facturation\/invoices$/ },
+  { method: 'POST', pattern: /^\/api\/facturation\/invoices\/[^/]+\/(paid|checkout)$/ },
+  { method: 'POST', pattern: /^\/api\/facturation\/sync$/ },
+  { method: 'POST', pattern: /^\/api\/comptabilite\/(config|ledger)$/ },
+  { method: 'POST', pattern: /^\/api\/crm\/(contacts|deals|interactions)$/ },
+  { method: 'POST', pattern: /^\/api\/crm\/deals\/[^/]+\/stage$/ },
+  { method: 'POST', pattern: /^\/api\/agenda\/events$/ },
+  { method: 'POST', pattern: /^\/api\/(trigger|trigger-collect)$/ },
+];
+const SECRET_KEY = /key|token|secret|password|session|cookie|webhook|authorization/i;
 
 function schema(properties: Record<string, PropSchema>, required: string[] = []): InputSchema {
   return { type: 'object', properties, required, additionalProperties: false };
@@ -527,10 +533,15 @@ function checkApiPath(method: string, path: unknown): string | null {
     return 'path must not contain dot segments';
   }
   const normalized = decoded.replace(/\/+$/, '').toLowerCase();
-  if (BLOCKED_ALL.has(normalized))
-    return 'this endpoint handles credentials and is not exposed over MCP';
-  if ((normalized === '/api/tokens' || normalized.startsWith('/api/tokens/')) && method !== 'GET') {
-    return 'API token management is not exposed over MCP (read-only access to GET /api/tokens*)';
+  if (normalized === '/api/credentials' || normalized.startsWith('/api/credentials/'))
+    return 'credential endpoints are not exposed over MCP';
+  if (normalized.includes('webhook')) return 'webhook endpoints are not exposed over MCP';
+  if (method === 'GET') return null;
+  const allowed = WRITE_ALLOWLIST.some(
+    (rule) => rule.method === method && rule.pattern.test(normalized),
+  );
+  if (!allowed) {
+    return `${method} ${normalized} is not in the MCP write allowlist (invoices, comptabilite, crm, agenda, veille triggers); settings, tokens, credentials and webhooks are never writable`;
   }
   return null;
 }
@@ -1092,6 +1103,7 @@ async function handleMcpMessage(
   });
 
   if (typeof message.method !== 'string') {
+    if ('result' in message || 'error' in message) return undefined;
     return hasId ? fail(-32600, 'Invalid request') : undefined;
   }
   if (!hasId) return undefined;

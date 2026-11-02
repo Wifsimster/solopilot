@@ -202,7 +202,7 @@ claude mcp add solopilot -- solopilot mcp
 openclaw mcp add solopilot --command solopilot --arg mcp
 ```
 
-Aucune dependance supplementaire : `dist/cli.js` seul suffit. Les erreurs HTTP 401/403 deviennent un resultat `isError` explicite (jeton ou portee). `solopilot_request` refuse tout chemin hors `/api/`, les endpoints d'identifiants (`/api/credentials`, `/api/discord-webhook`, `/api/veille-discord-webhook`) et toute ecriture sur `/api/tokens*`.
+Aucune dependance supplementaire : `dist/cli.js` seul suffit. Les erreurs HTTP 401/403 deviennent un resultat `isError` explicite (jeton ou portee). `solopilot_request` refuse tout chemin hors `/api/`, les endpoints d'identifiants (`/api/credentials*`) et tout chemin contenant `webhook`. Les lectures (GET) sont permises ailleurs sous `/api/` ; les ecritures sont limitees a une liste blanche : factures (creation, `paid`, `checkout`, `sync`), comptabilite (`config`, `ledger`), CRM (contacts, deals, interactions, `stage`), agenda (`events`) et declencheurs de veille (`/api/trigger`, `/api/trigger-collect`). `/api/settings`, `/api/products/:id/settings`, `/api/tokens*`, credentials et webhooks ne sont jamais modifiables. Les cles de reponse contenant key, token, secret, password, session, cookie ou webhook sont masquees.
 
 | Outil | Role |
 |-------|------|

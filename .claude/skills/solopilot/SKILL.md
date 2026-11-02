@@ -98,7 +98,7 @@ HTTP call), `help`.
 `openclaw mcp add solopilot --command solopilot --arg mcp`. Typed tools cover
 cockpit, veille, invoices (draft only), comptabilité, CRM, agenda and
 workflows; `solopilot_request` (method, `/api/` path, query, body) covers the
-rest. Credential endpoints and token management writes are refused. 401/403
+rest. Writes go through an allowlist (invoices, comptabilité, CRM, agenda, veille triggers); settings, tokens, credentials and webhooks are refused. 401/403
 come back as `isError` results naming the token/scope problem. See `docs/api.md`.
 
 ## Recipes
