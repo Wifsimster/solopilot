@@ -89,6 +89,18 @@ HTTP call), `help`.
 **Exit codes:** `0` success · `1` HTTP non-2xx (body printed to stderr) ·
 `2` network error / bad usage.
 
+## MCP server (preferred when the host supports MCP)
+
+`solopilot mcp` is a stdio MCP server over the same API and the same env vars
+(`SOLOPILOT_URL`/`SOLOPILOT_API_URL`, `SOLOPILOT_TOKEN`, `SOLOPILOT_PROXY_BASIC`,
+`SOLOPILOT_PRODUCT_ID`). Register it with
+`claude mcp add solopilot -- solopilot mcp` or
+`openclaw mcp add solopilot --command solopilot --arg mcp`. Typed tools cover
+cockpit, veille, invoices (draft only), comptabilité, CRM, agenda and
+workflows; `solopilot_request` (method, `/api/` path, query, body) covers the
+rest. Credential endpoints and token management writes are refused. 401/403
+come back as `isError` results naming the token/scope problem. See `docs/api.md`.
+
 ## Recipes
 
 ### Today's briefing
